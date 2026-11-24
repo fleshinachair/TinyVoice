@@ -21,7 +21,7 @@
 #define HM_NFFT     4096          /* analysis FFT (zero-padded) */
 #define HM_RING     8192          /* input history (power of two) */
 #define HM_OUTRING  8192          /* output overlap-add ring (power of two) */
-#define HM_KMAX     160           /* harmonics per line */
+#define HM_KMAX     256           /* harmonics per line: Humanoid plays exactly 256 (measured, a 4096 saw at 61.7 Hz) */
 #define HM_NB       24            /* residual noise bands */
 #define HM_NLINE    8             /* 2 targets x (main, note shift, octave down, octave up) */
 #define HM_WT_N     2048          /* wavetable cycle after resampling */
@@ -83,8 +83,8 @@ typedef struct {
 
     /* wavetable */
     float wt_src[HM_WT_SRC];
-    int wt_src_n;
-    float wt[HM_WT_N];
+    int wt_src_n;                     /* samples in wt_src: the table zero-padded to a power of two */
+    int wt_len;                       /* the table's own length before padding (0: a full cycle, no short-table law) */
     float wt_db[HM_KMAX + 1];         /* harmonic level, dB re the strongest */
     float wt_for[10];                 /* shape, stretch, cheb0..6 the table was made for */
     int wt_dirty;
@@ -120,8 +120,11 @@ void  hm_reset(hm_t *h);
 void  hm_set(hm_t *h, int id, float v);
 float hm_get(const hm_t *h, int id);
 void  hm_set_mask(hm_t *h, unsigned mask12);
-/* One single cycle (any length up to HM_WT_SRC, resampled to HM_WT_N). */
+/* One table as Humanoid holds it (any length up to HM_WT_SRC): zero-padded to max(256, the next power of two). */
 void  hm_set_wavetable(hm_t *h, const float *cycle, int n);
+/* The cycle given to hm_set_wavetable was a table of `len` samples already padded (and resampled) by the caller:
+ * the module's hm_wt, 512 samples whatever the table was. 0 = a full cycle (the built-in waves). */
+void  hm_set_wavetable_len(hm_t *h, int len);
 void  hm_set_bpm(hm_t *h, float bpm);
 void  hm_note_on(hm_t *h, int note);
 void  hm_note_off(hm_t *h, int note);

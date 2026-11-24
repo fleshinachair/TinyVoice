@@ -350,7 +350,7 @@ var wtCycle = null;
 function accent(id) { var c = document.getElementById(id); return c ? getComputedStyle(c).getPropertyValue("--a").trim() || "#7cc7ff" : "#7cc7ff"; }
 function b64ToCycle(s) {
   try {
-    var bin = atob(s), n = bin.length >> 1, out = new Float32Array(n);
+    var bin = atob(String(s).split(":")[0]), n = bin.length >> 1, out = new Float32Array(n);   /* ":<len>" is the table's own length */
     for (var i = 0; i < n; i++) { var v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); if (v > 32767) v -= 65536; out[i] = v / 32767; }
     return out;
   } catch (e) { return null; }
@@ -678,7 +678,7 @@ function importBaby(text, name) {
   }
   var wt = doc.querySelector("wavetable_tree");
   if (wt && wt.getAttribute("wavetable_base64")) {
-    var bin = atob(wt.getAttribute("wavetable_base64")), n = bin.length >> 2;
+    var bin = atob(wt.getAttribute("wavetable_base64")), n = bin.length >> 2, n0 = n;
     var dv = new DataView(new ArrayBuffer(n * 4));
     for (var j = 0; j < n * 4; j++) dv.setUint8(j, bin.charCodeAt(j));
     /* Humanoid plays the table zero-padded to max(256, next power of two) samples as one cycle (measured) */
@@ -693,7 +693,8 @@ function importBaby(text, name) {
       var s = Math.round(Math.max(-1, Math.min(1, v)) * 32767); if (s < 0) s += 65536;
       out += String.fromCharCode(s & 255, s >> 8);
     }
-    var b64 = btoa(out);
+    /* ":<len>": the table's own length; Humanoid plays the harmonics from there up to the padded length flat */
+    var b64 = btoa(out) + ":" + n0;
     send("hm_wt", b64); send("hm_wave", "Preset");
     wtCycle = b64ToCycle(b64); CTL.hm_wave && CTL.hm_wave.set(4);
   }

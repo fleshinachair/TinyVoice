@@ -175,6 +175,13 @@ void hm_set_wavetable(hm_t *h, const float *cycle, int n)
     for (int i = 0; i < np2; i++)
         h->wt_src[i] = (i < n && cycle[i] == cycle[i]) ? clampf(cycle[i], -4.0f, 4.0f) : 0.0f;
     h->wt_src_n = np2;
+    h->wt_len = n;
+    h->wt_dirty = 1;
+}
+
+void hm_set_wavetable_len(hm_t *h, int len)
+{
+    h->wt_len = len > 1 && len <= HM_WT_SRC ? len : 0;
     h->wt_dirty = 1;
 }
 
@@ -222,13 +229,20 @@ static void build_wavetable(hm_t *h)
     const float sc = fminf(fmaxf(stretch, 0.02f), 0.9f);
     const float kx = sc <= 0.5f ? sc : 1.0f - sc;
     const float ky = sc <= 0.5f ? 0.5f : 1.0f - 2.0f * (1.0f - sc) * (1.0f - sc);
-    for (int i = 0; i < HM_WT_N; i++) {
-        float ph = (float)i / (float)HM_WT_N, q;
+    /* A short table (wt_len, below) is built at its own padded length, so at Stretch 0.5 / Shape 0 its FFT is the
+     * table's exactly; a full cycle is resampled to HM_WT_N (the phase distortion stays smooth up to 1 kHz harmonics) */
+    const int n = h->wt_src_n;
+    /* the law changes something only for a table of up to 256 samples (P = 256: the block, and the mirror above
+     * k = 128, both inside Humanoid's 256 harmonics); a longer one reads like any full cycle */
+    const int N = h->wt_len > 1 && h->wt_len <= 256 && h->wt_len <= n ? h->wt_len : 0;
+    const int m = N ? n : HM_WT_N;
+    for (int i = 0; i < m; i++) {
+        float ph = (float)i / (float)m, q;
         q = ph < kx ? ky * ph / kx : ky + (1.0f - ky) * (ph - kx) / (1.0f - kx);
-        float pos = q * (float)h->wt_src_n;
+        float pos = q * (float)n;
         int a = (int)pos;
         float t = pos - (float)a;
-        float x = h->wt_src[a % h->wt_src_n] * (1.0f - t) + h->wt_src[(a + 1) % h->wt_src_n] * t;
+        float x = h->wt_src[a % n] * (1.0f - t) + h->wt_src[(a + 1) % n] * t;
         x /= peak;
         /* Shape: a Chebyshev series whose coefficients move from the identity (T1 alone) to the
          * preset's Odd/Even values (measured: this, not a waveform crossfade, matches Shape 0.5) */
@@ -238,18 +252,37 @@ static void build_wavetable(hm_t *h)
                 y += ((c == 0 ? 1.0f - shape : 0.0f) + shape * h->p[HM_CHEB0 + c]) * cheb(c + 1, x);
             x = y;
         }
-        h->wt[i] = x;
+        h->re[i] = x;
+        h->im[i] = 0.0f;
     }
-    /* harmonic levels: FFT of the cycle */
-    for (int i = 0; i < HM_WT_N; i++) { h->re[i] = h->wt[i]; h->im[i] = 0.0f; }
-    fft_run(&h->fft, h->re, h->im, HM_WT_N, 0);
-    float mx = 1e-20f;
-    float pw[HM_KMAX + 1];
+    fft_run(&h->fft, h->re, h->im, m, 0);
+    /* Harmonic levels, measured on Humanoid (92 / 184 / 225-sample library tables at 61.7 Hz, every harmonic to 256
+     * within ~1 dB): a table of N samples zero-padded to P = max(256, the next power of two) gives harmonic k < N
+     * the amplitude |FFT_P[k]| / N (above P/2 the mirror, as any real FFT), every harmonic N <= k < P the amplitude
+     * 1, and nothing from P up (a gain table left at 1 past the table's own length, it seems). A 92-sample table
+     * therefore plays harmonics 92..255 flat, 7-10 dB over its loudest one: at a 60 Hz line that is 5.5-16 kHz,
+     * and Transform's power-keeping takes the rest of the spectrum ~20 dB down (Drunken Organist). The module's
+     * hm_wt carries such a table resampled to 512 (hm_set_wavetable_len): its FFT bins are read at the table's P. */
+    int P = 256;
+    while (P < N) P <<= 1;
+    float a2[HM_KMAX + 1];
+    float mx = 1e-30f;
     for (int k = 1; k <= HM_KMAX; k++) {
-        pw[k] = h->re[k] * h->re[k] + h->im[k] * h->im[k];
-        if (pw[k] > mx) mx = pw[k];
+        float v;
+        if (!N) {
+            v = k < m / 2 ? h->re[k] * h->re[k] + h->im[k] * h->im[k] : 0.0f;
+        } else if (k < N) {
+            int kk = k % P;
+            if (kk > P / 2) kk = P - kk;
+            const float sc2 = (float)P / ((float)m * (float)N);
+            v = (h->re[kk] * h->re[kk] + h->im[kk] * h->im[kk]) * sc2 * sc2;
+        } else {
+            v = k < P ? 1.0f : 0.0f;
+        }
+        a2[k] = v;
+        if (v > mx) mx = v;
     }
-    for (int k = 1; k <= HM_KMAX; k++) h->wt_db[k] = 10.0f * log10f(pw[k] / mx + 1e-12f);
+    for (int k = 1; k <= HM_KMAX; k++) h->wt_db[k] = 10.0f * log10f(a2[k] / mx + 1e-12f);
     h->wt_for[0] = shape; h->wt_for[1] = stretch;
     for (int c = 0; c < 7; c++) h->wt_for[2 + c] = h->p[HM_CHEB0 + c];
     h->wt_dirty = 0;
@@ -822,11 +855,16 @@ void hm_begin(hm_t *h)
     h->k_og = db_lin(fminf(h->p[HM_OUTPUT_GAIN], 9.0f)) * HM_MAKEUP;
     h->k_dw = h->p[HM_DRY_WET];
     h->k_lat = hm_latency(h);
+    /* The gate, measured on Humanoid: it reads the RMS (a sine and a voice both open at exactly RMS = threshold,
+     * whatever their peak; a peak reading kept it open ~8 dB under the threshold on a voice), a mean square with
+     * a ~20 ms time constant (the opening delay against level, and the ~50 ms it takes to notice a drop); Attack is
+     * the opening fade, Release the closing one (linear, -20 dB at ~0.85 x Release), Hold exact. */
     h->k_thr = db_lin(h->p[HM_GATE]);
+    h->k_thr *= h->k_thr;                                             /* compared with the mean square */
     h->k_gate_on = h->p[HM_GATE] > -79.5f;
-    h->k_grel = expf(-1.0f / (h->sr * 0.005f));
-    h->k_gclose = 1.0f / (h->sr * fmaxf(h->p[HM_GATE_ATTACK], 0.001f));
-    h->k_gopen = 1.0f / (h->sr * fmaxf(h->p[HM_GATE_RELEASE], 0.001f));
+    h->k_grel = 1.0f - expf(-1.0f / (h->sr * 0.020f));
+    h->k_gopen = 1.0f / (h->sr * fmaxf(h->p[HM_GATE_ATTACK], 0.001f));
+    h->k_gclose = 1.0f / (h->sr * fmaxf(h->p[HM_GATE_RELEASE], 0.001f));
     h->k_ghold = (int)(h->sr * h->p[HM_GATE_HOLD]);
     hmfx_begin(&h->fx, h->p, h->bpm);
     h->k_lv_p  = 1.0f - expf(-1.0f / (0.020f * h->sr));    /* short-term power */
@@ -843,9 +881,8 @@ void hm_tick(hm_t *h, float x, float *outl, float *outr)
     h->dry_ring[h->w & (HM_RING - 1)] = x;
     x *= h->k_ig;
     if (h->k_gate_on) {
-        float a = fabsf(x);
-        h->gate_env = a > h->gate_env ? a : h->k_grel * h->gate_env + (1.0f - h->k_grel) * a;
-        if (h->gate_env < 1e-20f) h->gate_env = 0.0f;
+        h->gate_env += (x * x - h->gate_env) * h->k_grel;
+        if (h->gate_env < 1e-30f) h->gate_env = 0.0f;
         if (h->gate_env > h->k_thr) { h->gate_hold = h->k_ghold; h->gate_g = fminf(1.0f, h->gate_g + h->k_gopen); }
         else if (h->gate_hold > 0) h->gate_hold--;
         else h->gate_g = fmaxf(0.0f, h->gate_g - h->k_gclose);

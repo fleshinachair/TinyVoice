@@ -99,7 +99,7 @@ static const char *const k_hm_wave_opts[]  = {"Saw", "Square", "Triangle", "Sine
 #define HM_SCALE_CUSTOM 3
 #define HM_WAVE_PRESET 4
 #define VT_HM_WT_N 512                     /* hm_wt: one cycle, 512 int16 samples, base64 (684 x 2 chars) */
-#define VT_HM_WT_STR (4 * ((2 * VT_HM_WT_N + 2) / 3) + 1)
+#define VT_HM_WT_STR (4 * ((2 * VT_HM_WT_N + 2) / 3) + 6)   /* + ":<len>" (the table's own length, up to 4096) */
 static const char *const k_freeze_opts[] = {"Off", "Rec", "Loop"};   /* = FREEZE_OFF / _REC / _LOOP */
 static const char *const k_freeze_len_opts[] = {"Free", "1 Bar", "2 Bars", "4 Bars"};
 static const int k_freeze_bars[] = { 0, 1, 2, 4 };
@@ -220,6 +220,7 @@ struct vt {
     hm_t hm;                    /* Resynth: the third personality (harmonic analysis / resynthesis) */
     float hm_wt[VT_HM_WT_N];    /* the cycle a preset carried (hm_wt), used when Wave is Preset */
     int   hm_wt_valid;
+    int   hm_wt_len;            /* the Humanoid table's own length before padding (the ":<len>" suffix), 0 = a full cycle */
     char  hm_wt_str[VT_HM_WT_STR];   /* as received, for "state" */
     int   hm_wave_set;          /* the wave the engine holds (-1 = none yet) */
     int   hm_wt_gen;            /* bumped when hm_wt changes */
@@ -404,16 +405,29 @@ static int b64_val(char c)
     return -1;
 }
 
-/* hm_wt: base64 of VT_HM_WT_N little-endian int16 samples (one cycle). "" clears it. */
+/* hm_wt: base64 of VT_HM_WT_N little-endian int16 samples (one cycle), optionally followed by ":<len>", the length
+ * of the Humanoid table it was made from (2..4096) before it was zero-padded and resampled: Humanoid plays the
+ * harmonics from that length up flat (hm_set_wavetable_len). "" clears it. */
 static int set_hm_wt(vt_t *vt, const char *s, size_t n)
 {
     unsigned char raw[2 * VT_HM_WT_N];
-    size_t got = 0;
+    size_t got = 0, nb = n;
     unsigned acc = 0;
-    int bits = 0;
-    if (n == 0) { vt->hm_wt_valid = 0; vt->hm_wt_str[0] = '\0'; vt->hm_wt_gen++; return 0; }
+    int bits = 0, len = 0;
+    if (n == 0) { vt->hm_wt_valid = 0; vt->hm_wt_len = 0; vt->hm_wt_str[0] = '\0'; vt->hm_wt_gen++; return 0; }
     if (n >= VT_HM_WT_STR) return -1;
-    for (size_t i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++)
+        if (s[i] == ':') {
+            nb = i;
+            if (i + 1 >= n || n - i - 1 > 4) return -1;
+            for (size_t j = i + 1; j < n; j++) {
+                if (s[j] < '0' || s[j] > '9') return -1;
+                len = 10 * len + (s[j] - '0');
+            }
+            if (len < 2 || len > 4096) return -1;
+            break;
+        }
+    for (size_t i = 0; i < nb; i++) {
         if (s[i] == '=') break;
         int v = b64_val(s[i]);
         if (v < 0) return -1;
@@ -432,6 +446,7 @@ static int set_hm_wt(vt_t *vt, const char *s, size_t n)
     memcpy(vt->hm_wt_str, s, n);
     vt->hm_wt_str[n] = '\0';
     vt->hm_wt_valid = 1;
+    vt->hm_wt_len = len;
     vt->hm_wt_gen++;
     return 0;
 }
@@ -470,6 +485,7 @@ static void hm_sync(vt_t *vt)
             }
         }
         hm_set_wavetable(h, cyc, VT_HM_WT_N);
+        hm_set_wavetable_len(h, wave == HM_WAVE_PRESET && vt->hm_wt_valid ? vt->hm_wt_len : 0);
         vt->hm_wave_set = wave;
         vt->hm_wt_gen_set = vt->hm_wt_gen;
     }

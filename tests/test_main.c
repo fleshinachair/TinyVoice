@@ -4551,6 +4551,8 @@ int main(void)
     RUN(test_resynth_tuning);
     RUN(test_resynth_midi);
     RUN(test_resynth_wavetable_pad);
+    RUN(test_resynth_wavetable_short);
+    RUN(test_resynth_wt_len);
     RUN(test_resynth_pads);
     RUN(test_resynth_state);
     RUN(test_resynth_isolation);
@@ -4559,6 +4561,7 @@ int main(void)
     RUN(test_resynth_bank);
     RUN(test_resynth_bank_kinds);
     RUN(test_resynth_mic_gate);
+    RUN(test_resynth_gate_rms);
     RUN(test_resynth_hold_scale);
     RUN(test_resynth_demo);
     RUN(test_demo_recording);

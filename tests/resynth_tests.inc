@@ -88,6 +88,66 @@ static void test_resynth_wavetable_pad(void)
     free(h);
 }
 
+/* Humanoid's short tables (measured on 92 / 184 / 225-sample library tables, every harmonic to 256 within ~1 dB):
+ * harmonic k < N is |FFT_P[k]| / N, every harmonic N <= k < P = 256 is 1 (flat), nothing from P up. The module's
+ * hm_wt carries such a table padded and resampled to 512 with its length as ":<len>". */
+static void rs_wt_build(hm_t *h)
+{
+    static float z[2 * HM_HOP], l[2 * HM_HOP], r[2 * HM_HOP];
+    hm_process(h, z, l, r, 2 * HM_HOP);     /* the next hop rebuilds a changed table */
+}
+static void test_resynth_wavetable_short(void)
+{
+    hm_t *h = calloc(1, sizeof *h), *g = calloc(1, sizeof *g);
+    CHECK(h != NULL && g != NULL);
+    if (!h || !g) { free(h); free(g); return; }
+    hm_init(h, (float)VT_SAMPLE_RATE);
+    hm_init(g, (float)VT_SAMPLE_RATE);
+    static float tab[92], cyc[512];
+    for (int i = 0; i < 92; i++) tab[i] = i < 46 ? 0.8f : -1.0f;               /* a pulse, peak 1 */
+    hm_set_wavetable(h, tab, 92);
+    rs_wt_build(h);
+    int flat = 1;
+    for (int k = 92; k < 256; k++) flat &= fabsf(h->wt_db[k]) < 0.01f;         /* the block is the loudest: 0 dB */
+    CHECK(flat);
+    CHECK(h->wt_db[256] < -100.0f);
+    /* the table's own harmonics, |FFT_256[k]| / 92 against the block's 1: h1 of this pulse is 2/pi * 0.9 * ... */
+    double re = 0.0, im = 0.0;
+    for (int i = 0; i < 92; i++) { re += tab[i] * cos(6.283185307 * i / 256.0); im -= tab[i] * sin(6.283185307 * i / 256.0); }
+    const float h1 = (float)(20.0 * log10(sqrt(re * re + im * im) / 92.0));
+    printf("  short table: h1 %.2f dB (law %.2f), block 92..255 flat at 0 dB\n", h->wt_db[1], h1);
+    CHECK(fabsf(h->wt_db[1] - h1) < 0.05f);
+    /* the module's path: padded to 256, resampled to 512 (as import_humanoid.py), length 92 */
+    for (int i = 0; i < 512; i++) {
+        const float pos = (float)i * 0.5f;
+        const int a = (int)pos;
+        const float t = pos - (float)a, x0 = a < 92 ? tab[a] : 0.0f, x1 = a + 1 < 92 ? tab[a + 1] : 0.0f;
+        cyc[i] = x0 * (1.0f - t) + x1 * t;
+    }
+    hm_set_wavetable(g, cyc, 512);
+    hm_set_wavetable_len(g, 92);
+    rs_wt_build(g);
+    float worst = 0.0f;
+    for (int k = 1; k < 48; k++)           /* over -30 dB: the importer's linear resampling dents the weak ones */
+        if (h->wt_db[k] > -30.0f) worst = fmaxf(worst, fabsf(g->wt_db[k] - h->wt_db[k]));
+    flat = 1;
+    for (int k = 92; k < 256; k++) flat &= fabsf(g->wt_db[k]) < 0.01f;
+    printf("  short table via the module's 512 cycle: within %.2f dB (k < 48, over -30 dB), block flat\n", worst);
+    CHECK(worst < 1.5f && flat);
+    /* no length: a plain cycle, no block */
+    hm_set_wavetable_len(g, 0);
+    rs_wt_build(g);
+    CHECK(g->wt_db[200] < -20.0f);
+    /* a long table (600 -> 1024) has no block inside 256 harmonics */
+    static float big[600];
+    for (int i = 0; i < 600; i++) big[i] = i < 300 ? 0.8f : -1.0f;
+    hm_set_wavetable(h, big, 600);
+    rs_wt_build(h);
+    CHECK(h->wt_db[200] < -20.0f);
+    free(h); free(g);
+}
+
+
 static void test_resynth_midi(void)
 {
     /* MIDI mode: a held pad is the note; nothing held is silence */
@@ -194,6 +254,38 @@ static const char *rs_square_b64(void)
     }
     b64[o] = '\0';
     return b64;
+}
+
+/* hm_wt's ":<len>" suffix: accepted, kept in the state, heard (the block of flat harmonics), refused when malformed */
+static void test_resynth_wt_len(void)
+{
+    static char s[2048], w[2048], st[16384];
+    static float o1[VT_SAMPLE_RATE / 2], o2[VT_SAMPLE_RATE / 2];
+    vt_t *a = dsp_init(VT_SAMPLE_RATE), *b = dsp_init(VT_SAMPLE_RATE);
+    snprintf(s, sizeof s, "%s:92", rs_square_b64());
+    for (int i = 0; i < 2; i++) {
+        vt_t *v = i ? b : a;
+        dsp_set_param(v, "engine", "Resynth");
+        dsp_set_param(v, "hm_wave", "Preset");
+        dsp_set_param(v, "hm_transform", "1");
+        dsp_set_param(v, "hm_robotify", "1");
+        CHECK(dsp_set_param(v, "hm_wt", i ? rs_square_b64() : s) == 0);
+    }
+    CHECK(dsp_get_param(a, "hm_wt", w, sizeof w) > 0 && strcmp(w, s) == 0);
+    rs_run(a, 82.4, 0.2f, VT_SAMPLE_RATE / 2, o1);         /* harmonics 92..255 of 82 Hz: 7.6-21 kHz */
+    rs_run(b, 82.4, 0.2f, VT_SAMPLE_RATE / 2, o2);
+    double d = 0.0, e = 0.0;
+    for (int i = VT_SAMPLE_RATE / 4; i < VT_SAMPLE_RATE / 2; i++) { d += (o1[i] - o2[i]) * (o1[i] - o2[i]); e += o2[i] * o2[i]; }
+    CHECK(e > 0.0 && d > 0.1 * e);                          /* the length changes the sound */
+    CHECK(dsp_get_param(a, "state", st, sizeof st) > 0 && strstr(st, ":92\"") != NULL);
+    CHECK(dsp_set_param(b, "state", st) == 0);
+    CHECK(dsp_get_param(b, "hm_wt", w, sizeof w) > 0 && strcmp(w, s) == 0);
+    snprintf(w, sizeof w, "%s:1", rs_square_b64());     CHECK(dsp_set_param(b, "hm_wt", w) == -1);
+    snprintf(w, sizeof w, "%s:5000", rs_square_b64());  CHECK(dsp_set_param(b, "hm_wt", w) == -1);
+    snprintf(w, sizeof w, "%s:9x", rs_square_b64());    CHECK(dsp_set_param(b, "hm_wt", w) == -1);
+    snprintf(w, sizeof w, "%s:", rs_square_b64());      CHECK(dsp_set_param(b, "hm_wt", w) == -1);
+    CHECK(dsp_get_param(b, "hm_wt", w, sizeof w) > 0 && strcmp(w, s) == 0);   /* refused: the table stays */
+    dsp_cleanup(a); dsp_cleanup(b);
 }
 
 static void test_resynth_state(void)
@@ -617,4 +709,36 @@ static void test_resynth_mic_gate(void)
     printf("  mic gate: -50 dBFS voice out %.1f dB at -42, %.1f dB at -60\n", rms[0], rms[1]);
     CHECK(rms[1] > -45.0);
     CHECK(rms[1] - rms[0] > 20.0);
+}
+
+/* The gate, measured on Humanoid: RMS against the threshold (not the peak), Attack opens, Release closes */
+static void test_resynth_gate_rms(void)
+{
+    hm_t *h = calloc(1, sizeof *h);
+    CHECK(h != NULL);
+    if (!h) return;
+    const int n = VT_SAMPLE_RATE;
+    double e[3];
+    /* a sine at -28 / -32 dBFS RMS against a -30 dB gate (peak -25 / -29: a peak reading opened both) */
+    const float lv[3] = { -28.0f, -32.0f, -28.0f };
+    for (int c = 0; c < 3; c++) {
+        hm_init(h, (float)VT_SAMPLE_RATE);
+        hm_set(h, hm_param_find("noisegate_threshold"), -30.0f);
+        hm_set(h, hm_param_find("noisegate_attack"), c == 2 ? 0.2f : 0.001f);
+        hm_set(h, hm_param_find("noisegate_release"), c == 2 ? 0.001f : 0.2f);
+        hm_begin(h);
+        const float a = 1.41421356f * powf(10.0f, lv[c] / 20.0f);
+        e[c] = 0.0;
+        for (int i = 0; i < n; i++) {
+            float l, r;
+            hm_tick(h, a * sinf(6.2831853f * 220.0f * (float)i / (float)VT_SAMPLE_RATE), &l, &r);
+            if (i >= n / 2) e[c] += (double)l * l;
+            if (c == 2 && i == VT_SAMPLE_RATE / 20) CHECK(h->gate_g < 0.5f);   /* 50 ms in: Attack 0.2 s still opening */
+            if (c == 0 && i == VT_SAMPLE_RATE / 10) CHECK(h->gate_g == 1.0f);  /* Release 0.2 s does not slow the opening */
+        }
+    }
+    CHECK(e[0] > 1e-3 * (n / 2) * 1e-3);       /* open: about -28 dBFS out */
+    CHECK(e[1] == 0.0);                        /* shut: exact silence */
+    CHECK(fabs(10.0 * log10(e[2] / e[0])) < 0.5);
+    free(h);
 }

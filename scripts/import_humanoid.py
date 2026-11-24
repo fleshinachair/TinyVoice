@@ -39,6 +39,7 @@ def wavetable_b64(xml: str) -> str | None:
     if n < 2:
         return None
     src = struct.unpack("<%df" % n, raw[:4 * n])
+    n0 = n
     # Humanoid plays the table zero-padded to max(256, next power of two) samples as one cycle (measured)
     pad = 256
     while pad < n:
@@ -53,7 +54,8 @@ def wavetable_b64(xml: str) -> str | None:
         out.append(src[a % n] * (1 - t) + src[(a + 1) % n] * t)
     peak = max(1e-9, max(abs(v) for v in out))
     pcm = struct.pack("<%dh" % WT_N, *[int(round(max(-1.0, min(1.0, v / peak)) * 32767)) for v in out])
-    return base64.b64encode(pcm).decode("ascii")
+    # ":<len>": the table's own length; Humanoid plays the harmonics from there up to the padded length flat
+    return base64.b64encode(pcm).decode("ascii") + ":%d" % n0
 
 
 def convert(path: str) -> dict:
