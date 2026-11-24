@@ -230,6 +230,12 @@ struct vt {
     float demo_rs_p[VT_P_HM_WAVE - VT_P_HM_FIRST + 1];
     char  demo_rs_wt[VT_HM_WT_STR];
     int   demo_rs_wt_valid, demo_rs_bank, demo_rs_idx;
+    /* The Presets page's place survives a reload: the bank and the name of the preset last loaded are saved in
+     * "state" (rs_bank / rs_name; the index itself is transient, and the bank is read after the restore), and once the
+     * bank has arrived the index is pointed back at that name, nothing loaded (the knobs came from the state). */
+    char  rs_name[RSBANK_NAME];
+    int   rs_find;                  /* rs_name is to be looked up in the bank (after a restore) */
+    char  demo_rs_name[RSBANK_NAME];
     int   hold_skip;            /* inside a preset load with Hold Scale on: hm_key / hm_scale / hm_mask are left alone */
     int   hm_held[VT_MAX_VOICES], hm_nheld;   /* pads the engine holds (MIDI mode), oldest first */
     _Atomic(demo_pcm_t *) demo_pcm;   /* the recorded Demo phrase, published once by the loader thread */
@@ -382,6 +388,25 @@ int dsp_set_demo_pcm(vt_t *vt, struct demo_pcm *pcm)
 static const rsbank_t *rs_bank_of(vt_t *vt)
 {
     return atomic_load_explicit(&vt->rs_bank, memory_order_acquire);
+}
+
+/* the index of rs_name in bank bn, -1 if it isn't there */
+static int rs_find_name(vt_t *vt, int bn)
+{
+    const rsbank_t *bk = rs_bank_of(vt);
+    if (!bk || !vt->rs_name[0] || bn < 0 || bn >= RSBANK_BANKS) return -1;
+    for (int i = 0; i < bk->count[bn]; i++)
+        if (strcmp(bk->e[bn][i].name, vt->rs_name) == 0) return i;
+    return -1;
+}
+
+/* after a restore: point the Presets page at the saved preset once the bank is there (nothing is loaded) */
+static void rs_resolve(vt_t *vt)
+{
+    if (!vt->rs_find || !rs_bank_of(vt)) return;
+    vt->rs_find = 0;
+    const int i = rs_find_name(vt, (int)vt->p[VT_P_RS_BANK]);
+    vt->p[VT_P_RS_PRESET] = i >= 0 ? (float)i : 0.0f;
 }
 
 /* ---------------------------------------------------------------- params */
@@ -729,6 +754,9 @@ static void rs_load(vt_t *vt, const rsbank_t *bk, int bn, int i)
     vt->hold_skip = hold && !strstr(bk->e[bn][i].state, "\"hm_scale_hold\":\"Off\"");
     apply_state(vt, bk->e[bn][i].state);
     vt->hold_skip = 0;
+    vt->p[VT_P_RS_BANK] = (float)bn;     /* (after the state: a preset saved from My Presets carries an rs_bank / rs_name of its own) */
+    snprintf(vt->rs_name, sizeof vt->rs_name, "%s", bk->e[bn][i].name);
+    vt->rs_find = 0;
 }
 
 int dsp_set_param(vt_t *vt, const char *key, const char *val)
@@ -812,7 +840,20 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
         vt->disp_on = 0;
     }
 
-    if (id == VT_P_RS_BANK) vt->p[VT_P_RS_PRESET] = 0.0f;         /* a new list starts at its first preset (nothing is loaded by it) */
+    if (id == VT_P_RS_BANK) {     /* a new list starts at the preset you have loaded if it is in it, else at its first (nothing is loaded) */
+        int b = -1;
+        for (int i = 0; i < d->num_options && b < 0; i++) if (ieq(d->options[i], val)) b = i;
+        if (b < 0) {
+            char *end;
+            const long idx = strtol(val, &end, 10);
+            if (end == val || *end != '\0') return -1;
+            b = idx < 0 ? 0 : idx >= d->num_options ? d->num_options - 1 : (int)idx;
+        }
+        vt->p[VT_P_RS_BANK] = (float)b;
+        const int i = rs_find_name(vt, b);
+        vt->p[VT_P_RS_PRESET] = i >= 0 ? (float)i : 0.0f;
+        return 0;
+    }
     if (id == VT_P_ENGINE && ieq(val, "VoiceFX")) val = "Synth Voice";   /* the old name, in sets and presets saved before the rename */
     if (d->type == VT_PTYPE_ENUM) {
         for (int i = 0; i < d->num_options; i++) {
@@ -869,6 +910,7 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
 int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
 {
     if (!vt || !key || !buf || buf_len <= 0) return -1;
+    rs_resolve(vt);                     /* the browser's first reads already see the restored place */
     int n;
 
     if (strcmp(key, "state") == 0) {
@@ -896,6 +938,14 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
         }
         if (vt->hm_wt_valid && n >= 0 && n < buf_len)                /* a preset's wavetable */
             n += snprintf(buf + n, (size_t)(buf_len - n), ",\"hm_wt\":\"%s\"", vt->hm_wt_str);
+        if (vt->rs_name[0] && n >= 0 && n < buf_len) {               /* the Presets page's place (rs_resolve) */
+            n += snprintf(buf + n, (size_t)(buf_len - n), ",\"rs_bank\":\"%s\",\"rs_name\":\"", k_rs_bank_opts[(int)vt->p[VT_P_RS_BANK]]);
+            for (const char *c = vt->rs_name; *c && n >= 0 && n < buf_len - 2; c++) {
+                if (*c == '"' || *c == '\\') buf[n++] = '\\';
+                if ((unsigned char)*c >= 0x20) buf[n++] = *c;
+            }
+            if (n >= 0 && n < buf_len) n += snprintf(buf + n, (size_t)(buf_len - n), "\"");
+        }
         if (n >= 0 && n < buf_len) n += snprintf(buf + n, (size_t)(buf_len - n), "}");
     } else if (strcmp(key, "hm_wt") == 0) {
         n = snprintf(buf, (size_t)buf_len, "%s", vt->hm_wt_str);
@@ -1051,6 +1101,24 @@ static int apply_members(vt_t *vt, const char *json)
             p = skip_string(p);
             size_t vn = (size_t)(p - vs) - 1;
             if (strcmp(key, "hm_wt") == 0) { set_hm_wt(vt, vs, vn); continue; }   /* the one long value */
+            if (strcmp(key, "rs_name") == 0) {                       /* the Presets page's place: looked up when the bank is in */
+                size_t o = 0;
+                for (size_t j = 0; j < vn && o + 1 < sizeof vt->rs_name; j++) {
+                    if (vs[j] == '\\' && j + 1 < vn) j++;
+                    vt->rs_name[o++] = vs[j];
+                }
+                vt->rs_name[o] = '\0';
+                vt->rs_find = 1;
+                continue;
+            }
+            if (strcmp(key, "rs_bank") == 0) {
+                char b[32];
+                const size_t bn = vn < sizeof b ? vn : sizeof b - 1;
+                memcpy(b, vs, bn); b[bn] = '\0';
+                for (int j = 0; j < RSBANK_BANKS; j++) if (ieq(k_rs_bank_opts[j], b)) vt->p[VT_P_RS_BANK] = (float)j;
+                vt->rs_find = 1;
+                continue;
+            }
             if (vn >= sizeof val) vn = sizeof val - 1;
             memcpy(val, vs, vn); val[vn] = '\0';
             if (strcmp(key, "auto") == 0) snprintf(legacy_auto, sizeof legacy_auto, "%s", val);
@@ -1292,6 +1360,7 @@ static inline float headroom(float x)
 
 void dsp_process_block_f(vt_t *vt, float *lr, int frames)
 {
+    if (vt) rs_resolve(vt);
     if (!vt || !lr || frames <= 0) return;
 
     const float sr = (float)vt->sample_rate;
@@ -1317,6 +1386,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
             vt->demo_rs_wt_valid = vt->hm_wt_valid;
             vt->demo_rs_bank = (int)vt->p[VT_P_RS_BANK];
             vt->demo_rs_idx = (int)vt->p[VT_P_RS_PRESET];
+            memcpy(vt->demo_rs_name, vt->rs_name, sizeof vt->demo_rs_name);
             vt->demo_rs_snap = 1;
         }
     } else if (!demo_on && vt->demo_active) {
@@ -1327,6 +1397,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
             if (vt->demo_rs_wt_valid) set_hm_wt(vt, vt->demo_rs_wt, strlen(vt->demo_rs_wt)); else set_hm_wt(vt, "", 0);
             vt->p[VT_P_RS_BANK] = (float)vt->demo_rs_bank;
             vt->p[VT_P_RS_PRESET] = (float)vt->demo_rs_idx;
+            memcpy(vt->rs_name, vt->demo_rs_name, sizeof vt->rs_name);
         }
         vt->demo_rs_snap = 0;
         vt->demo_pinned = 0;

@@ -464,6 +464,43 @@ static float rs_get(vt_t *vt, const char *key)
     return dsp_get_param(vt, key, b, sizeof b) > 0 ? (float)atof(b) : -999.0f;
 }
 
+/* The Presets page's place survives a reload (a deploy restarts Schwung): the state carries the bank and the name of
+ * the preset last loaded; restored before the bank arrives (as on the Move), the page points back at it once the bank is
+ * in, and nothing is reloaded (a knob changed after the preset stays changed) */
+static void test_resynth_bank_place(void)
+{
+    char b[256];
+    static char st[16384];
+    vt_t *a = dsp_init(VT_SAMPLE_RATE);
+    CHECK(dsp_set_rs_bank(a, rsbank_load("tests/fixtures/rs_default", "tests/fixtures/rs_presets")) == 0);
+    dsp_set_param(a, "rs_bank", "Imported");
+    CHECK(dsp_set_param(a, "rs_preset", "2") == 0);
+    CHECK(dsp_get_param(a, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Caf\xc3\xa9 \"Q\"") == 0);
+    dsp_set_param(a, "hm_transform", "0.33");                       /* a hand after the preset */
+    CHECK(dsp_get_param(a, "state", st, sizeof st) > 0);
+    CHECK(strstr(st, "\"rs_bank\":\"Imported\"") != NULL && strstr(st, "\"rs_name\":\"Caf\xc3\xa9 \\\"Q\\\"\"") != NULL);
+
+    vt_t *c = dsp_init(VT_SAMPLE_RATE);
+    CHECK(dsp_set_param(c, "state", st) == 0);                       /* the set restore: no bank yet */
+    CHECK(dsp_get_param(c, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "(loading)") == 0);
+    CHECK(dsp_set_rs_bank(c, rsbank_load("tests/fixtures/rs_default", "tests/fixtures/rs_presets")) == 0);
+    CHECK(dsp_get_param(c, "rs_bank", b, sizeof b) > 0 && strcmp(b, "Imported") == 0);
+    CHECK((int)rs_get(c, "rs_preset") == 2);
+    CHECK(dsp_get_param(c, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Caf\xc3\xa9 \"Q\"") == 0);
+    CHECK(fabsf(rs_get(c, "hm_transform") - 0.33f) < 1e-6f);         /* not reloaded */
+    /* the next detent moves on from there */
+    CHECK(dsp_set_param(c, "rs_preset", "3") == 0 && dsp_get_param(c, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "g") == 0);
+    /* a bank switched by hand lands on the loaded preset when it is listed there, else on the first */
+    CHECK(dsp_set_param(c, "rs_bank", "Default") == 0 && (int)rs_get(c, "rs_preset") == 0);
+    CHECK(dsp_set_param(c, "rs_bank", "Imported") == 0 && (int)rs_get(c, "rs_preset") == 3);
+    /* a state with no place (older sets): the first, as before */
+    vt_t *e = dsp_init(VT_SAMPLE_RATE);
+    CHECK(dsp_set_param(e, "state", "{\"engine\":\"Resynth\"}") == 0);
+    CHECK(dsp_set_rs_bank(e, rsbank_load("tests/fixtures/rs_default", "tests/fixtures/rs_presets")) == 0);
+    CHECK((int)rs_get(e, "rs_preset") == 0 && dsp_get_param(e, "rs_bank", b, sizeof b) > 0 && strcmp(b, "Default") == 0);
+    dsp_cleanup(a); dsp_cleanup(c); dsp_cleanup(e);
+}
+
 static void test_resynth_bank(void)
 {
     char b[256];
@@ -523,7 +560,7 @@ static void test_resynth_bank(void)
     CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "g") == 0);
     CHECK(fabsf(rs_get(vt, "hm_octaving") - 1.0f) < 1e-6f && fabsf(rs_get(vt, "hm_transform") - 0.0f) < 1.0f);
     CHECK(dsp_set_param(vt, "rs_preset", "-3") == 0 && (int)rs_get(vt, "rs_preset") == 0);
-    /* the index is not saved: a state holds the knobs, not which preset they came from */
+    /* the index is not saved (the bank and the preset's name are: test_resynth_bank_place) */
     {
         static char st[8192];
         CHECK(dsp_get_param(vt, "state", st, sizeof st) > 0 && strstr(st, "rs_preset") == NULL);
