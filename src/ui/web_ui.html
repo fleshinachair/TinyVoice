@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TinyVoice Resynth</title>
+<title>TinyVoice</title>
 <style>
-/* TinyVoice Resynth: the Remote UI panel (move.local:7700/remote-ui).
- * Every Resynth control, laid out by the panels of the plugin it is modelled on: Pitch,
- * Synthesize, Filter, Utility, Effects, Output. Built from the module's own chain_params
+/* TinyVoice: the Remote UI panel (move.local:7700/remote-ui), one set of panels per engine (the tabs
+ * switch the engine): Vocoder (Voice, Pitch, Space / Gate / Freeze), Voice FX (Vowel, Character) and Resynth
+ * (Pitch, Synthesize, Filter, Utility, Effects, Output, laid out by the plugin it is modelled on). Built from the module's own chain_params
  * (range, options): floats are dials (drag up/down, Shift for fine, wheel, arrow keys,
  * double-click = default), Off/On params are switches, short option lists are segmented
  * buttons. Values show in real units (Hz, notes, dB) where the engine's mapping is known.
@@ -40,6 +40,10 @@ button:focus-visible,select:focus-visible,.dial:focus-visible{outline:2px solid 
 .preset .lcd span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dim{opacity:.38;transition:opacity .2s}
 .bank{margin-right:2px}
+.seg.wrap{display:flex;flex-wrap:wrap;gap:4px;max-width:100%;border:0;background:transparent;overflow:visible}
+.seg.wrap button{border:1px solid #333944!important;border-radius:6px;background:#111317}
+.hide{display:none!important}
+.tabs button{padding:6px 14px;font-size:12px;font-weight:600}
 #drop{border:1px dashed #3a404c;border-radius:7px;padding:6px 11px;color:var(--dim);cursor:pointer}
 #drop.over{border-color:var(--a);color:var(--a)}
 .grid{display:grid;gap:12px;grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -104,9 +108,12 @@ canvas{width:100%;height:96px;background:linear-gradient(#0b0d11,#07080a);border
 </defs></svg>
 <div class="wrap">
 <header>
-  <div class="brand">TINYVOICE <i>RESYNTH</i></div>
+  <div class="brand">TINYVOICE <i id="brandE">…</i></div>
   <span class="hint" id="hint">connecting…</span>
   <div class="sp"></div>
+  <div class="seg tabs" id="tabs" title="The engine TinyVoice runs">
+    <button data-e="Vocoder">Vocoder</button><button data-e="VoiceFX">Voice FX</button><button data-e="Resynth">Resynth</button>
+  </div>
   <div class="seg bank" id="bankSeg" title="Default: presets shipped with TinyVoice. Imported: yours (imported Humanoid presets, and anything you saved on the Move)">
     <button data-b="Default">Default</button><button data-b="Imported">Imported</button>
   </div>
@@ -115,10 +122,11 @@ canvas{width:100%;height:96px;background:linear-gradient(#0b0d11,#07080a);border
     <div class="lcd"><small id="pIdx">PRESET</small><span id="pName">…</span></div>
     <button id="nextP" aria-label="Next preset">&#9654;</button>
   </div>
-  <button id="engineBtn" title="Switch TinyVoice to the Resynth engine">Engine: …</button>
   <label id="drop" title="Drop a .baby preset here, or click to choose one">Import .baby <input type="file" id="file" accept=".baby" multiple hidden></label>
 </header>
-<div class="grid" id="grid"></div>
+<div class="grid hide" id="gridV"></div>
+<div class="grid hide" id="gridF"></div>
+<div class="grid hide" id="gridR"></div>
 </div>
 <div id="toast"></div>
 
@@ -183,13 +191,15 @@ var FMT = {
   hm_formant_shift: function (v) { return (v > 0 ? "+" : "") + (v * 12).toFixed(1) + " st"; },
   hm_warble_rate: function (v) { return v < 0 ? "sync" : (10.1 * v).toFixed(1) + " Hz"; },
   hm_noisegate_threshold: function (v) { return v <= -79.5 ? "off" : v.toFixed(0) + " dB"; },
-  hm_mask: function (v) { return String(Math.round(v)); }
+  hm_mask: function (v) { return String(Math.round(v)); },
+  vf_vowel: function (v) { var L = ["A", "E", "I", "O", "U"], q = v * 4, i = Math.min(3, Math.floor(q)), t = q - i; return t < 0.12 ? L[i] : t > 0.88 ? L[i + 1] : L[i] + "\u00b7" + L[i + 1]; }
 };
 function fmt(key, v) {
   var m = META[key];
   if (!m) return String(v);
   if (m.type === "enum") return m.options[v] || String(v);
   if (FMT[key]) return FMT[key](v);
+  if (m.unit === "%") return (m.max <= 1 ? Math.round(v * 100) : Math.round(v)) + "%";
   if (m.unit === "s") return v < 1 ? Math.round(v * 1000) + " ms" : v.toFixed(2) + " s";
   if (m.unit) return (Math.abs(v) < 10 && m.step < 1 ? v.toFixed(1) : Math.round(v)) + " " + m.unit;
   if (m.min === 0 && m.max === 1) return Math.round(v * 100) + "%";
@@ -208,6 +218,15 @@ function parseVal(key, s) {
 }
 
 /* ---------- controls */
+/* A key can have several controls (Latch and Demo sit on more than one engine's panels): they are merged so one value updates them all. */
+function reg(key, c) {
+  var q = CTL[key];
+  if (!q) { c.boxes = [c.box]; CTL[key] = c; return; }
+  var ps = q.set, cs = c.set, pl = q.setLabel, cl = c.setLabel;
+  q.set = function (v) { ps(v); cs(v); };
+  q.setLabel = function (t) { if (pl) pl(t); if (cl) cl(t); };
+  q.boxes.push(c.box);
+}
 var A0 = -135, A1 = 135;
 function polar(c, r, a) { var t = (a - 90) * Math.PI / 180; return [c + r * Math.cos(t), c + r * Math.sin(t)]; }
 function arcPath(c, r, a, b) {
@@ -221,8 +240,10 @@ function arcPath(c, r, a, b) {
 function dial(parent, key, hero) {
   var m = META[key];
   if (!m) return;
-  var S = hero ? 66 : 48, c = S / 2, r = S / 2 - 4, lo = m.min, hi = m.max;
-  var bip = lo < 0 && hi > 0, step = m.step || 0.01;
+  var isEnum = m.type === "enum";                      /* a long option list (Gate) is a stepped dial */
+  var S = hero ? 66 : 48, c = S / 2, r = S / 2 - 4, lo = isEnum ? 0 : m.min, hi = isEnum ? m.options.length - 1 : m.max;
+  var bip = lo < 0 && hi > 0, step = isEnum ? 1 : (m.step || 0.01);
+  var dflt = isEnum ? (m.default | 0) : m.default;
   var box = el("div", "dial" + (hero ? " hero" : ""), parent);
   box.tabIndex = 0;
   box.title = m.name + " — drag or scroll (Shift: fine), double-click for the default";
@@ -235,7 +256,7 @@ function dial(parent, key, hero) {
   var val = sv("path", { "class": "val" }, svg);
   sv("circle", { cx: c, cy: c, r: r - 7, "class": "cap" }, svg);
   var ptr = sv("line", { "class": "ptr" }, svg);
-  el("div", "dl", box, m.name);
+  var dl = el("div", "dl", box, m.name);
   var vt = el("div", "dv", box);
   var cur = NaN;
   var norm = function (v) { return (v - lo) / (hi - lo); };
@@ -257,7 +278,7 @@ function dial(parent, key, hero) {
   box.addEventListener("pointerdown", function (e) {
     if (e.button !== 0) return;
     box.setPointerCapture(e.pointerId); box.classList.add("drag"); HELD = key;
-    yl = e.clientY; nd = norm(isNaN(cur) ? m.default : cur);
+    yl = e.clientY; nd = norm(isNaN(cur) ? dflt : cur);
     e.preventDefault(); box.focus();
   });
   box.addEventListener("pointermove", function (e) {
@@ -269,16 +290,16 @@ function dial(parent, key, hero) {
   var end = function (e) { if (box.hasPointerCapture(e.pointerId)) box.releasePointerCapture(e.pointerId); box.classList.remove("drag"); HELD = null; };
   box.addEventListener("pointerup", end);
   box.addEventListener("pointercancel", end);
-  box.addEventListener("dblclick", function () { setv(m.default); });
-  var nudge = function (dir, fine) { var d = step >= 1 ? step : (hi - lo) / (fine ? 500 : 100); setv((isNaN(cur) ? m.default : cur) + dir * d); };
+  box.addEventListener("dblclick", function () { setv(dflt); });
+  var nudge = function (dir, fine) { var d = step >= 1 ? step : (hi - lo) / (fine ? 500 : 100); setv((isNaN(cur) ? dflt : cur) + dir * d); };
   box.addEventListener("wheel", function (e) { e.preventDefault(); nudge(e.deltaY < 0 ? 1 : -1, e.shiftKey); }, { passive: false });
   box.addEventListener("keydown", function (e) {
     if (e.key === "ArrowUp" || e.key === "ArrowRight") { nudge(1, e.shiftKey); e.preventDefault(); }
     else if (e.key === "ArrowDown" || e.key === "ArrowLeft") { nudge(-1, e.shiftKey); e.preventDefault(); }
-    else if (e.key === "Home") { setv(m.default); e.preventDefault(); }
+    else if (e.key === "Home") { setv(dflt); e.preventDefault(); }
   });
-  CTL[key] = { set: show };
-  show(m.default);
+  reg(key, { set: show, box: box, setLabel: function (t) { dl.textContent = t; box.setAttribute("aria-label", t); box.title = t + " — drag or scroll (Shift: fine), double-click for the default"; } });
+  show(dflt);
 }
 
 /* Off/On -> a switch; a few short options -> segmented buttons; many -> a menu */
@@ -293,8 +314,8 @@ function chooser(parent, key) {
     t.setAttribute("role", "switch"); t.setAttribute("aria-label", m.name);
     t.onclick = function () { var v = VAL[key] ? 0 : 1; send(key, o[v]); upd(v); };
     upd = function (i) { VAL[key] = i; t.classList.toggle("on", i === 1); t.setAttribute("aria-checked", i === 1); after(key); };
-  } else if (o.length <= 5) {
-    var seg = el("div", "seg", box), btns = [];
+  } else if (o.length <= 14) {
+    var seg = el("div", o.length <= 5 ? "seg" : "seg wrap", box), btns = [];
     o.forEach(function (name, i) { var b = el("button", "", seg, name); b.onclick = function () { send(key, name); upd(i); }; btns.push(b); });
     upd = function (i) { VAL[key] = i; btns.forEach(function (b, j) { b.classList.toggle("on", j === i); }); after(key); };
   } else {
@@ -303,7 +324,7 @@ function chooser(parent, key) {
     s.onchange = function () { var i = parseInt(s.value, 10); send(key, o[i]); upd(i); };
     upd = function (i) { VAL[key] = i; s.value = i; after(key); };
   }
-  CTL[key] = { set: upd };
+  reg(key, { set: upd, box: box });
   upd(m.default | 0);
 }
 
@@ -315,7 +336,7 @@ function group(parent, title, keys, hero) {
   keys.forEach(function (k) {
     var m = META[k];
     if (!m) return;
-    if (m.type === "enum") { sws = sws || el("div", "sws", sec); chooser(sws, k); }
+    if (m.type === "enum" && m.options.length <= 14) { sws = sws || el("div", "sws", sec); chooser(sws, k); }
     else { dials = dials || el("div", "dials", sec); dial(dials, k, hero && first); first = false; }
   });
   return sec;
@@ -434,22 +455,20 @@ function after(key) {
     e.classList.toggle("dim", !(VAL.hm_transform > 0.005));
     e.title = VAL.hm_transform > 0.005 ? "" : "The wave only sounds through Transform (Synthesize): raise Transform to hear these";
   });
-  if (key === "engine") {
-    var b = document.getElementById("engineBtn"), m = META.engine;
-    var name = m ? m.options[VAL.engine | 0] : "?";
-    b.textContent = name === "Resynth" ? "Resynth on" : "Engine: " + name + " (switch)"; b.classList.toggle("on", name === "Resynth");
-  }
+  if (key === "engine") showEngine();
+  if (key === "mode") modeChanged();
+  if (key === "vf_vowel" || key === "vf_tract" || key === "vf_peak") drawVowel();
 }
 
 /* ---------- layout */
-function build() {
-  var grid = document.getElementById("grid"), p;
+function buildResynth() {
+  var grid = document.getElementById("gridR"), p;
   p = panel(grid, "p-pitch", "PITCH");
   group(p, "", ["hm_tuning_mode", "hm_quantize_enabled", "hm_key", "hm_scale", "hm_scale_hold"]);
   piano(p);
   CTL.hm_mask = { set: function (v) { VAL.hm_mask = v; drawKeys(); } };     /* drawn by the keyboard */
   group(p, "QUANTIZE", ["hm_quantize", "hm_tuner_attack", "hm_tuner_hold", "hm_tuner_polarity"], true);
-  group(p, "NOTE MODE", ["hm_tuning_duophonic", "hm_pitch_mono", "hm_pitch_duo"]);
+  group(p, "NOTE MODE  ·  PADS", ["hm_tuning_duophonic", "hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"]);
   group(p, "ROBOTIFY", ["hm_robotify", "hm_robotify_res", "hm_robotify_harm", "hm_robotify_flatten", "hm_robotify_emphasis"], true);
   group(p, "FORMANT", ["hm_formant_shift", "hm_formant_width"], true);
 
@@ -486,16 +505,119 @@ function build() {
   drawWave(); drawFilter(); drawKeys();
 }
 
-/* ---------- presets on the Move (rs_preset / rs_preset_count / rs_preset_name) */
+/* ---------- Vocoder: Voice, Pitch, Space / Gate / Freeze. The five mode knobs are named per mode, as on the Move. */
+var MACROS = {
+  Robot: ["Shift", "Noise", "Ensemble", "Beauty", "Glide"], Snap: ["Formant", "Sens", "Vibrato", "Retune", "Beauty"],
+  Chords: ["Level", "Voicing", "Humanize", "Retune", "Beauty"], Prism: ["Voicing", "Warmth", "Humanize", "Refract", "Shimmer"],
+  Tape: ["Drop", "Flutter", "Saturate", "Tone", "Hiss"], Nightcall: ["Formant", "Breath", "Rasp", "Duty", "Cavity"],
+  Scream: ["Pitch", "Throat", "Grit", "Narrow", "Line"], Dalek: ["Shift", "Ring", "Metal", "Drive", "Width"],
+  HardTune: ["Amount", "Formant", "Vibrato", "Glide", "Sens"], Harmony: ["Lead", "Stack", "Detune", "Grain", "Micro"],
+  Walkie: ["Peak", "Drive", "Static", "Squelch", "Band"], Morph: ["Throat", "Drive", "Wobble", "Retune", "Glide"],
+  Double: ["Detune", "Width", "Drift", "Retune", "Glide"]
+};
+var MACRO_KEYS = ["char1", "char2", "mod", "char4", "char5"];
+/* the knobs that do nothing in some modes (vt_param_acts in dsp.h) */
+var ACTS = {
+  key: ["Robot", "Snap", "Chords", "Prism", "Nightcall", "HardTune", "Morph", "Double"],
+  scale: ["Snap", "Chords", "Prism", "HardTune", "Morph", "Double"],
+  retune: ["Snap", "Chords", "Morph", "Double"],
+  glide: ["Robot", "Snap", "Chords", "Prism", "Nightcall", "HardTune", "Morph", "Double"],
+  beauty: ["Robot", "Snap", "Chords", "Prism"],
+  latch: ["Robot", "Chords", "Prism", "Nightcall", "Harmony"]
+};
+function modeChanged() {
+  var m = META.mode, mode = m ? m.options[VAL.mode | 0] : "";
+  if (!MACROS[mode]) return;
+  MACRO_KEYS.forEach(function (k, i) { if (CTL[k] && CTL[k].setLabel) CTL[k].setLabel(MACROS[mode][i]); });
+  Object.keys(ACTS).forEach(function (k) {
+    if (!CTL[k]) return;
+    var on = ACTS[k].indexOf(mode) >= 0;
+    CTL[k].boxes.forEach(function (b) {
+      if (!b || b.closest("#gridR")) return;                /* (Latch also sits on Resynth's Notes panel) */
+      b.classList.toggle("dim", !on);
+      b.title = on ? "" : "Does nothing in " + mode;
+    });
+  });
+}
+function buildVocoder() {
+  var grid = document.getElementById("gridV"), p;
+  p = panel(grid, "p-pitch", "VOICE");
+  group(p, "", ["mode"]);
+  group(p, "MODE KNOBS", MACRO_KEYS, true);
+  group(p, "OUTPUT", ["mix", "gain"], true);
+  p = panel(grid, "p-filter", "PITCH");
+  group(p, "", ["key", "scale", "latch"]);
+  group(p, "CORRECTION", ["retune", "glide", "beauty"], true);
+  el("div", "foot", p, "Key and Scale also root the Robot drone. A greyed knob does nothing in the current mode.");
+  p = panel(grid, "p-util", "SPACE  ·  GATE  ·  FREEZE");
+  group(p, "", ["spread", "tone", "gate"], true);
+  group(p, "FREEZE (LOOPER)", ["freeze", "freeze_len"]);
+  group(p, "AUDITION", ["demo"]);
+  el("div", "foot", p, "Demo plays a built-in sung phrase through every mode in turn (turn Mode to stop on one).");
+}
+
+/* ---------- Voice FX: Vowel, Character */
+function drawVowel() {
+  var c = document.getElementById("vwc"); if (!c) return;
+  var s = scope(c), g = s.g, W = s.W, H = s.H;
+  var v = VAL.vf_vowel || 0, tr = VAL.vf_tract !== undefined ? VAL.vf_tract : 0.5, pk = VAL.vf_peak !== undefined ? VAL.vf_peak : 0.5;
+  var col = accent("vwc");
+  g.fillStyle = "#4b5260"; g.font = "22px system-ui";
+  ["A", "E", "I", "O", "U"].forEach(function (l, i) { g.fillText(l, W * (0.1 + 0.8 * i / 4) - 7, H - 10); });
+  var pts = [];                                       /* a picture of the formants (their spacing follows the vowel and tract), not a measurement */
+  for (var i = 0; i <= 300; i++) {
+    var x = i / 300, y = 0;
+    [0.16, 0.4, 0.68].forEach(function (f, k) {
+      var cen = f + (v - 0.5) * 0.09 * (k === 0 ? -1 : k) + (tr - 0.5) * 0.3 * f, wd = 0.03 + 0.05 * (1 - pk);
+      y += Math.exp(-((x - cen) * (x - cen)) / (2 * wd * wd)) * (1 - 0.22 * k);
+    });
+    pts.push([x * W, H * 0.8 - y * H * 0.55]);
+  }
+  trace(s, pts, col, H);
+  g.fillStyle = col; g.shadowColor = col; g.shadowBlur = 10;
+  g.fillRect(W * (0.1 + 0.8 * v) - 3, 6, 6, 14); g.shadowBlur = 0;
+}
+function buildVoiceFX() {
+  var grid = document.getElementById("gridF"), p;
+  p = panel(grid, "p-fx", "VOWEL");
+  el("canvas", "", p).id = "vwc";
+  group(p, "", ["vf_vowel", "vf_tract", "vf_peak", "vf_choir"], true);
+  p = panel(grid, "p-util", "CHARACTER");
+  group(p, "", ["vf_breath", "vf_attack", "vf_release", "vf_mix"], true);
+  el("div", "foot", p, "Mix / Drive: wet-dry up to 70%, then all wet with the drive climbing.");
+  p = panel(grid, "p-out", "AUDITION");
+  group(p, "", ["demo"]);
+  el("div", "foot", p, "Demo plays a funk groove through the formant filter with the knobs moving; turn one to take over. Presets: the strip above.");
+  drawVowel();
+}
+
+/* ---------- the engine tabs: which panels and header items show */
+function showEngine() {
+  var e = VAL.engine | 0;
+  ["gridV", "gridF", "gridR"].forEach(function (id, i) { document.getElementById(id).classList.toggle("hide", i !== e); });
+  [].forEach.call(document.querySelectorAll("#tabs button"), function (b) { b.classList.toggle("on", b.getAttribute("data-e") === (META.engine ? META.engine.options[e] : "")); });
+  var be = document.getElementById("brandE");
+  be.textContent = ["VOCODER", "VOICE FX", "RESYNTH"][e] || "";
+  be.style.color = ["#ffb454", "#ff86bf", "#7cc7ff"][e] || "";
+  document.getElementById("bankSeg").classList.toggle("hide", e !== 2);
+  document.getElementById("drop").classList.toggle("hide", e !== 2);
+  document.querySelector(".preset").classList.toggle("hide", e === 0);
+  if (e !== 0 && R) readPreset();
+  drawWave(); drawFilter(); drawVowel();
+}
+
+/* ---------- presets on the Move: Resynth (rs_preset ...) and Voice FX (vf_preset ...) */
 var P = { i: 0, n: 0, name: "", bank: "Default" };
+function PK() { return (VAL.engine | 0) === 1 ? { idx: "vf_preset", n: "vf_preset_count", name: "vf_preset_name", bank: null } : { idx: "rs_preset", n: "rs_preset_count", name: "rs_preset_name", bank: "rs_bank" }; }
 function get(key) { return R.getParam(KP + key).then(function (v) { return v === undefined || v === null ? "" : String(v); }); }
 function showPreset() {
   [].forEach.call(document.querySelectorAll("#bankSeg button"), function (b) { b.classList.toggle("on", b.getAttribute("data-b") === P.bank); });
-  document.getElementById("pName").textContent = P.n > 0 ? P.name : (P.name || "no Resynth presets on the Move");
+  document.getElementById("pName").textContent = P.n > 0 ? P.name : (P.name || "no presets");
   document.getElementById("pIdx").textContent = P.n > 0 ? "PRESET " + (P.i + 1) + " / " + P.n : "PRESET";
 }
 function readPreset() {
-  return Promise.all([get("rs_preset_count"), get("rs_preset"), get("rs_preset_name"), get("rs_bank")]).then(function (r) {
+  var k = PK();
+  return Promise.all([get(k.n), get(k.idx), get(k.name), k.bank ? get(k.bank) : Promise.resolve("")]).then(function (r) {
     var changed = r[2] !== P.name;
     P.n = parseInt(r[0], 10) || 0; P.i = parseInt(r[1], 10) || 0; P.name = r[2];
     if (r[3] === "Default" || r[3] === "Imported") P.bank = r[3];
@@ -504,9 +626,9 @@ function readPreset() {
   }).catch(function () { return false; });
 }
 function stepPreset(d) {
-  if (P.n <= 0) { toast("No Resynth presets on the Move yet"); return; }
+  if (P.n <= 0) { toast("No presets on the Move yet"); return; }
   P.i = (P.i + d + P.n) % P.n;
-  R.setParam(KP + "rs_preset", String(P.i));
+  R.setParam(KP + PK().idx, String(P.i));
   setTimeout(function () { readPreset().then(refreshAll); }, 120);
 }
 function refreshAll() {
@@ -583,10 +705,11 @@ function incoming(key, v) {
 }
 function start(cp) {
   cp.forEach(function (c) { if (c && c.key) META[c.key] = c; });
-  build();
-  if (META.engine) VAL.engine = META.engine.default;
-  after("engine");
-  document.getElementById("hint").textContent = Object.keys(META).filter(function (k) { return /^hm_/.test(k); }).length + " controls · live both ways";
+  buildResynth(); buildVocoder(); buildVoiceFX();
+  if (META.engine) VAL.engine = META.engine.default | 0;
+  if (META.mode) VAL.mode = META.mode.default | 0;
+  after("engine"); modeChanged();
+  document.getElementById("hint").textContent = Object.keys(META).length + " controls · live both ways";
   R.onParamChange(function (p) {
     for (var key in p) {
       if (key.indexOf(KP) !== 0) continue;
@@ -608,14 +731,16 @@ function start(cp) {
   });
   document.getElementById("prevP").onclick = function () { stepPreset(-1); };
   document.getElementById("nextP").onclick = function () { stepPreset(1); };
-  document.getElementById("engineBtn").onclick = function () { send("engine", "Resynth"); VAL.engine = 2; after("engine"); };
+  [].forEach.call(document.querySelectorAll("#tabs button"), function (b) {
+    b.onclick = function () { var n = b.getAttribute("data-e"); send("engine", n); VAL.engine = META.engine.options.indexOf(n); after("engine"); };
+  });
   var drop = document.getElementById("drop"), file = document.getElementById("file");
   drop.onclick = function (e) { if (e.target !== file) file.click(); };
   file.onchange = function () { readFiles(file.files); file.value = ""; };
   ["dragenter", "dragover"].forEach(function (t) { document.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
   document.addEventListener("dragleave", function () { drop.classList.remove("over"); });
   document.addEventListener("drop", function (e) { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files.length) readFiles(e.dataTransfer.files); });
-  window.addEventListener("resize", function () { drawWave(); drawFilter(); });
+  window.addEventListener("resize", function () { drawWave(); drawFilter(); drawVowel(); });
 }
 function fail(msg) { el("div", "err", document.body, msg); document.getElementById("hint").textContent = "not connected"; }
 if (!R || !R.getChainParams) fail("The Schwung remote API is not available on this page (open it from move.local:7700/remote-ui).");
