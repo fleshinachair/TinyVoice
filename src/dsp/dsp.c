@@ -29,6 +29,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define VT_LIVE_N 4096      /* power of two: the live view's sample rings */
+#define VT_LIVE_PTS 160     /* points per trace in the live feed */
 #define VT_DRY_DELAY 2048   /* power of two; cher latency tops out near 760 samples */
 #define VT_CHORUS_LEN 2048  /* power of two; chorus taps reach ~12 ms */
 #define CHORUS_BASE_MS 9.0f
@@ -204,6 +206,10 @@ struct vt {
 
     /* Viz state, written by the DSP and read by get_param("viz"). */
     float viz_f0, viz_target, viz_cents;
+    /* The Remote UI's live view (get_param "live"): the last VT_LIVE_N samples of the voice (after the mic high-pass, before
+     * Auto) and of the output, mono, written per sample (two stores). Read on the same thread, so no locking. */
+    float live_in[VT_LIVE_N], live_out[VT_LIVE_N];
+    unsigned live_w;
     float viz_bands[VT_NUM_BANDS];
 
     cher_t cher;                /* Cher engine, and the tracker/delay line Imogen runs on */
@@ -522,6 +528,48 @@ static int shown_note(const vt_t *vt);
 /* Which engine family a mode runs on. */
 static int has_bands(int mode) { return mode == VT_MODE_ROBOT || mode == VT_MODE_NIGHTCALL; }   /* the vocoders */
 static int is_vox(int mode) { return mode == VT_MODE_DALEK || mode == VT_MODE_HARMONY || mode == VT_MODE_WALKIE; }
+
+/*
+ * The Remote UI's live view (get_param "live", polled ~8 times a second, built only when asked):
+ *   "L,<f0 Hz>,<target Hz>,<input dBFS>,<output dBFS>,<N>,<N input points>,<N output points>"
+ * f0 and target are 0 when nothing is tracked (Voice FX, an unvoiced moment); the levels are RMS over the last 2048
+ * samples; each trace is a window of two pitch periods (20 ms when unvoiced), started on a rising zero crossing so a
+ * steady note stands still, scaled to its own peak as integers -100..100.
+ */
+static void live_trace(const float *ring, unsigned w, int win, char *buf, int buf_len, int *n)
+{
+    const unsigned M = VT_LIVE_N - 1;
+    int start = win;                                            /* samples back from the newest: the window's first */
+    for (int k = win + 1; k < win + 2 * win && k < VT_LIVE_N - 2; k++) {     /* the latest rising crossing, up to two windows back */
+        if (ring[(w - (unsigned)k - 1) & M] < 0.0f && ring[(w - (unsigned)k) & M] >= 0.0f) { start = k; break; }
+    }
+    float pk = 1e-9f;
+    for (int i = 0; i < win; i++) { const float v = fabsf(ring[(w - (unsigned)start + (unsigned)i) & M]); if (v > pk) pk = v; }
+    for (int i = 0; i < VT_LIVE_PTS && *n >= 0 && *n < buf_len; i++) {
+        const float v = ring[(w - (unsigned)start + (unsigned)((i * win) / VT_LIVE_PTS)) & M];
+        *n += snprintf(buf + *n, (size_t)(buf_len - *n), ",%d", (int)lroundf(100.0f * v / pk));
+    }
+}
+
+static int format_live(vt_t *vt, char *buf, int buf_len)
+{
+    const unsigned M = VT_LIVE_N - 1, w = vt->live_w;
+    const float sr = (float)vt->sample_rate, f0 = vt->viz_f0;
+    int win = f0 >= 60.0f && f0 <= 1200.0f ? (int)(2.0f * sr / f0) : (int)(0.020f * sr);
+    if (win > 1536) win = 1536;
+    if (win < 64) win = 64;
+    double ei = 0.0, eo = 0.0;
+    for (unsigned k = 1; k <= 2048; k++) {
+        const float a = vt->live_in[(w - k) & M], b = vt->live_out[(w - k) & M];
+        ei += (double)a * a;
+        eo += (double)b * b;
+    }
+    int n = snprintf(buf, (size_t)buf_len, "L,%.1f,%.1f,%.1f,%.1f,%d", (double)f0, (double)vt->viz_target,
+                     10.0 * log10(ei / 2048.0 + 1e-12), 10.0 * log10(eo / 2048.0 + 1e-12), VT_LIVE_PTS);
+    live_trace(vt->live_in, w, win, buf, buf_len, &n);
+    live_trace(vt->live_out, w, win, buf, buf_len, &n);
+    return n;
+}
 
 static int format_scope(vt_t *vt, char *buf, int buf_len)
 {
@@ -907,6 +955,8 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
     } else if (strcmp(key, "vf_preset_name") == 0) {
         const vt_preset *ps = vt_preset_get(VT_ENGINE_VOICEFX, (int)vt->p[VT_P_VF_PRESET]);
         n = snprintf(buf, (size_t)buf_len, "%s", ps ? ps->name : "");
+    } else if (strcmp(key, "live") == 0) {
+        n = format_live(vt, buf, buf_len);
     } else if (strcmp(key, "rs_preset_count") == 0) {              /* the Resynth level's preset browser */
         const rsbank_t *bk = rs_bank_of(vt);
         n = snprintf(buf, (size_t)buf_len, "%d", bk ? bk->count[(int)vt->p[VT_P_RS_BANK]] : 0);
@@ -1663,6 +1713,9 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         if (vt->sg_ms < vt->dg_in_min) vt->dg_in_min = vt->sg_ms;     /* ... falls at once */
         lr[2 * i]     = soft_limit(out_l * gain);
         lr[2 * i + 1] = soft_limit(out_r * gain);
+        vt->live_in[vt->live_w & (VT_LIVE_N - 1)] = mhp;
+        vt->live_out[vt->live_w & (VT_LIVE_N - 1)] = 0.5f * (lr[2 * i] + lr[2 * i + 1]);
+        vt->live_w++;
     }
     {   /* diag: holds decay over ~1 s, gate-open share averaged over ~1 s */
         const float k = 1.0f - expf(-(float)frames / sr);
@@ -1680,7 +1733,8 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         for (int b = 0; b < VT_NUM_BANDS; b++) vt->viz_bands[b] = daft_band_level(mode == VT_MODE_NIGHTCALL ? &vt->nc : &vt->daft, b);
     } else if (rs) {
         vt->viz_f0 = hm_f0(&vt->hm);
-        vt->viz_target = vt->viz_cents = 0.0f;
+        vt->viz_target = hm_target(&vt->hm);
+        vt->viz_cents = vt->viz_f0 > 0.0f && vt->viz_target > 0.0f ? 1200.0f * log2f(vt->viz_f0 / vt->viz_target) : 0.0f;
     } else if (is_vox(mode) && mode != VT_MODE_HARMONY) {
         vt->viz_f0 = vt->viz_target = vt->viz_cents = 0.0f;           /* nothing is tracked */
     } else {

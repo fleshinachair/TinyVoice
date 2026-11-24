@@ -536,3 +536,49 @@ static void test_demo_recording(void)
     dsp_cleanup(with);                                                                     /* frees the clip */
     dsp_cleanup(without);
 }
+
+/* The Remote UI's live feed (get_param "live") */
+static void test_live_feed(void)
+{
+    static char b[8192];
+    static float sink[VT_SAMPLE_RATE];
+    vt_t *vt = dsp_init(VT_SAMPLE_RATE);
+    dsp_set_param(vt, "engine", "Resynth");
+    dsp_set_param(vt, "hm_scale", "Chromatic");
+    /* nothing played yet: a valid frame of silence */
+    CHECK(dsp_get_param(vt, "live", b, sizeof b) > 0 && strncmp(b, "L,0.0,0.0,", 10) == 0);
+    rs_run(vt, 215.0, 0.2f, VT_SAMPLE_RATE, sink);
+    const int n = dsp_get_param(vt, "live", b, sizeof b);
+    CHECK(n > 0 && n < (int)sizeof b - 1);
+    double f0 = 0, tgt = 0, in_db = 0, out_db = 0;
+    int npts = 0, vals = 0, pkin = 0, pkout = 0, bad = 0;
+    {
+        char *save = b, *tok;
+        int field = 0;
+        for (tok = strtok(b, ","); tok; tok = strtok(NULL, ","), field++) {
+            if (field == 1) f0 = atof(tok);
+            else if (field == 2) tgt = atof(tok);
+            else if (field == 3) in_db = atof(tok);
+            else if (field == 4) out_db = atof(tok);
+            else if (field == 5) npts = atoi(tok);
+            else if (field > 5) {
+                const int v = atoi(tok);
+                if (v < -100 || v > 100) bad++;
+                if (abs(v) == 100) { if (vals < npts) pkin = 1; else pkout = 1; }
+                vals++;
+            }
+        }
+        (void)save;
+    }
+    CHECK(npts == 160 && vals == 2 * npts && !bad);
+    CHECK(pkin && pkout);                                           /* each trace is scaled to its own peak */
+    CHECK(fabs(f0 - 215.0) < 4.0);                                  /* the voice's pitch */
+    CHECK(fabs(1200.0 * log2(tgt / 207.65)) < 5.0 || fabs(1200.0 * log2(tgt / 220.0)) < 5.0);   /* chromatic: the nearest note (G#3 207.65 / A3 220) */
+    CHECK(in_db > -30.0 && in_db < -5.0 && out_db > -60.0 && out_db < 0.0);
+    /* a buffer far too small is not overrun */
+    char tiny[24];
+    memset(tiny, 'x', sizeof tiny);
+    (void)dsp_get_param(vt, "live", tiny, 16);
+    CHECK(tiny[16] == 'x' && tiny[23] == 'x');
+    dsp_cleanup(vt);
+}

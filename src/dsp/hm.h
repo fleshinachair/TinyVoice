@@ -76,6 +76,7 @@ typedef struct {
     float lp_dev;                     /* low-passed deviation (the part that gets corrected) */
     int ref_note;                     /* note the deviation is measured from */
     int midi_held[8], n_held;         /* MIDI mode: held notes, newest last */
+    float tgt_hz;                     /* the main line's target note, Hz (0 none) */
     int midi_idle_tune;               /* MIDI mode with no note held: 1 = correct to the scale (Scale mode), 0 = silence (Humanoid) */
     int fold_note[2], fold_off[2];    /* MIDI mode: a pad is moved by whole octaves to within one of the voice; what it was moved by */
     float warble_ph;
@@ -133,5 +134,6 @@ void  hm_begin(hm_t *h);
 void  hm_tick(hm_t *h, float in, float *outl, float *outr);
 int   hm_latency(const hm_t *h);      /* samples */
 float hm_f0(const hm_t *h);           /* last tracked input pitch, Hz (0 unvoiced) */
+float hm_target(const hm_t *h);       /* the note the voice is being tuned to, Hz (0 none): for the live display */
 
 #endif

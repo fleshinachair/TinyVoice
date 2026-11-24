@@ -419,6 +419,15 @@ int main(int argc, char **argv)
             CHECK(strcmp(name, "Resynth") == 0);
             run_audio(api, inst, 220.0, 200, &nonzero, &bad);
             CHECK(!bad);
+            {   /* the Remote UI's live feed, through the real ABI */
+                static char live[8192];
+                struct timespec l0, l1;
+                clock_gettime(CLOCK_MONOTONIC, &l0);
+                const int ln = api->get_param(inst, "live", live, sizeof live);
+                clock_gettime(CLOCK_MONOTONIC, &l1);
+                printf("  live feed: %d bytes in %.3f ms, starts %.14s\n", ln, (l1.tv_sec - l0.tv_sec) * 1e3 + (l1.tv_nsec - l0.tv_nsec) / 1e6, live);
+                CHECK(ln > 1000 && ln < (int)sizeof live && live[0] == 'L');
+            }
             printf("  Resynth preset load: worst %.3f ms (a set_param on the audio thread)\n", worst);
             CHECK(worst < 1.0);
         }

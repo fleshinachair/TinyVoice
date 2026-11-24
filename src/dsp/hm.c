@@ -179,6 +179,7 @@ void hm_all_notes_off(hm_t *h) { h->n_held = 0; }
 
 int hm_latency(const hm_t *h) { return lag_for((int)lrintf(h->p[HM_LATENCY])) + HM_HOP; }
 float hm_f0(const hm_t *h) { return h->voiced ? h->f0 : 0.0f; }
+float hm_target(const hm_t *h) { return h->tgt_hz; }
 
 /* ----------------------------------------------------------- wavetable */
 
@@ -592,6 +593,7 @@ static void hop(hm_t *h)
     float out_midi[2];
     int base[2];
     int nt = tune(h, out_midi, base);
+    h->tgt_hz = nt > 0 ? midi_hz((float)base[0]) : 0.0f;
 
     /* Warble: vibrato on the output pitch. Mode 0 = LFO (rate x 10.1 Hz, measured), mode 1 = the
      * fast "FM" one (8 + 32 x rate Hz as far as a pitch tracker can follow it). A negative rate is

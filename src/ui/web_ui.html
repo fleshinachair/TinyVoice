@@ -43,6 +43,19 @@ button:focus-visible,select:focus-visible,.dial:focus-visible{outline:2px solid 
 .seg.wrap{display:flex;flex-wrap:wrap;gap:4px;max-width:100%;border:0;background:transparent;overflow:visible}
 .seg.wrap button{border:1px solid #333944!important;border-radius:6px;background:#111317}
 .hide{display:none!important}
+.live{margin-bottom:12px;--a:#7cc7ff}
+.livehead{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.livehead h2{margin:0}
+.livehead .sp{flex:1}
+.livehead button{padding:3px 10px;font-size:11px}
+.livegrid{display:grid;grid-template-columns:2fr 2fr 1fr;gap:12px}
+@media (max-width:900px){.livegrid{grid-template-columns:1fr}}
+.live h3{margin:0 0 4px;font-size:9.5px;letter-spacing:.2em;color:var(--faint);font-weight:700}
+.live canvas{height:120px;margin:0 0 4px}
+.lvleg{font-size:10.5px;color:var(--dim);min-height:15px;font-variant-numeric:tabular-nums}
+.lvleg i{display:inline-block;width:14px;height:3px;border-radius:2px;margin:0 4px 2px 8px;vertical-align:middle}
+.lvleg i.in{background:#6f8196}.lvleg i.out{background:#7cc7ff}
+.lvleg i.vo{background:#ff86bf}.lvleg i.tg{background:#7cc7ff}
 .tabs button{padding:6px 14px;font-size:12px;font-weight:600}
 #drop{border:1px dashed #3a404c;border-radius:7px;padding:6px 11px;color:var(--dim);cursor:pointer}
 #drop.over{border-color:var(--a);color:var(--a)}
@@ -124,6 +137,14 @@ canvas{width:100%;height:96px;background:linear-gradient(#0b0d11,#07080a);border
   </div>
   <label id="drop" title="Drop a .baby preset here, or click to choose one">Import .baby <input type="file" id="file" accept=".baby" multiple hidden></label>
 </header>
+<section class="panel live" id="live">
+  <div class="livehead"><h2>LIVE</h2><span class="hint" id="lvHint"></span><div class="sp"></div><button id="liveBtn" title="Stop asking the Move for the live view">Pause</button></div>
+  <div class="livegrid">
+    <div><h3>WAVEFORM</h3><canvas id="lvs"></canvas><div class="lvleg"><i class="in"></i>voice in<i class="out"></i>output</div></div>
+    <div><h3>PITCH  ·  LAST 8 SECONDS</h3><canvas id="lvp"></canvas><div class="lvleg" id="lvpl"><i class="vo"></i>your pitch<i class="tg"></i>the note it is moved to</div></div>
+    <div><h3>LEVEL</h3><canvas id="lvm"></canvas><div class="lvleg" id="lvml"></div></div>
+  </div>
+</section>
 <div class="grid hide" id="gridV"></div>
 <div class="grid hide" id="gridF"></div>
 <div class="grid hide" id="gridR"></div>
@@ -591,6 +612,105 @@ function buildVoiceFX() {
   drawVowel();
 }
 
+/* ---------- the live view: the Move's get_param "live" (a feed built only when asked), polled while this page is visible */
+var LIVE = { run: true, hist: [], inT: null, outT: null, f0: 0, tgt: 0, inDb: -90, outDb: -90, inPk: -90, outPk: -90, pkAt: 0, center: 57 };
+function f0Midi(f) { return 69 + 12 * Math.log2(f / 440); }
+function parseLive(str) {
+  var a = str.split(",");
+  if (a[0] !== "L" || a.length < 7) return false;
+  var n = parseInt(a[5], 10) || 0;
+  if (n < 8 || a.length < 6 + 2 * n) return false;
+  LIVE.f0 = +a[1]; LIVE.tgt = +a[2]; LIVE.inDb = +a[3]; LIVE.outDb = +a[4];
+  LIVE.inT = a.slice(6, 6 + n).map(Number); LIVE.outT = a.slice(6 + n, 6 + 2 * n).map(Number);
+  var now = performance.now();
+  LIVE.hist.push({ t: now, f0: LIVE.f0, tgt: LIVE.tgt });
+  while (LIVE.hist.length && now - LIVE.hist[0].t > 8000) LIVE.hist.shift();
+  if (LIVE.inDb > LIVE.inPk || now - LIVE.pkAt > 1500) { LIVE.inPk = LIVE.inDb; LIVE.outPk = LIVE.outDb; LIVE.pkAt = now; }
+  else LIVE.outPk = Math.max(LIVE.outPk, LIVE.outDb);
+  return true;
+}
+function polyline(g, arr, W, H, col, w, glow) {
+  g.beginPath();
+  arr.forEach(function (v, i) { var X = i / (arr.length - 1) * W, Y = H / 2 - v / 100 * H * 0.42; i ? g.lineTo(X, Y) : g.moveTo(X, Y); });
+  g.strokeStyle = col; g.lineWidth = w; g.shadowColor = col; g.shadowBlur = glow; g.stroke(); g.shadowBlur = 0;
+}
+function drawLiveScope() {
+  var c = document.getElementById("lvs"); if (!c) return;
+  var s = scope(c), g = s.g;
+  g.strokeStyle = "#23283280"; g.beginPath(); g.moveTo(0, s.H / 2); g.lineTo(s.W, s.H / 2); g.stroke();
+  if (!LIVE.inT) return;
+  polyline(g, LIVE.inT, s.W, s.H, "#6f8196", 2, 0);
+  polyline(g, LIVE.outT, s.W, s.H, "#7cc7ff", 3, 8);
+}
+function drawLivePitch() {
+  var c = document.getElementById("lvp"); if (!c) return;
+  var s = scope(c), g = s.g, W = s.W, H = s.H, now = performance.now(), span = 8000;
+  var voiced = LIVE.hist.filter(function (h) { return h.f0 > 0; });
+  if (voiced.length) {
+    var ms = voiced.map(function (h) { return f0Midi(h.f0); }).sort(function (x, y) { return x - y; });
+    LIVE.center += (ms[Math.floor(ms.length / 2)] - LIVE.center) * 0.08;
+  }
+  var lo = LIVE.center - 9, hi = LIVE.center + 9;                  /* 18 semitones in view, following the singer */
+  var Y = function (m) { return H - (m - lo) / (hi - lo) * H; };
+  g.font = "18px system-ui";
+  for (var m = Math.ceil(lo); m <= hi; m++) {
+    var pc = ((m % 12) + 12) % 12, y = Y(m);
+    g.strokeStyle = pc === 0 ? "#3a4252" : "#1e232c"; g.lineWidth = pc === 0 ? 2 : 1;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+    if (pc === 0 || pc === 4 || pc === 7) { g.fillStyle = "#4b5260"; g.fillText(noteName(m), 6, y - 4); }
+  }
+  var X = function (t) { return W - (now - t) / span * W; };
+  g.lineWidth = 4; g.lineJoin = "round";
+  var line = function (key, col, glow, midi) {                      /* a gap where nothing is tracked */
+    g.strokeStyle = col; g.shadowColor = col; g.shadowBlur = glow; g.beginPath();
+    var pen = false, prev = 0;
+    LIVE.hist.forEach(function (h) {
+      var v = h[key];
+      if (!(v > 0) || h.t - prev > 600 && pen) { pen = false; }
+      if (v > 0) { var x = X(h.t), y = Y(midi(v)); if (!pen) { g.moveTo(x, y); pen = true; } else g.lineTo(x, y); }
+      prev = h.t;
+    });
+    g.stroke(); g.shadowBlur = 0;
+  };
+  line("tgt", "#7cc7ff", 6, f0Midi);
+  line("f0", "#ff86bf", 8, f0Midi);
+}
+function drawLiveMeters() {
+  var c = document.getElementById("lvm"); if (!c) return;
+  var s = scope(c), g = s.g, W = s.W, H = s.H, bar = H * 0.22;
+  var X = function (db) { return clamp((db + 60) / 60, 0, 1) * (W - 20) + 10; };
+  g.font = "18px system-ui";
+  [["IN", LIVE.inDb, LIVE.inPk, H * 0.14], ["OUT", LIVE.outDb, LIVE.outPk, H * 0.56]].forEach(function (r) {
+    var db = r[1], y = r[3];
+    g.fillStyle = "#14171d"; g.fillRect(10, y, W - 20, bar);
+    var gr = g.createLinearGradient(10, 0, W - 10, 0);
+    gr.addColorStop(0, "#2d8a5a"); gr.addColorStop(0.72, "#8ad06a"); gr.addColorStop(0.88, "#e6c15a"); gr.addColorStop(1, "#e0645a");
+    g.fillStyle = gr; g.fillRect(10, y, X(db) - 10, bar);
+    g.fillStyle = "#e4e8ef"; g.fillRect(X(r[2]) - 2, y - 3, 4, bar + 6);
+    g.fillStyle = "#4b5260"; g.fillText(r[0], 12, y + bar + 22);
+  });
+  g.fillStyle = "#4b5260";
+  [-48, -36, -24, -12, 0].forEach(function (db) { g.fillRect(X(db) - 1, H * 0.92, 2, 8); });
+  document.getElementById("lvml").textContent = "in " + LIVE.inDb.toFixed(0) + " dB · out " + LIVE.outDb.toFixed(0) + " dB";
+}
+function drawLive() {
+  drawLiveScope(); drawLivePitch(); drawLiveMeters();
+  var t = document.getElementById("lvpl");
+  if (LIVE.f0 > 0) {
+    var m = f0Midi(LIVE.f0), txt = noteName(m) + " " + Math.round(LIVE.f0) + " Hz";
+    if (LIVE.tgt > 0) { var cents = Math.round(1200 * Math.log2(LIVE.f0 / LIVE.tgt)); txt += " \u2192 " + noteName(f0Midi(LIVE.tgt)) + " (" + (cents > 0 ? "+" : "") + cents + " ct)"; }
+    t.innerHTML = '<i class="vo"></i>your pitch<i class="tg"></i>the note it is moved to · ' + txt;
+  }
+}
+function pollLive() {
+  if (!R || document.hidden || !LIVE.run) { setTimeout(pollLive, 500); return; }
+  var t0 = performance.now();
+  R.getParam(KP + "live").then(function (v) {
+    if (v !== undefined && v !== null && parseLive(String(v))) drawLive();
+    setTimeout(pollLive, Math.max(110, (performance.now() - t0) * 1.5));      /* never faster than the Move answers */
+  }).catch(function () { setTimeout(pollLive, 1000); });
+}
+
 /* ---------- the engine tabs: which panels and header items show */
 function showEngine() {
   var e = VAL.engine | 0;
@@ -720,6 +840,12 @@ function start(cp) {
   });
   refreshAll();
   readPreset();
+  drawLive();
+  pollLive();
+  document.getElementById("liveBtn").onclick = function () {
+    LIVE.run = !LIVE.run;
+    this.textContent = LIVE.run ? "Pause" : "Resume";
+  };
   /* a preset chosen on the Move: follow it */
   setInterval(function () { if (!document.hidden && !HELD) readPreset().then(function (ch) { if (ch) refreshAll(); }); }, 1500);
   [].forEach.call(document.querySelectorAll("#bankSeg button"), function (b) {
@@ -740,7 +866,7 @@ function start(cp) {
   ["dragenter", "dragover"].forEach(function (t) { document.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
   document.addEventListener("dragleave", function () { drop.classList.remove("over"); });
   document.addEventListener("drop", function (e) { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files.length) readFiles(e.dataTransfer.files); });
-  window.addEventListener("resize", function () { drawWave(); drawFilter(); drawVowel(); });
+  window.addEventListener("resize", function () { drawWave(); drawFilter(); drawVowel(); drawLive(); });
 }
 function fail(msg) { el("div", "err", document.body, msg); document.getElementById("hint").textContent = "not connected"; }
 if (!R || !R.getChainParams) fail("The Schwung remote API is not available on this page (open it from move.local:7700/remote-ui).");
