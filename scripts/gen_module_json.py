@@ -73,7 +73,7 @@ PARAMS = [
     flt("vf_release", "Release", 0, 1, 0.01, 0.3, "%"),     # tail
     flt("vf_mix", "Mix/Drv", 0, 1, 0.01, 0.75, "%"),        # wet/dry up to 70 %, then all wet with the drive climbing
     flt("vf_preset", "Preset", 0, 5, 1, 5),                 # the Voice FX bank (presets.c); the host's preset browser writes it
-    enum("rs_bank", "Bank", ["Default", "Imported"], 0),    # which bank the Presets page lists: the shipped presets, or yours (imported / saved)
+    enum("rs_bank", "Bank", ["Default", "Imported", "Tuner", "Voco", "Harmony", "Synth", "Dryish", "Instrument", "Artists", "Mine"], 0),    # which bank the Presets page lists: the shipped presets, all of yours, or yours by kind (rsbank.h RSBANK_NAMES, same order)
     flt("rs_preset", "Preset", 0, 1023, 1, 0),              # the Resynth bank (rsbank.c: the preset folder's Resynth presets); its browser writes it
 ] + []   # the Resynth block is appended below (it is read from src/dsp/hm_params.h)
 

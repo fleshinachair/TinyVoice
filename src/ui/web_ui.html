@@ -39,7 +39,7 @@ button:focus-visible,select:focus-visible,.dial:focus-visible{outline:2px solid 
 .preset .lcd small{color:#4f6b7a;font-weight:500;font-size:10px;text-shadow:none}
 .preset .lcd span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dim{opacity:.38;transition:opacity .2s}
-.bank{margin-right:2px}
+.bank{margin-right:2px;background:#14161b;color:#d8dde6;border:1px solid #333944;border-radius:6px;padding:6px 8px;font-family:inherit;font-size:12px;font-weight:600}
 .seg.wrap{display:flex;flex-wrap:wrap;gap:4px;max-width:100%;border:0;background:transparent;overflow:visible}
 .seg.wrap button{border:1px solid #333944!important;border-radius:6px;background:#111317}
 .hide{display:none!important}
@@ -114,9 +114,10 @@ canvas{width:100%;height:96px;background:linear-gradient(#0b0d11,#07080a);border
   <div class="seg tabs" id="tabs" title="The engine TinyVoice runs">
     <button data-e="Vocoder">Vocoder</button><button data-e="Synth Voice">Synth Voice</button><button data-e="Resynth">Resynth</button>
   </div>
-  <div class="seg bank" id="bankSeg" title="Default: presets shipped with TinyVoice. Imported: yours (imported Humanoid presets, and anything you saved on the Move)">
-    <button data-b="Default">Default</button><button data-b="Imported">Imported</button>
-  </div>
+  <select class="bank" id="bankSeg" aria-label="Preset bank" title="Default: presets shipped with TinyVoice. Imported: all of yours (imported Humanoid presets, and anything you saved on the Move), then the same split by kind; Mine: your own saves">
+    <option>Default</option><option>Imported</option><option>Tuner</option><option>Voco</option><option>Harmony</option>
+    <option>Synth</option><option>Dryish</option><option>Instrument</option><option>Artists</option><option>Mine</option>
+  </select>
   <div class="preset" title="The presets of the chosen bank on the Move">
     <button id="prevP" aria-label="Previous preset">&#9664;</button>
     <div class="lcd"><small id="pIdx">PRESET</small><span id="pName">…</span></div>
@@ -619,7 +620,7 @@ var P = { i: 0, n: 0, name: "", bank: "Default" };
 function PK() { return (VAL.engine | 0) === 1 ? { idx: "vf_preset", n: "vf_preset_count", name: "vf_preset_name", bank: null } : { idx: "rs_preset", n: "rs_preset_count", name: "rs_preset_name", bank: "rs_bank" }; }
 function get(key) { return R.getParam(KP + key).then(function (v) { return v === undefined || v === null ? "" : String(v); }); }
 function showPreset() {
-  [].forEach.call(document.querySelectorAll("#bankSeg button"), function (b) { b.classList.toggle("on", b.getAttribute("data-b") === P.bank); });
+  document.getElementById("bankSeg").value = P.bank;
   document.getElementById("pName").textContent = P.n > 0 ? P.name : (P.name || "no presets");
   document.getElementById("pIdx").textContent = P.n > 0 ? "PRESET " + (P.i + 1) + " / " + P.n : "PRESET";
 }
@@ -628,7 +629,7 @@ function readPreset() {
   return Promise.all([get(k.n), get(k.idx), get(k.name), k.bank ? get(k.bank) : Promise.resolve("")]).then(function (r) {
     var changed = r[2] !== P.name;
     P.n = parseInt(r[0], 10) || 0; P.i = parseInt(r[1], 10) || 0; P.name = r[2];
-    if (r[3] === "Default" || r[3] === "Imported") P.bank = r[3];
+    if ([].some.call(document.getElementById("bankSeg").options, function (o) { return o.value === r[3]; })) P.bank = r[3];
     showPreset();
     return changed;
   }).catch(function () { return false; });
@@ -733,13 +734,11 @@ function start(cp) {
   readPreset();
   /* a preset chosen on the Move: follow it */
   setInterval(function () { if (!document.hidden && !HELD) readPreset().then(function (ch) { if (ch) refreshAll(); }); }, 1500);
-  [].forEach.call(document.querySelectorAll("#bankSeg button"), function (b) {
-    b.onclick = function () {
-      P.bank = b.getAttribute("data-b"); P.i = 0; showPreset();
-      R.setParam(KP + "rs_bank", P.bank);
-      setTimeout(readPreset, 150);
-    };
-  });
+  document.getElementById("bankSeg").onchange = function () {
+    P.bank = this.value; P.i = 0; showPreset();
+    R.setParam(KP + "rs_bank", P.bank);
+    setTimeout(readPreset, 150);
+  };
   document.getElementById("prevP").onclick = function () { stepPreset(-1); };
   document.getElementById("nextP").onclick = function () { stepPreset(1); };
   [].forEach.call(document.querySelectorAll("#tabs button"), function (b) {

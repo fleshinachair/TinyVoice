@@ -98,11 +98,14 @@ void hmfx_tick(hmfx_t *f, float *pl, float *pr)
         const float s = sinf(f->ch_ph);
         float wet[2];
         for (int c = 0; c < 2; c++) {
-            float d = f->ch_base + (c ? -1.0f : 1.0f) * f->ch_dep * s;
-            float pos = (float)(f->ch_w - 1) - d;
-            unsigned i0 = (unsigned)floorf(pos);
-            float t = pos - floorf(pos);
-            float v = f->ch_buf[0][i0 & (HMFX_CHORUS - 1)] * (1 - t) + f->ch_buf[0][(i0 + 1) & (HMFX_CHORUS - 1)] * t;
+            /* the read point d samples behind the newest, split into whole samples (unsigned, wraps with the
+             * counter) and a fraction: a float position from the running counter went negative at the start
+             * (undefined) and lost its fraction after 2^24 samples (~6 min), stair-stepping the modulation */
+            const float d = clampf(f->ch_base + (c ? -1.0f : 1.0f) * f->ch_dep * s, 0.0f, (float)(HMFX_CHORUS - 2));
+            const unsigned di = (unsigned)d;
+            const float t = d - (float)di;
+            const unsigned i1 = f->ch_w - 1u - di;                  /* d = di: this sample; t toward the one before */
+            float v = f->ch_buf[0][i1 & (HMFX_CHORUS - 1)] * (1 - t) + f->ch_buf[0][(i1 - 1u) & (HMFX_CHORUS - 1)] * t;
             f->ch_hp_z[c] = flush(f->ch_a * f->ch_hp_z[c] + (1 - f->ch_a) * v);
             wet[c] = v - f->ch_hp_z[c];
         }

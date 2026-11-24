@@ -82,6 +82,19 @@ def convert(path: str) -> dict:
     return st
 
 
+FACTORY_KINDS = ("Tuner", "Voco", "Harmony", "Synth", "Dryish", "Instrument")
+
+
+def category(path: str, name: str) -> str:
+    """The Bank a preset is listed in on the Move (rsbank.c reads it): the Factory names' own category
+    ("1. Tuner - ..."), Artists for the anniversary pack ("Artist - Name"), Init for the INIT preset."""
+    m = re.match(r"\s*\d+\.\s*([A-Za-z]+)", name)
+    if m and m.group(1).capitalize() in FACTORY_KINDS:
+        return m.group(1).capitalize()
+    rel = os.path.relpath(path, SRC).replace("\\", "/")
+    return "Artists" if "/" in rel and not rel.lower().startswith("factory/") else "Init"
+
+
 def main():
     files = sorted(f for f in glob.glob(os.path.join(SRC, "**", "*.baby"), recursive=True)
                    if not f.endswith("wavetables.baby"))
@@ -103,7 +116,7 @@ def main():
             name = "%s %d" % (base, k)
             k += 1
         used.add(name.lower())
-        doc = {"name": name, "module": "tinyvoice", "version": 1, "state": convert(f)}
+        doc = {"name": name, "module": "tinyvoice", "version": 1, "category": category(f, name), "state": convert(f)}
         json.dump(doc, open(os.path.join(OUT, name + ".json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
         n += 1
     print(f"converted {n} presets into {OUT}")

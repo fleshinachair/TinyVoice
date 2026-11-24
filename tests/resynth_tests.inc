@@ -421,6 +421,39 @@ static void test_resynth_bank(void)
 
 /* Hold Scale: Key, Scale and Notes set by hand survive a preset (the Presets page, My Presets), so many
  * presets can be tried over one song; Off lets a preset bring its own */
+/* Imported split by kind (rsbank.h): the file's category, else the Factory name's prefix, else Mine */
+static void test_resynth_bank_kinds(void)
+{
+    char b[256];
+    CHECK(rsbank_kind("Tuner", "whatever") == RSBANK_TUNER && rsbank_kind("ARTISTS", "x") == RSBANK_ARTISTS);
+    CHECK(rsbank_kind("Init", "1. Tuner - x") == -1 && rsbank_kind("Mine", "a") == RSBANK_MINE);
+    CHECK(rsbank_kind(NULL, "1. Tuner - Flow Solo") == RSBANK_TUNER && rsbank_kind(NULL, "4. Synth - Tuner - Make") == RSBANK_SYNTH);
+    CHECK(rsbank_kind(NULL, " 12.Instrument-Bass") == RSBANK_INSTRUMENT && rsbank_kind("", "6. Dryish - Voltage") == RSBANK_DRYISH);
+    CHECK(rsbank_kind(NULL, "Kayla Jo - Tuner") == RSBANK_MINE && rsbank_kind(NULL, "1. Robot - x") == RSBANK_MINE && rsbank_kind(NULL, NULL) == RSBANK_MINE);
+
+    rsbank_t *bk = rsbank_load(NULL, "tests/fixtures/rs_kinds");
+    CHECK(bk && bk->count[RSBANK_IMPORTED] == 6);
+    if (!bk) return;
+    CHECK(bk->count[RSBANK_TUNER] == 1 && bk->count[RSBANK_VOCO] == 1 && bk->count[RSBANK_HARMONY] == 1 && bk->count[RSBANK_ARTISTS] == 1);
+    CHECK(bk->count[RSBANK_MINE] == 1 && bk->count[RSBANK_SYNTH] == 0 && bk->count[RSBANK_DRYISH] == 0 && bk->count[RSBANK_INSTRUMENT] == 0);
+    CHECK(bk->count[RSBANK_VOCO] == 1 && strcmp(bk->e[RSBANK_VOCO][0].name, "2. Voco - Talk") == 0);    /* by its name */
+    CHECK(bk->count[RSBANK_MINE] == 1 && strcmp(bk->e[RSBANK_MINE][0].name, "my own") == 0);
+
+    vt_t *vt = dsp_init(VT_SAMPLE_RATE);
+    CHECK(dsp_set_rs_bank(vt, bk) == 0);
+    CHECK(dsp_set_param(vt, "rs_bank", "Artists") == 0 && dsp_get_param(vt, "rs_bank", b, sizeof b) > 0 && strcmp(b, "Artists") == 0);
+    CHECK(dsp_get_param(vt, "rs_preset_count", b, sizeof b) > 0 && strcmp(b, "1") == 0);
+    CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Zed - Pad") == 0);
+    CHECK(dsp_set_param(vt, "rs_preset", "0") == 0 && fabsf(rs_get(vt, "hm_robotify") - 0.3f) < 1e-6f);
+    CHECK(dsp_set_param(vt, "rs_bank", "Synth") == 0);                       /* an empty kind */
+    CHECK(dsp_get_param(vt, "rs_preset_count", b, sizeof b) > 0 && strcmp(b, "0") == 0);
+    CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "(no presets)") == 0);
+    CHECK(dsp_set_param(vt, "rs_preset", "0") == 0 && fabsf(rs_get(vt, "hm_robotify") - 0.3f) < 1e-6f);   /* nothing loads */
+    CHECK(dsp_set_param(vt, "rs_bank", "Imported") == 0);
+    CHECK(dsp_get_param(vt, "rs_preset_count", b, sizeof b) > 0 && strcmp(b, "6") == 0);
+    dsp_cleanup(vt);                                                         /* frees the bank: the split banks share Imported's states */
+}
+
 static void test_resynth_hold_scale(void)
 {
     char b[128];

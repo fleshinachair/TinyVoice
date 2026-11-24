@@ -4557,6 +4557,7 @@ int main(void)
     RUN(test_resynth_numeric_safety);
     RUN(test_resynth_cpu);
     RUN(test_resynth_bank);
+    RUN(test_resynth_bank_kinds);
     RUN(test_resynth_hold_scale);
     RUN(test_resynth_demo);
     RUN(test_demo_recording);

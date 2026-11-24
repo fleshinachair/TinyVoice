@@ -401,6 +401,20 @@ int main(int argc, char **argv)
         printf("  Resynth bank: %d presets, ready after %.0f ms (first: %s)\n", count,
                (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6, name);
         CHECK(strcmp(name, "(loading)") != 0);
+        {   /* Imported split by kind (rsbank.h): together they hold every imported preset but the uncategorised */
+            static const char *const kinds[] = { "Tuner", "Voco", "Harmony", "Synth", "Dryish", "Instrument", "Artists", "Mine" };
+            int sum = 0;
+            printf("  by kind:");
+            for (int k = 0; k < 8; k++) {
+                api->set_param(inst, "rs_bank", kinds[k]);
+                api->get_param(inst, "rs_preset_count", cnt, sizeof cnt);
+                printf(" %s %d", kinds[k], atoi(cnt));
+                sum += atoi(cnt);
+            }
+            printf(" (%d of %d)\n", sum, count);
+            CHECK(sum <= count);
+            api->set_param(inst, "rs_bank", "Imported");
+        }
         double worst = 0.0;
         for (int k = 0; k < count && k < 400; k++) {           /* every preset loads, and how long the browser's write takes */
             char idx[16];

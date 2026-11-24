@@ -167,6 +167,45 @@ int rsbank_parse(const char *text, char *name, int name_len, char **state)
     return 0;
 }
 
+/* ------------------------------------------------------------ kinds */
+
+static const char *const k_bank_names[RSBANK_BANKS] = { RSBANK_NAMES };
+
+static int same_word(const char *a, size_t an, const char *b)   /* a[0..an) == b, ignoring case */
+{
+    if (strlen(b) != an) return 0;
+    for (size_t i = 0; i < an; i++) {
+        const char x = a[i] >= 'A' && a[i] <= 'Z' ? (char)(a[i] + 32) : a[i];
+        const char y = b[i] >= 'A' && b[i] <= 'Z' ? (char)(b[i] + 32) : b[i];
+        if (x != y) return 0;
+    }
+    return 1;
+}
+
+int rsbank_kind(const char *category, const char *name)
+{
+    if (category && category[0]) {
+        for (int k = RSBANK_TUNER; k <= RSBANK_MINE; k++)
+            if (same_word(category, strlen(category), k_bank_names[k])) return k;
+        return -1;                                                 /* a kind the list doesn't have: Imported only */
+    }
+    /* Humanoid's Factory names: "<digits>. <Category> - ..." */
+    const char *p = name ? name : "";
+    while (*p == ' ') p++;
+    if (*p >= '0' && *p <= '9') {
+        while (*p >= '0' && *p <= '9') p++;
+        if (*p == '.') {
+            p++;
+            while (*p == ' ') p++;
+            const char *w = p;
+            while (*p && *p != ' ' && *p != '-') p++;
+            for (int k = RSBANK_TUNER; k <= RSBANK_INSTRUMENT; k++)
+                if (same_word(w, (size_t)(p - w), k_bank_names[k])) return k;
+        }
+    }
+    return RSBANK_MINE;
+}
+
 /* ------------------------------------------------------------ the folder */
 
 static int name_cmp(const void *a, const void *b)
@@ -211,8 +250,10 @@ static void load_dir(rsbank_t *b, int bank, const char *dir)
         if (snprintf(path, sizeof path, "%s/%s", dir, fn) >= (int)sizeof path) continue;
         char *text = read_file(path);
         if (!text) continue;
-        char name[RSBANK_NAME], *state;
+        char name[RSBANK_NAME], cat[32], *state;
         const int ok = rsbank_parse(text, name, sizeof name, &state) == 0;
+        const char *cv = ok ? member(text, "category") : NULL;
+        const int has_cat = cv && *cv == '"' && unescape(cv, cat, sizeof cat) >= 0;
         free(text);
         if (!ok) continue;
         if (!name[0]) {                                            /* no name: the file's, as the host does */
@@ -229,6 +270,7 @@ static void load_dir(rsbank_t *b, int bank, const char *dir)
         }
         memcpy(b->e[bank][b->count[bank]].name, name, sizeof name);
         b->e[bank][b->count[bank]].state = state;
+        b->e[bank][b->count[bank]].kind = bank == RSBANK_IMPORTED ? rsbank_kind(has_cat ? cat : NULL, name) : -1;
         b->count[bank]++;
     }
     closedir(d);
@@ -239,8 +281,18 @@ rsbank_t *rsbank_load(const char *default_dir, const char *imported_dir)
 {
     rsbank_t *b = (rsbank_t *)calloc(1, sizeof *b);
     if (!b) return NULL;
-    load_dir(b, 0, default_dir);
-    load_dir(b, 1, imported_dir);
+    load_dir(b, RSBANK_DEFAULT, default_dir);
+    load_dir(b, RSBANK_IMPORTED, imported_dir);
+    /* the split banks: Imported's entries by kind, in Imported's order, sharing its states */
+    for (int k = RSBANK_TUNER; k < RSBANK_BANKS; k++) {
+        int n = 0;
+        for (int i = 0; i < b->count[RSBANK_IMPORTED]; i++) n += b->e[RSBANK_IMPORTED][i].kind == k;
+        if (!n) continue;
+        b->e[k] = (rsbank_entry *)malloc((size_t)n * sizeof *b->e[k]);
+        if (!b->e[k]) continue;                                    /* out of memory: that bank stays empty */
+        for (int i = 0; i < b->count[RSBANK_IMPORTED]; i++)
+            if (b->e[RSBANK_IMPORTED][i].kind == k) b->e[k][b->count[k]++] = b->e[RSBANK_IMPORTED][i];
+    }
     return b;
 }
 
@@ -248,7 +300,8 @@ void rsbank_free(rsbank_t *b)
 {
     if (!b) return;
     for (int k = 0; k < RSBANK_BANKS; k++) {
-        for (int i = 0; i < b->count[k]; i++) free(b->e[k][i].state);
+        if (k <= RSBANK_IMPORTED)                                  /* the split banks only borrow Imported's states */
+            for (int i = 0; i < b->count[k]; i++) free(b->e[k][i].state);
         free(b->e[k]);
     }
     free(b);
