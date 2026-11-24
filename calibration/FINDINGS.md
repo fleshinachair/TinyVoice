@@ -13,8 +13,16 @@ with presets loaded as state. INIT = `00 INIT.baby`. Probe scripts: `probe_*.py`
 - **Trial silence** is counted in rendered samples: 60-65 s, 120-125 s... of each instance. Fresh
   instance per render, <= 20 s, so it never appears.
 - **A MIDI note in the first ~0.05 s is dropped**; the host starts notes at >= 0.1 s.
-- **Range matters**: INIT's lower bound is C3 (130.8 Hz); a 110 Hz voice tracks an octave up. Probes
-  below C3 set `min_f0 = 40`.
+- **Range matters, but not as a floor** (re-measured 2026-11-24, Opus pass): with Range Lo at C3 (or C4)
+  a steady voice down to D2 is still tracked, in its own octave, at full level, but played ~+47 c sharp
+  (E2 -> E2+47, A2 -> A2+49; the same at Range Lo C4 for C3..A3); below ~D2 it breaks. Range Hi has no
+  visible effect (E6 tracked exactly with Range Hi A4). Probes below C3 set `min_f0 = 40`.
+- **Random silent renders** (not the trial timer): a fresh instance sometimes renders the synth path as
+  silence for the whole render (-111 dBFS), up to ~50 % of tries for presets with a reshaped wavetable
+  (Shape / Stretch / Chebyshev), presumably the asynchronous wavetable build racing the offline render.
+  A warm-up render before the real one made it worse (exact zeros). `probe_lib.hum` re-renders any
+  result with a dropout (up to 5 tries) and never caches one that cleared; four presets once listed as
+  "silent in Humanoid" (I, Troutman, Rotten Robotics, Dust All Around, Drunken Organist) were this.
 
 ## Parameter map (preset id -> VST name -> unit)
 
@@ -93,13 +101,38 @@ shifts (-1: -1.5 st at width 0, -8 st at 0.5).
 t^1.7 (e.g. vowel /i/ H4: -27 dB voice, -12 dB saw; -26, -22, -17, -12 at t = .25, .5, .75, 1), at
 constant total loudness. At 1 the vowel is gone: /a/ and /i/ give the same saw spectrum.
 
-**Shape / Stretch** reshape the table's harmonics (shape 1: H2 -3 dB, H3 -12; stretch 0.9 much
-brighter, 0.1 brighter): Chebyshev waveshaping and a midpoint skew.
+**Shape / Stretch** reshape the table's harmonics (shape 1: H2 -3 dB, H3 -12): Chebyshev waveshaping
+and a phase-distortion knee. **Stretch** (fitted on the saw, 0.1..1.0, within 0.35 dB over 24 harmonics):
+up to 0.5 the cycle's midpoint moves to s (knee at (s, 0.5)); above, the cycle is squeezed into the first
+1 - s and nearly held after (knee at (1 - s, 1 - 2 (1 - s)^2)); it saturates at 0.9 (0.9, 0.95, 1.0
+identical). A symmetric skew was 5-9 dB too dark at 0.9-1. (Replacing the INIT table's base64 with a
+sine or triangle changed nothing: Humanoid rebuilds its named "Saw".)
 
-**Note Shift**: an extra line at the shifted pitch, about as loud as the main line, total loudness kept.
+**Synth Mix is a linear crossfade**: with the two paths on different pitches (Note Shift +7) path A
+is x (1 - sm) and B x sm within 0.1 dB from 0.1 to 0.9. On the same pitch they interfere: -4.8 dB at
+0.5 on an A3 vowel, -4.4 on E3, varying per harmonic (-1 .. -23 dB) and with the pitch and Transform.
+
+**Note Shift transposes path B** (it is not an added line): at Synth Mix 1 only the shifted voice is
+heard (the original pitch -85 dB), at 0.5 the voice and the shifted line at -6 dB each, at 0 the voice
+alone. In Scale mode the shifted note snaps into the mask (A3 +7 -> E4, +4 -> C4). The Octave lines
+follow the shifted pitch. A "Fifth Above" harmony therefore needs Synth Mix around 0.5.
+
+**Loudness follows the voice, not the line's pitch**: Note mode from -7 to +24 st away from the sung
+note keeps the output within ~1 dB (a line read at its own harmonics loses 6-14 dB going up).
 
 **Octave**: negative = a sub-octave line (-1: ~-4 dB vs the main, -0.5: ~-10 dB), positive = an
-octave-up line (+1.5: even harmonics +7.5 dB). Path B only.
+octave-up line (+1.5: even harmonics +7.5 dB). Path B only. Where its partials coincide with the main
+line's (Transform 1, octave -1: main -2.7 dB, sub +3 dB vs ours) the two interfere: not modelled.
+
+**Filters** (a saw at 82 Hz, Transform 1, harmonics vs no filter): HPF / LPF edges are brick walls
+(-80 dB 0.08 octave past the cutoff); a negative resonance is a roll-off from ~1.4 octaves inside the
+passband at ~0.85 |res| dB per octave (res -40: -10 dB an octave in, -27 at 0.6; -80: -50 at 0.6);
+a positive one a peak of about res dB 0.15 octave inside the edge (11..24 dB within 1-2 dB). The mid
+band is a Gaussian in log frequency, sigma = 0.01645 x Width octaves (8..60 within 1 %), gain as set.
+
+**Output**: Out Gain is exact from -24 to +9 dB and stops there (+12 gives +9.0). In Gain is exact
+(-16..+16). A **peak limiter** holds the output near -0.5 dBFS: a +19 dB resonance on the fundamental
+came out with peaks at -0.7 dBFS and everything else 8 dB down; below the ceiling it does nothing.
 
 **Warble**: LFO mode rate 0.5 -> 4.7 Hz, 1 -> 10 Hz, ~+-1.3 st at depth 1; the other mode is faster
 (audio-rate FM; the tracker reads 24-40 Hz). Rate 0 = none.
@@ -110,5 +143,5 @@ octave-up line (+1.5: even harmonics +7.5 dB). Path B only.
 
 ## Not yet probed
 
-Attack at onsets, Hold, Smoothing (timbre/pitch), De-ess, Gate, filters (HPF/LPF resonance, mid band),
-Freeze, Input/Output gain laws, Warble mode naming, unvoiced input (consonants, speech), Duo levels.
+Attack at onsets, Hold, Smoothing (timbre/pitch), De-ess, Gate, Freeze, Warble mode naming, unvoiced
+input (consonants, speech), Duo levels, the output limiter's release.

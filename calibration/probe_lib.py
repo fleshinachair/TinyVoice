@@ -18,9 +18,19 @@ def hum(xml: str, x: np.ndarray, midi=None) -> np.ndarray:
     h.update(xml.encode()); h.update(np.ascontiguousarray(x, dtype=np.float32).tobytes())
     h.update(json.dumps(midi or []).encode())
     path = os.path.join(CACHE, h.hexdigest()[:20] + ".npy")
+    xin = np.asarray(x, dtype=np.float32)
     if os.path.exists(path):
-        return np.load(path)
-    y = H.render(xml, x, midi)
+        y = np.load(path)
+        if not H._dropout(xin, y):
+            return y
+    # Humanoid sometimes starts silent or drops out (an asynchronous start-up race, not the trial timer:
+    # the same preset renders fine on the next fresh instance), and such renders used to be cached for
+    # good (four presets "silent in Humanoid" were this; up to ~50 % of renders for presets with a
+    # reshaped wavetable; a warm-up render before the real one made it worse). Retry; keep a dropout only if it repeats.
+    for _ in range(5):
+        y = H.render(xml, x, midi)
+        if not H._dropout(xin, y):
+            break
     np.save(path, y)
     return y
 

@@ -10,6 +10,7 @@
 /* Output gain of the resynthesis over the input: Humanoid's INIT measures +2.3 dB. */
 #define HM_MAKEUP 1.303f
 #define HM_LEVEL_CEIL 0.30f           /* the limiter's ceiling: -10.5 dBFS, under the module's headroom stage */
+#define HM_OUT_CEIL 0.944f            /* Humanoid's output limiter: -0.5 dBFS */
 #define HM_LEVEL_TARGET_MS 0.016f    /* the leveller's aim: -18 dBFS RMS (sung averages land a few dB under) */
 /* Partials stop below this (Hz), whatever the sample rate. */
 #define HM_FMAX 18000.0f
@@ -61,6 +62,16 @@ static float env_at(const float *env, float hz)
     if (i >= HM_GRID - 1) return env[HM_GRID - 1];
     float t = g - (float)i;
     return env[i] + t * (env[i + 1] - env[i]);
+}
+
+/* the power of a harmonic series on f0 read off the (unshifted) envelope */
+static double env_power(const hm_t *h, float f0, float sr)
+{
+    int K = (int)(fminf(HM_FMAX, 0.45f * sr) / f0);
+    if (K > HM_KMAX) K = HM_KMAX;
+    double p = 0.0;
+    for (int k = 1; k <= K; k++) p += (double)expf(env_at(h->env, (float)k * f0) * 0.23025851f);
+    return p;
 }
 
 /* noise bands: 24 log-spaced bands, 80 Hz .. 20 kHz */
@@ -197,10 +208,17 @@ static void build_wavetable(hm_t *h)
     const float shape = h->p[HM_SHAPE], stretch = h->p[HM_STRETCH];
     float peak = 1e-9f;
     for (int i = 0; i < h->wt_src_n; i++) peak = fmaxf(peak, fabsf(h->wt_src[i]));
-    /* Stretch: the cycle's midpoint moves to `stretch` (a phase-distortion skew) */
+    /* Stretch: a phase-distortion knee, the phase reaching ky at kx and the rest of the cycle after.
+     * Up to 0.5 the cycle's midpoint moves to `stretch` (kx = s, ky = 0.5); above it the cycle is
+     * squeezed into the first 1 - s and nearly held after (ky = 1 - 2 (1 - s)^2), saturating at 0.9.
+     * Measured on Humanoid's saw within 0.35 dB over 24 harmonics from 0.1 to 1.0 (the plain skew,
+     * symmetric about 0.5, was 5-9 dB too dark at 0.9-1). */
+    const float sc = fminf(fmaxf(stretch, 0.02f), 0.9f);
+    const float kx = sc <= 0.5f ? sc : 1.0f - sc;
+    const float ky = sc <= 0.5f ? 0.5f : 1.0f - 2.0f * (1.0f - sc) * (1.0f - sc);
     for (int i = 0; i < HM_WT_N; i++) {
         float ph = (float)i / (float)HM_WT_N, q;
-        q = ph < stretch ? 0.5f * ph / stretch : 0.5f + 0.5f * (ph - stretch) / (1.0f - stretch);
+        q = ph < kx ? ky * ph / kx : ky + (1.0f - ky) * (ph - kx) / (1.0f - kx);
         float pos = q * (float)h->wt_src_n;
         int a = (int)pos;
         float t = pos - (float)a;
@@ -258,7 +276,13 @@ static void track_pitch(hm_t *h, int la)
         e += (double)v * v;
     }
     const float rms = sqrtf((float)(e / n2));
-    float fmin = midi_hz(h->p[HM_RANGE_LO]) * 0.97f, fmax = midi_hz(h->p[HM_RANGE_HI]) * 1.03f;
+    /* The search reaches an octave under Range Lo (58 Hz at the least: the frame holds 2.2 periods
+     * there) and up to 1.6 kHz whatever Range Hi says. Humanoid tracks a steady voice down to ~D2 with
+     * Range Lo at C3 or C4 (it plays those notes ~47 c sharp, a quirk not copied) and up to E6 with
+     * Range Hi at A4; a hard floor at Range Lo silenced a baritone (97-151 Hz) for 68 % of a phrase
+     * at the INIT range, where Humanoid held 86 %. */
+    float fmin = fmaxf(midi_hz(h->p[HM_RANGE_LO] - 12.0f) * 0.97f, 58.0f);
+    float fmax = fmaxf(midi_hz(h->p[HM_RANGE_HI]) * 1.03f, 1600.0f);
     float f0 = 0.0f, clar = 0.0f;
     int ok = rms > 1e-4f && cher_mpm(h->dec, n2, h->sr * 0.5f, fmin, fmax, h->nsdf, &f0, &clar);
     if (ok && clar > 0.6f && f0 >= fmin && f0 <= fmax) {
@@ -420,17 +444,22 @@ static float filter_db(const hm_t *h, float f)
         if (side == 1 && fc > 0.48f * h->sr) continue;
         const float res = side ? h->p[HM_LPF_RES] : h->p[HM_HPF_RES];
         const float x = side ? log2f(fc) - lf2 : lf2 - log2f(fc);    /* octaves into the passband */
-        const float neg = res < 0.0f ? -res / 80.0f : 0.0f;
-        const float xs = 1.3f * neg, slope = 300.0f - 225.0f * neg;
-        if (x < xs) d -= fminf(100.0f, slope * (xs - x));
+        /* Measured on Humanoid (a saw at 82 Hz, Transform 1): the edge is a brick wall (-80 dB 0.08 octave
+         * past it); a negative resonance is a roll-off from 1.4 octaves inside the passband, 0.85 |res| dB
+         * per octave (res -40: -10 dB an octave in, -27 at 0.6; res -80: -50 at 0.6); a positive one is a
+         * peak of res dB just inside the edge (0.15 octave), within 1-2 dB from 11 to 24 dB. */
+        float cut = x < 0.0f ? 1000.0f * -x : 0.0f;
+        if (res < 0.0f && x < 1.4f) cut += 0.85f * -res * (1.4f - x);
+        d -= fminf(100.0f, cut);
         if (res > 0.0f) {
-            float u = x - 0.3f;
-            d += 0.88f * res * expf(-u * u / 0.405f);
+            float u = x - 0.15f;
+            d += res * expf(-u * u / 0.5f);
         }
     }
     const float mg = h->p[HM_MID_GAIN];
     if (fabsf(mg) > 0.01f) {
-        const float sg = 0.387f * powf(clampf(h->p[HM_MID_WIDTH], 4.0f, 80.0f) / 12.0f, 0.64f);
+        /* a Gaussian in log frequency, sigma 0.0164 octave per unit of Width (measured 8..60, within 1 %) */
+        const float sg = 0.01645f * clampf(h->p[HM_MID_WIDTH], 4.0f, 80.0f);
         const float u = lf2 - log2f(midi_hz(h->p[HM_MID_FREQ]));
         d += mg * expf(-u * u / (2.0f * sg * sg));
     }
@@ -577,7 +606,7 @@ static void add_partial(hm_t *h, float bin, float amp, float ph)
     }
 }
 
-typedef struct { float f0; float gain; int voice_line; } line_t;
+typedef struct { float f0; float gain; float wa, wb; } line_t;   /* wa > 0: path A rides on this line */
 
 static void hop(hm_t *h)
 {
@@ -616,30 +645,33 @@ static void hop(hm_t *h)
     const float ns = h->p[HM_NOTE_SHIFT], oc = h->p[HM_OCTAVE], sm = h->p[HM_SYNTH_MIX];
     const int mode = (int)lrintf(h->p[HM_TUNING_MODE]);
     /* Synth Mix: the pitch-corrected signal (path A) and the resynthesis (path B) are different
-     * signals in Humanoid; at 0.5 they sum with partial cancellation (-4.3 dB on a voice, -0.9 dB when
-     * Transform makes them differ). Modelled as amplitude weights (1-sm)^0.65 / sm^0.65 and a fixed
-     * 123 degree phase between the paths. */
-    const float wa = powf(1.0f - sm, 0.65f), wb = powf(sm, 0.65f);
-    /* Note Shift keeps the loudness (both lines -3 dB); the Octave lines add to it */
-    const float nsg = fabsf(ns) > 0.01f ? 0.7071f : 1.0f;
+     * signals in Humanoid, crossfaded linearly (measured with the two at different pitches: A x (1 - sm),
+     * B x sm, within 0.1 dB from 0.1 to 0.9). On the same pitch they interfere: about -4.8 dB at 0.5
+     * on a voice, varying per harmonic and with the pitch; modelled as one phase between the paths,
+     * 108 degrees at Transform 0 relaxing to 90 (a power sum, the average measured) at Transform 1. */
+    const float wa = 1.0f - sm, wb = sm;
+    /* Note Shift TRANSPOSES path B (Humanoid: at Synth Mix 1 only the shifted voice is heard, at 0.5 the
+     * voice and the shifted line at -6 dB each); the Octave lines follow the shifted pitch. */
+    const int shifting = fabsf(ns) > 0.01f;
     const float sub_g = oc < -0.01f ? 0.52f * (-oc) : 0.0f;
     /* octave up, measured on the even harmonics: 0.5 -> 0.6, 1 -> 0.8, 1.5 -> 2.4 (it climbs past 1) */
     const float up_g = oc <= 0.01f ? 0.0f : oc <= 0.5f ? 1.2f * oc : oc <= 1.0f ? 0.6f + 0.4f * (oc - 0.5f) : 0.8f + 3.2f * (oc - 1.0f);
-    /* the A/B phase: 123 degrees on the voice (Transform 0), relaxing to 90 (a power sum) as Transform
-     * makes the two paths differ (measured -4.3 / -0.9 dB at Synth Mix 0.5) */
-    const float abph = (123.0f - 33.0f * (h->p[HM_TRANSFORM] > 0.0f ? powf(h->p[HM_TRANSFORM], 1.7f) : 0.0f)) * (PI_F / 180.0f);
+    const float abph = (108.0f - 18.0f * (h->p[HM_TRANSFORM] > 0.0f ? powf(h->p[HM_TRANSFORM], 1.7f) : 0.0f)) * (PI_F / 180.0f);
     const float abc = cosf(abph), abs_ = sinf(abph);
     for (int t = 0; t < nt; t++) {
         float mm = out_midi[t] + wob;
         float keep = out_midi[t] - (float)base[t];
-        ln[t * 4 + 0].f0 = midi_hz(mm); ln[t * 4 + 0].gain = nsg; ln[t * 4 + 0].voice_line = 1;
-        if (fabsf(ns) > 0.01f) {
+        line_t *M0 = &ln[t * 4 + 0];
+        M0->f0 = midi_hz(mm); M0->gain = 1.0f; M0->wa = wa; M0->wb = shifting ? 0.0f : wb;
+        float bm = mm;                                   /* path B's pitch */
+        if (shifting) {
             float sn = (float)base[t] + ns;
             if (mode == HM_MODE_SCALE) sn = (float)nearest_in_mask(sn, h->mask);
-            ln[t * 4 + 1].f0 = midi_hz(sn + keep + wob); ln[t * 4 + 1].gain = wb * nsg;
+            bm = sn + keep + wob;
+            ln[t * 4 + 1].f0 = midi_hz(bm); ln[t * 4 + 1].gain = 1.0f; ln[t * 4 + 1].wb = wb;
         }
-        if (sub_g > 0.0f) { ln[t * 4 + 2].f0 = 0.5f * midi_hz(mm); ln[t * 4 + 2].gain = wb * sub_g; }
-        if (up_g > 0.0f)  { ln[t * 4 + 3].f0 = 2.0f * midi_hz(mm); ln[t * 4 + 3].gain = wb * up_g; }
+        if (sub_g > 0.0f) { ln[t * 4 + 2].f0 = 0.5f * midi_hz(bm); ln[t * 4 + 2].gain = sub_g; ln[t * 4 + 2].wb = wb; }
+        if (up_g > 0.0f)  { ln[t * 4 + 3].f0 = 2.0f * midi_hz(bm); ln[t * 4 + 3].gain = up_g; ln[t * 4 + 3].wb = wb; }
     }
 
     /* synthesis spectrum */
@@ -659,9 +691,14 @@ static void hop(hm_t *h)
     sharpen_curve(h, env_s);
     for (int i = 0; i < HM_GRID; i++) env_s[i] += h->env[i];
 
+    /* Loudness: Humanoid holds every line at the voice's loudness wherever it is moved (Note mode from -7 to +24 st:
+     * within ~1 dB), so the reference is the voice's own harmonic series. Reading it at the line's harmonics instead
+     * lost 6-14 dB going up (fewer harmonics under the envelope). The Octave lines keep their measured ratio to the
+     * line they follow. */
+    const double pvoice = h->env_valid ? env_power(h, h->f0 > 0.0f ? h->f0 : 150.0f, sr) : 0.0;
     for (int l = 0; l < HM_NLINE; l++) {
         line_t *L = &ln[l];
-        if (L->f0 <= 0.0f || L->gain <= 0.0f || !h->env_valid) {
+        if (L->f0 <= 0.0f || L->gain <= 0.0f || (L->wa <= 0.0f && L->wb <= 0.0f) || !h->env_valid) {
             for (int k = 1; k <= HM_KMAX; k++) h->fr_prev[l][k] = 0.0f;
             continue;
         }
@@ -675,8 +712,16 @@ static void hop(hm_t *h)
             float d = env_at(env_s, (float)k * L->f0 / fshift);
             lv[k] = d;
             if (d > mx) mx = d;
-            pref += (double)expf((float)(env_at(h->env, (float)k * L->f0)) * 0.23025851f);
             pw += (double)expf((float)(h->wt_db[k]) * 0.23025851f);
+        }
+        {
+            const int role = l & 3;                       /* 0 main, 1 note shift, 2 octave down, 3 octave up */
+            if (role < 2) {
+                pref = pvoice;
+            } else {
+                const float fb = role == 2 ? 2.0f * L->f0 : 0.5f * L->f0;     /* the line it follows */
+                pref = env_power(h, L->f0, sr) * pvoice / (env_power(h, fb, sr) + 1e-30);
+            }
         }
         /* Emphasis lifts the weak harmonics: the levels are pulled toward the loudest by 20 % */
         if (emph > 0.0f)
@@ -709,13 +754,13 @@ static void hop(hm_t *h)
             h->ph[l][k] -= TWO_PI_F * floorf(h->ph[l][k] / TWO_PI_F);
             h->fr_prev[l][k] = f;
             const float fg = filt ? db_lin(filter_db(h, f)) : 1.0f;
-            if (L->voice_line) {
-                /* A and B as one partial: wb B + wa A e^(j 123 deg) */
-                const float b = wb * db_lin(lv[k]), a = wa * db_lin(lva[k]);
+            if (L->wa > 0.0f) {
+                /* A and B as one partial: wb B + wa A e^(j phase) */
+                const float b = L->wb * db_lin(lv[k]), a = L->wa * db_lin(lva[k]);
                 const float re = b + a * abc, im = a * abs_;
                 add_partial(h, f * binsz, L->gain * fg * sqrtf(re * re + im * im), h->ph[l][k] + atan2f(im, re));
             } else {
-                add_partial(h, f * binsz, L->gain * fg * db_lin(lv[k]), h->ph[l][k]);
+                add_partial(h, f * binsz, L->gain * L->wb * fg * db_lin(lv[k]), h->ph[l][k]);
             }
         }
         for (int k = K + 1; k <= HM_KMAX; k++) h->fr_prev[l][k] = 0.0f;
@@ -766,7 +811,8 @@ static void hop(hm_t *h)
 void hm_begin(hm_t *h)
 {
     h->k_ig = db_lin(h->p[HM_INPUT_GAIN]);
-    h->k_og = db_lin(h->p[HM_OUTPUT_GAIN]) * HM_MAKEUP;
+    /* Humanoid's Output tops out at +9 dB (+12 measured +9.0; -24..+9 exact) */
+    h->k_og = db_lin(fminf(h->p[HM_OUTPUT_GAIN], 9.0f)) * HM_MAKEUP;
     h->k_dw = h->p[HM_DRY_WET];
     h->k_lat = hm_latency(h);
     h->k_thr = db_lin(h->p[HM_GATE]);
@@ -810,11 +856,15 @@ void hm_tick(hm_t *h, float x, float *outl, float *outr)
     hmfx_tick(&h->fx, &l, &rr);
     /* the output stage (makeup and Output gain) takes the dry too: Dry/Wet 0 measured +2 dB */
     float ol = (1.0f - h->k_dw) * dry + h->k_dw * l, orr = (1.0f - h->k_dw) * dry + h->k_dw * rr;
+    ol *= h->k_og; orr *= h->k_og;
+    float ceil = HM_OUT_CEIL;
     if (h->autolevel) {
         /* Leveller: the mix is held at HM_LEVEL_TARGET (RMS) whatever the preset or the input level. The reference is a
          * slow RMS that cannot jump more than 4x (6 dB) in one step, so the clicks a synth path makes at note onsets don't
          * set it (they held the gain down for seconds), and it stands still in pauses, so the gain neither pumps on a
-         * phrase onset nor lifts the room between phrases. Out Gain applies after it, as a trim. */
+         * phrase onset nor lifts the room between phrases. Out Gain comes before it and is levelled away: imported
+         * presets use it to even out their own loudness in Humanoid (32 of 282, down to -12.5 dB), which applied after
+         * the leveller left them that much quieter than the rest. */
         const float p = 0.5f * (ol * ol + orr * orr);
         h->lv_pow += (p - h->lv_pow) * h->k_lv_p;
         if (h->lv_pow < 1e-20f) h->lv_pow = 0.0f;
@@ -827,16 +877,17 @@ void hm_tick(hm_t *h, float x, float *outl, float *outr)
             h->lv_g += (goal - h->lv_g) * h->k_lv_g;
         }
         ol *= h->lv_g; orr *= h->lv_g;
-        /* A peak limiter after it: the gain is a guess at the start of a note (it can be 20 dB too high for the first
-         * half second), so anything past HM_LEVEL_CEIL is pulled down at once and let back up over 120 ms. */
-        const float pk = fmaxf(fabsf(ol), fabsf(orr));
-        const float need = pk > HM_LEVEL_CEIL ? HM_LEVEL_CEIL / pk : 1.0f;
-        h->lv_lim += (need - h->lv_lim) * (need < h->lv_lim ? h->k_lim_a : h->k_lim_r);
-        if (need < h->lv_lim) h->lv_lim = need;                    /* never let a sample through over the ceiling */
-        ol *= h->lv_lim; orr *= h->lv_lim;
+        ceil = HM_LEVEL_CEIL;
     }
-    *outl = h->k_og * ol;
-    *outr = h->k_og * orr;
+    /* A peak limiter: anything past the ceiling is pulled down at once and let back up over 120 ms. Under Auto Level
+     * the gain is a guess at the start of a note (it can be 20 dB too high for the first half second); without it this
+     * is Humanoid's own output limiter (peaks held at about -0.5 dBFS: a +19 dB filter resonance came out at -0.7). */
+    const float pk = fmaxf(fabsf(ol), fabsf(orr));
+    const float need = pk > ceil ? ceil / pk : 1.0f;
+    h->lv_lim += (need - h->lv_lim) * (need < h->lv_lim ? h->k_lim_a : h->k_lim_r);
+    if (need < h->lv_lim) h->lv_lim = need;                        /* never let a sample through over the ceiling */
+    *outl = ol * h->lv_lim;
+    *outr = orr * h->lv_lim;
 }
 
 void hm_process(hm_t *h, const float *in, float *outl, float *outr, int n)

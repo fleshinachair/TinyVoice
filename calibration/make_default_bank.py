@@ -72,8 +72,8 @@ P = [
     # --- Harmony: lines around the voice
     ("Harm - Octave Down", dict(octaving=-1, synth_mix=0.85, quantize=0.4, robotify=0.3)),
     ("Harm - Octave Shimmer", dict(octaving=1.2, synth_mix=0.85, quantize=0.4, widen=0.5, lpf_freq=118)),
-    ("Harm - Fifth Above", dict(pitch_shift=7, quantize=0.45, robotify=0.5, synth_mix=0.9, widen=0.3)),
-    ("Harm - Third and Octave", dict(pitch_shift=4, octaving=-0.6, quantize=0.45, robotify=0.4, widen=0.4)),
+    ("Harm - Fifth Above", dict(pitch_shift=7, quantize=0.45, robotify=0.5, synth_mix=0.5, widen=0.3)),
+    ("Harm - Third and Octave", dict(pitch_shift=4, octaving=-0.6, quantize=0.45, robotify=0.4, synth_mix=0.5, widen=0.4)),
     ("Harm - Drone Duo", dict(tuning_mode=NOTE, tuning_duophonic=1, pitch_mono=57, pitch_duo=64, transform=0.5, wave="saw", synth_mix=1, widen=0.5)),
     ("Harm - Play Me", dict(tuning_mode=MIDI, tuning_duophonic=1, transform=0.55, wave="triangle", quantize=0.5, synth_mix=1, widen=0.3)),
     # --- Synth: the voice drives an instrument
