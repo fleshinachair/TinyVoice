@@ -7,55 +7,109 @@
 <style>
 /* TinyVoice Resynth: the Remote UI panel (move.local:7700/remote-ui).
  * Every Resynth control, laid out by the panels of the plugin it is modelled on: Pitch,
- * Synthesize, Filter, Utility, Effects, Output. Controls are built from the module's own
- * chain_params (range, options); values show in real units (Hz, notes, dB) where the
- * engine's mapping is known. Import .baby loads a Humanoid preset file straight to the Move. */
+ * Synthesize, Filter, Utility, Effects, Output. Built from the module's own chain_params
+ * (range, options): floats are dials (drag up/down, Shift for fine, wheel, arrow keys,
+ * double-click = default), Off/On params are switches, short option lists are segmented
+ * buttons. Values show in real units (Hz, notes, dB) where the engine's mapping is known.
+ * The header steps through the Resynth presets on the Move; Import .baby loads a Humanoid
+ * preset file straight to it. */
 :root{
-  --bg:#0c0d10; --panel:#14161b; --line:#23262e; --txt:#dfe3ea; --dim:#9098a6; --faint:#6b7280;
-  --acc:#7cc7ff; --acc2:#2c5f86; --warn:#ffb86b;
+  --bg:#0a0b0e; --panel:#15171c; --panel2:#1b1e24; --line:#262a33; --txt:#e4e8ef; --dim:#9aa2b1; --faint:#646c7a;
+  --a:#7cc7ff; --cap1:#3a3f4a; --cap2:#1d2027; --warn:#ffb86b;
 }
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--txt);font:12px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif}
-.wrap{max-width:1400px;margin:0 auto;padding:12px 16px 32px}
-header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:10px}
-.brand{font-weight:700;letter-spacing:.3em;font-size:12px}
-.brand i{font-style:normal;color:var(--acc)}
+html,body{margin:0;background:radial-gradient(1200px 600px at 50% -200px,#1a1d24,var(--bg));background-color:var(--bg);color:var(--txt);
+  font:12px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100%}
+.wrap{max-width:1440px;margin:0 auto;padding:14px 16px 36px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-bottom:14px;padding:10px 14px;
+  background:linear-gradient(#1b1e24,#14161b);border:1px solid var(--line);border-radius:10px;box-shadow:0 1px 0 #ffffff08 inset}
+.brand{font-weight:800;letter-spacing:.32em;font-size:13px}
+.brand i{font-style:normal;color:var(--a)}
 .hint{color:var(--faint);font-size:11px}
 .sp{flex:1}
-button,select{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:4px;padding:5px 9px;font:inherit;cursor:pointer}
-button:hover,select:hover{border-color:var(--acc2)}
-button.on{background:var(--acc2);border-color:var(--acc)}
-.grid{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr))}
-@media (max-width:1100px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:700px){.grid{grid-template-columns:1fr}}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
-.panel h2{margin:0 0 8px;font-size:10px;letter-spacing:.25em;color:var(--dim);font-weight:600}
-.panel h3{margin:10px 0 4px;font-size:10px;letter-spacing:.15em;color:var(--faint);font-weight:600}
-.ctl{display:grid;grid-template-columns:86px 1fr 64px;align-items:center;gap:8px;margin:3px 0}
-.ctl label{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ctl .v{text-align:right;font-variant-numeric:tabular-nums;color:var(--txt)}
-.ctl.big label{color:var(--txt);font-weight:600}
-input[type=range]{width:100%;accent-color:var(--acc)}
-.seg{display:flex;gap:2px;flex-wrap:wrap}
-.seg button{padding:3px 8px}
-canvas{width:100%;height:90px;background:#0a0b0e;border:1px solid var(--line);border-radius:4px;display:block;margin:4px 0 6px}
-.keys{display:grid;grid-template-columns:repeat(12,1fr);gap:2px;margin:4px 0 6px}
-.keys button{padding:6px 0;font-size:10px}
-.keys button.blk{background:#0a0b0e}
-.keys button.on{background:var(--acc2)}
-#drop{border:1px dashed var(--line);border-radius:6px;padding:6px 10px;color:var(--faint)}
-#drop.over{border-color:var(--acc);color:var(--acc)}
-#toast{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:var(--acc2);color:#fff;padding:7px 14px;border-radius:5px;opacity:0;transition:opacity .3s;pointer-events:none}
+button,select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+button:hover,select:hover{border-color:#3b4250}
+button:focus-visible,select:focus-visible,.dial:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+#engineBtn.on{border-color:#2f6b45;background:#173322;color:#9ff0bd}
+/* preset stepper: an LCD strip */
+.preset{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:#07080a}
+.preset button{border:0;border-radius:0;background:#14161b;padding:6px 11px;font-size:13px}
+.preset .lcd{min-width:220px;max-width:340px;padding:5px 12px;font:600 12px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:#9fe6ff;
+  text-shadow:0 0 6px #4cc3ff55;display:flex;flex-direction:column;justify-content:center}
+.preset .lcd small{color:#4f6b7a;font-weight:500;font-size:10px;text-shadow:none}
+.preset .lcd span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#drop{border:1px dashed #3a404c;border-radius:7px;padding:6px 11px;color:var(--dim);cursor:pointer}
+#drop.over{border-color:var(--a);color:var(--a)}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:1180px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){.grid{grid-template-columns:1fr}.preset .lcd{min-width:0;flex:1}.preset{flex:1 1 100%}}
+.panel{position:relative;background:linear-gradient(180deg,var(--panel2),var(--panel) 120px);border:1px solid var(--line);border-radius:10px;
+  padding:12px 14px 12px;box-shadow:0 10px 24px #00000040}
+.panel::before{content:"";position:absolute;left:14px;right:14px;top:0;height:2px;border-radius:0 0 2px 2px;background:var(--a);opacity:.75}
+.panel h2{margin:2px 0 10px;font-size:11px;letter-spacing:.3em;color:var(--a);font-weight:700}
+.p-pitch{--a:#ffb454}.p-synth{--a:#7cc7ff}.p-filter{--a:#b79bff}.p-util{--a:#6ee7a8}.p-fx{--a:#ff86bf}.p-out{--a:#e9edf3}
+.sec{margin:6px 0 10px;padding-top:8px;border-top:1px solid #ffffff0a}
+.sec:first-of-type{border-top:0;padding-top:0}
+.sec h3{margin:0 0 6px;font-size:9.5px;letter-spacing:.2em;color:var(--faint);font-weight:700}
+.sws{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:flex-end;margin-bottom:6px}
+.dials{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:flex-start}
+/* dial */
+.dial{width:62px;display:flex;flex-direction:column;align-items:center;user-select:none;touch-action:none;cursor:ns-resize;border-radius:8px;padding:2px 0}
+.dial.hero{width:84px}
+.dial svg{display:block;overflow:visible}
+.dial .trk{fill:none;stroke:#2a2f39;stroke-width:4;stroke-linecap:round}
+.dial .val{fill:none;stroke:var(--a);stroke-width:4;stroke-linecap:round;filter:drop-shadow(0 0 3px color-mix(in srgb,var(--a) 45%,transparent))}
+.dial .cap{fill:url(#capg);stroke:#00000080;stroke-width:1}
+.dial .ptr{stroke:#f2f5f9;stroke-width:2.2;stroke-linecap:round}
+.dial .zero{stroke:#4a515e;stroke-width:1.5}
+.dial .dl{margin-top:1px;font-size:10.5px;color:var(--dim);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.dial.hero .dl{color:var(--txt);font-weight:600;font-size:11.5px}
+.dial .dv{font-size:10.5px;font-variant-numeric:tabular-nums;color:var(--txt);opacity:.85;white-space:nowrap}
+.dial:hover .val,.dial.drag .val{stroke-width:5}
+/* switch */
+.swc{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.swc .lab{font-size:10px;color:var(--dim)}
+.tog{position:relative;width:40px;height:22px;border-radius:11px;padding:0;background:#22262e;border:1px solid #333944;transition:background .15s,border-color .15s}
+.tog::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:linear-gradient(#cfd5de,#8f98a6);
+  box-shadow:0 1px 3px #0008;transition:left .15s}
+.tog.on{background:color-mix(in srgb,var(--a) 35%,#1b1e24);border-color:var(--a)}
+.tog.on::after{left:20px;background:linear-gradient(#ffffff,#d6dbe3)}
+/* segmented */
+.seg{display:inline-flex;border:1px solid #333944;border-radius:7px;overflow:hidden;background:#111317}
+.seg button{border:0;border-radius:0;padding:4px 9px;background:transparent;color:var(--dim);font-size:11px}
+.seg button+button{border-left:1px solid #2a2f38}
+.seg button.on{background:color-mix(in srgb,var(--a) 28%,#15171c);color:#fff;box-shadow:inset 0 -2px 0 var(--a)}
+select.sel{padding:4px 8px;font-size:11px}
+/* displays */
+canvas{width:100%;height:96px;background:linear-gradient(#0b0d11,#07080a);border:1px solid var(--line);border-radius:7px;display:block;margin:2px 0 10px}
+/* the scale keyboard: a small piano */
+.piano{position:relative;height:58px;margin:4px 0 10px;user-select:none}
+.piano button{position:absolute;padding:0;border-radius:0 0 5px 5px;font-size:9px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px}
+.piano .w{top:0;height:58px;background:linear-gradient(#e9ecf1,#c4cad3);color:#555c68;border:1px solid #0b0c0f}
+.piano .b{top:0;height:35px;z-index:2;background:linear-gradient(#2b2f37,#111318);color:#8a93a1;border:1px solid #000}
+.piano .w.on{background:linear-gradient(color-mix(in srgb,var(--a) 55%,#fff),var(--a));color:#2b1a00}
+.piano .b.on{background:linear-gradient(color-mix(in srgb,var(--a) 80%,#000),color-mix(in srgb,var(--a) 45%,#000));color:#fff}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1f3b52;border:1px solid #2f5f86;color:#fff;padding:8px 15px;border-radius:7px;
+  opacity:0;transition:opacity .3s;pointer-events:none;z-index:9}
 #toast.show{opacity:1}
 .err{color:var(--warn);padding:12px}
+.foot{margin-top:6px;color:var(--faint);font-size:11px}
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <radialGradient id="capg" cx="40%" cy="32%" r="75%"><stop offset="0" stop-color="#4a505c"/><stop offset=".55" stop-color="#2a2e36"/><stop offset="1" stop-color="#181a20"/></radialGradient>
+</defs></svg>
 <div class="wrap">
 <header>
   <div class="brand">TINYVOICE <i>RESYNTH</i></div>
   <span class="hint" id="hint">connecting…</span>
   <div class="sp"></div>
+  <div class="preset" title="The Resynth presets on the Move (its preset folder)">
+    <button id="prevP" aria-label="Previous preset">&#9664;</button>
+    <div class="lcd"><small id="pIdx">PRESET</small><span id="pName">…</span></div>
+    <button id="nextP" aria-label="Next preset">&#9654;</button>
+  </div>
   <button id="engineBtn" title="Switch TinyVoice to the Resynth engine">Engine: …</button>
   <label id="drop" title="Drop a .baby preset here, or click to choose one">Import .baby <input type="file" id="file" accept=".baby" multiple hidden></label>
 </header>
@@ -73,7 +127,9 @@ var KP = COMP + ":";
 var META = {};          /* key -> chain_params entry */
 var CTL = {};           /* key -> {set(value)} */
 var VAL = {};           /* key -> last value (number; enums: index) */
+var HELD = null;        /* the key being turned: incoming values for it are ignored meanwhile */
 var NOTE = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+var SVGNS = "http://www.w3.org/2000/svg";
 
 function el(tag, cls, parent, text) {
   var e = document.createElement(tag);
@@ -82,12 +138,31 @@ function el(tag, cls, parent, text) {
   if (parent) parent.appendChild(e);
   return e;
 }
+function sv(tag, attrs, parent) {
+  var e = document.createElementNS(SVGNS, tag);
+  for (var k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
 function toast(msg) {
   var t = document.getElementById("toast");
   t.textContent = msg; t.classList.add("show");
   clearTimeout(t._h); t._h = setTimeout(function () { t.classList.remove("show"); }, 2500);
 }
-function send(key, v) { if (R) R.setParam(KP + key, String(v)); }
+/* writes are coalesced to one per key per animation frame (a dial drag fires far faster) */
+var pending = {}, flushQ = false;
+function send(key, v) {
+  if (!R) return;
+  pending[key] = String(v);
+  if (flushQ) return;
+  flushQ = true;
+  requestAnimationFrame(function () {
+    flushQ = false;
+    var p = pending; pending = {};
+    for (var k in p) R.setParam(KP + k, p[k]);
+  });
+}
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 /* ---------- value text in real units */
 function midiHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
@@ -128,40 +203,123 @@ function parseVal(key, s) {
 }
 
 /* ---------- controls */
-function ctl(parent, key, big) {
+var A0 = -135, A1 = 135;
+function polar(c, r, a) { var t = (a - 90) * Math.PI / 180; return [c + r * Math.cos(t), c + r * Math.sin(t)]; }
+function arcPath(c, r, a, b) {
+  if (b < a) { var t = a; a = b; b = t; }
+  var p = polar(c, r, a), q = polar(c, r, b);
+  return "M" + p[0].toFixed(2) + " " + p[1].toFixed(2) + " A" + r + " " + r + " 0 " + (b - a > 180 ? 1 : 0) + " 1 " + q[0].toFixed(2) + " " + q[1].toFixed(2);
+}
+
+/* A dial: drag up/down (Shift = fine), wheel, arrow keys; double-click = default. Ranges that
+ * span 0 (Shift, Formant, gains, the Shape coefficients) light from the centre. */
+function dial(parent, key, hero) {
   var m = META[key];
   if (!m) return;
-  var row = el("div", "ctl" + (big ? " big" : ""), parent);
-  var lab = el("label", "", row, m.name); lab.title = key;
-  var vt;
-  if (m.type === "enum") {
-    var seg = el("div", "seg", row), btns = [];
-    row.style.gridTemplateColumns = "86px 1fr";
-    m.options.forEach(function (o, i) {
-      var b = el("button", "", seg, o);
-      b.onclick = function () { send(key, o); upd(i); };
-      btns.push(b);
-    });
-    var upd = function (i) { VAL[key] = i; btns.forEach(function (b, j) { b.classList.toggle("on", j === i); }); after(key); };
-    CTL[key] = { set: upd };
-  } else {
-    var r = el("input", "", row);
-    r.type = "range"; r.min = m.min; r.max = m.max; r.step = m.step || 0.01;
-    vt = el("span", "v", row);
-    var show = function (v) { VAL[key] = v; vt.textContent = fmt(key, v); after(key); };
-    r.oninput = function () { var v = parseFloat(r.value); show(v); send(key, v); };
-    r.ondblclick = function () { r.value = m.default; r.oninput(); };
-    CTL[key] = { set: function (v) { r.value = v; show(v); } };
+  var S = hero ? 66 : 48, c = S / 2, r = S / 2 - 4, lo = m.min, hi = m.max;
+  var bip = lo < 0 && hi > 0, step = m.step || 0.01;
+  var box = el("div", "dial" + (hero ? " hero" : ""), parent);
+  box.tabIndex = 0;
+  box.title = m.name + " — drag or scroll (Shift: fine), double-click for the default";
+  box.setAttribute("role", "slider");
+  box.setAttribute("aria-label", m.name);
+  var svg = sv("svg", { width: S, height: S, viewBox: "0 0 " + S + " " + S }, box);
+  sv("path", { d: arcPath(c, r, A0, A1), "class": "trk" }, svg);
+  if (bip) { var z0 = A0 + (0 - lo) / (hi - lo) * (A1 - A0), zp = polar(c, r + 3.5, z0), zq = polar(c, r - 3.5, z0);
+             sv("line", { x1: zp[0], y1: zp[1], x2: zq[0], y2: zq[1], "class": "zero" }, svg); }
+  var val = sv("path", { "class": "val" }, svg);
+  sv("circle", { cx: c, cy: c, r: r - 7, "class": "cap" }, svg);
+  var ptr = sv("line", { "class": "ptr" }, svg);
+  el("div", "dl", box, m.name);
+  var vt = el("div", "dv", box);
+  var cur = NaN;
+  var norm = function (v) { return (v - lo) / (hi - lo); };
+  function draw(v) {
+    var a = A0 + clamp(norm(v), 0, 1) * (A1 - A0), z = bip ? A0 + norm(0) * (A1 - A0) : A0;
+    val.setAttribute("d", Math.abs(a - z) < 0.6 ? "" : arcPath(c, r, z, a));
+    var p = polar(c, (r - 7) * 0.28, a), q = polar(c, r - 9, a);
+    ptr.setAttribute("x1", p[0]); ptr.setAttribute("y1", p[1]); ptr.setAttribute("x2", q[0]); ptr.setAttribute("y2", q[1]);
   }
-  if (m.default !== undefined) CTL[key].set(m.type === "enum" ? m.default : m.default);
+  function show(v) { cur = v; VAL[key] = v; draw(v); vt.textContent = fmt(key, v); box.setAttribute("aria-valuetext", vt.textContent); after(key); }
+  function quant(v) {
+    v = clamp(v, lo, hi);
+    if (step >= 1) v = lo + Math.round((v - lo) / step) * step;
+    else v = Math.round(v * 10000) / 10000;
+    return v;
+  }
+  function setv(v) { v = quant(v); if (v === cur) return; show(v); send(key, v); }
+  var yl = 0, nd = 0;                    /* incremental, so Shift can come and go mid-drag */
+  box.addEventListener("pointerdown", function (e) {
+    if (e.button !== 0) return;
+    box.setPointerCapture(e.pointerId); box.classList.add("drag"); HELD = key;
+    yl = e.clientY; nd = norm(isNaN(cur) ? m.default : cur);
+    e.preventDefault(); box.focus();
+  });
+  box.addEventListener("pointermove", function (e) {
+    if (!box.hasPointerCapture(e.pointerId)) return;
+    nd = clamp(nd + (yl - e.clientY) / (e.shiftKey ? 900 : 180), 0, 1);
+    yl = e.clientY;
+    setv(lo + nd * (hi - lo));
+  });
+  var end = function (e) { if (box.hasPointerCapture(e.pointerId)) box.releasePointerCapture(e.pointerId); box.classList.remove("drag"); HELD = null; };
+  box.addEventListener("pointerup", end);
+  box.addEventListener("pointercancel", end);
+  box.addEventListener("dblclick", function () { setv(m.default); });
+  var nudge = function (dir, fine) { var d = step >= 1 ? step : (hi - lo) / (fine ? 500 : 100); setv((isNaN(cur) ? m.default : cur) + dir * d); };
+  box.addEventListener("wheel", function (e) { e.preventDefault(); nudge(e.deltaY < 0 ? 1 : -1, e.shiftKey); }, { passive: false });
+  box.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowUp" || e.key === "ArrowRight") { nudge(1, e.shiftKey); e.preventDefault(); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowLeft") { nudge(-1, e.shiftKey); e.preventDefault(); }
+    else if (e.key === "Home") { setv(m.default); e.preventDefault(); }
+  });
+  CTL[key] = { set: show };
+  show(m.default);
 }
-function group(parent, title, keys, bigFirst) {
-  if (title) el("h3", "", parent, title);
-  keys.forEach(function (k, i) { ctl(parent, k, bigFirst && i === 0); });
+
+/* Off/On -> a switch; a few short options -> segmented buttons; many -> a menu */
+function chooser(parent, key) {
+  var m = META[key];
+  if (!m) return;
+  var box = el("div", "swc", parent);
+  el("span", "lab", box, m.name);
+  var o = m.options, upd;
+  if (o.length === 2 && o[0] === "Off" && o[1] === "On") {
+    var t = el("button", "tog", box);
+    t.setAttribute("role", "switch"); t.setAttribute("aria-label", m.name);
+    t.onclick = function () { var v = VAL[key] ? 0 : 1; send(key, o[v]); upd(v); };
+    upd = function (i) { VAL[key] = i; t.classList.toggle("on", i === 1); t.setAttribute("aria-checked", i === 1); after(key); };
+  } else if (o.length <= 5) {
+    var seg = el("div", "seg", box), btns = [];
+    o.forEach(function (name, i) { var b = el("button", "", seg, name); b.onclick = function () { send(key, name); upd(i); }; btns.push(b); });
+    upd = function (i) { VAL[key] = i; btns.forEach(function (b, j) { b.classList.toggle("on", j === i); }); after(key); };
+  } else {
+    var s = el("select", "sel", box);
+    o.forEach(function (name, i) { var op = el("option", "", s, name); op.value = i; });
+    s.onchange = function () { var i = parseInt(s.value, 10); send(key, o[i]); upd(i); };
+    upd = function (i) { VAL[key] = i; s.value = i; after(key); };
+  }
+  CTL[key] = { set: upd };
+  upd(m.default | 0);
 }
+
+/* a titled section: its switches first, then its dials (the first dial large when `hero`) */
+function group(parent, title, keys, hero) {
+  var sec = el("div", "sec", parent);
+  if (title) el("h3", "", sec, title);
+  var sws = null, dials = null, first = true;
+  keys.forEach(function (k) {
+    var m = META[k];
+    if (!m) return;
+    if (m.type === "enum") { sws = sws || el("div", "sws", sec); chooser(sws, k); }
+    else { dials = dials || el("div", "dials", sec); dial(dials, k, hero && first); first = false; }
+  });
+  return sec;
+}
+function panel(grid, cls, title) { var p = el("div", "panel " + cls, grid); el("h2", "", p, title); return p; }
 
 /* ---------- drawings */
 var wtCycle = null;
+function accent(id) { var c = document.getElementById(id); return c ? getComputedStyle(c).getPropertyValue("--a").trim() || "#7cc7ff" : "#7cc7ff"; }
 function b64ToCycle(s) {
   try {
     var bin = atob(s), n = bin.length >> 1, out = new Float32Array(n);
@@ -176,23 +334,37 @@ function builtin(w, ph) {
   return -1 + 2 * ph;
 }
 function cheb(n, x) { var t0 = 1, t1 = x; if (n === 0) return 1; for (var i = 1; i < n; i++) { var t2 = 2 * x * t1 - t0; t0 = t1; t1 = t2; } return t1; }
-function drawWave() {
-  var c = document.getElementById("wtc"); if (!c) return;
+function scope(c) {
   var W = c.width = c.clientWidth * 2, H = c.height = c.clientHeight * 2, g = c.getContext("2d");
   g.clearRect(0, 0, W, H);
-  g.strokeStyle = "#23262e"; g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
+  g.strokeStyle = "#1c2029"; g.lineWidth = 1;
+  for (var i = 1; i < 8; i++) { g.beginPath(); g.moveTo(i * W / 8, 0); g.lineTo(i * W / 8, H); g.stroke(); }
+  for (i = 1; i < 4; i++) { g.beginPath(); g.moveTo(0, i * H / 4); g.lineTo(W, i * H / 4); g.stroke(); }
+  return { g: g, W: W, H: H };
+}
+function trace(s, pts, col, base) {
+  var g = s.g;
+  g.beginPath();
+  pts.forEach(function (p, i) { i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); });
+  var line = new Path2D(); pts.forEach(function (p, i) { i ? line.lineTo(p[0], p[1]) : line.moveTo(p[0], p[1]); });
+  g.lineTo(pts[pts.length - 1][0], base); g.lineTo(pts[0][0], base); g.closePath();
+  var gr = g.createLinearGradient(0, 0, 0, s.H); gr.addColorStop(0, col + "55"); gr.addColorStop(1, col + "00");
+  g.fillStyle = gr; g.fill();
+  g.strokeStyle = col; g.lineWidth = 3; g.shadowColor = col; g.shadowBlur = 8; g.stroke(line); g.shadowBlur = 0;
+}
+function drawWave() {
+  var c = document.getElementById("wtc"); if (!c) return;
+  var s = scope(c);
   var wave = VAL.hm_wave | 0, st = VAL.hm_wavetable_stretch !== undefined ? VAL.hm_wavetable_stretch : 0.5, sh = VAL.hm_wavetable_shape || 0;
-  var pts = [], peak = 1e-9;
+  var ys = [], peak = 1e-9;
   for (var i = 0; i < 400; i++) {
     var ph = i / 400, q = ph < st ? 0.5 * ph / st : 0.5 + 0.5 * (ph - st) / (1 - st), x;
     if (wave === 4 && wtCycle) { var p = q * wtCycle.length, a = Math.floor(p), t = p - a; x = wtCycle[a % wtCycle.length] * (1 - t) + wtCycle[(a + 1) % wtCycle.length] * t; }
     else x = builtin(wave, q);
     if (sh > 0) { var y = 0; for (var k = 0; k < 7; k++) y += ((k === 0 ? 1 - sh : 0) + sh * (VAL["hm_chebyshev_" + k] || 0)) * cheb(k + 1, Math.max(-1, Math.min(1, x))); x = y; }
-    pts.push(x); peak = Math.max(peak, Math.abs(x));
+    ys.push(x); peak = Math.max(peak, Math.abs(x));
   }
-  g.strokeStyle = "#7cc7ff"; g.lineWidth = 3; g.beginPath();
-  pts.forEach(function (v, i) { var X = i / 399 * W, Y = H / 2 - v / peak * H * 0.42; i ? g.lineTo(X, Y) : g.moveTo(X, Y); });
-  g.stroke();
+  trace(s, ys.map(function (v, i) { return [i / 399 * s.W, s.H / 2 - v / peak * s.H * 0.4]; }), accent("wtc"), s.H / 2);
 }
 /* the engine's spectral filter (hm.c filter_db), for the curve */
 function filterDb(f) {
@@ -216,24 +388,36 @@ function filterDb(f) {
 }
 function drawFilter() {
   var c = document.getElementById("flc"); if (!c) return;
-  var W = c.width = c.clientWidth * 2, H = c.height = c.clientHeight * 2, g = c.getContext("2d");
-  g.clearRect(0, 0, W, H);
-  var y = function (db) { return H * 0.4 - db / 30 * H * 0.4; };
-  g.strokeStyle = "#23262e"; g.beginPath(); g.moveTo(0, y(0)); g.lineTo(W, y(0)); g.stroke();
-  [100, 1000, 10000].forEach(function (f) { var X = Math.log(f / 20) / Math.log(1000) * W; g.beginPath(); g.moveTo(X, 0); g.lineTo(X, H); g.stroke(); });
-  g.strokeStyle = "#7cc7ff"; g.lineWidth = 3; g.beginPath();
-  for (var i = 0; i <= 300; i++) { var f = 20 * Math.pow(1000, i / 300), Y = Math.max(0, Math.min(H, y(filterDb(f)))); i ? g.lineTo(i / 300 * W, Y) : g.moveTo(0, Y); }
-  g.stroke();
+  var s = scope(c), g = s.g;
+  var y = function (db) { return s.H * 0.42 - db / 30 * s.H * 0.42; };
+  g.fillStyle = "#4b5260"; g.font = "18px system-ui";
+  [[100, "100"], [1000, "1k"], [10000, "10k"]].forEach(function (f) { g.fillText(f[1], Math.log(f[0] / 20) / Math.log(1000) * s.W + 6, s.H - 8); });
+  var pts = [];
+  for (var i = 0; i <= 300; i++) { var f = 20 * Math.pow(1000, i / 300); pts.push([i / 300 * s.W, Math.max(0, Math.min(s.H, y(filterDb(f))))]); }
+  trace(s, pts, accent("flc"), s.H);
 }
 /* the 12-note mask keyboard */
 var keyBtns = [];
-function drawKeys() {
-  var mask = (VAL.hm_scale === 3) ? (VAL.hm_mask | 0) : maskOf(VAL.hm_key | 0, VAL.hm_scale | 0);
-  keyBtns.forEach(function (b, i) { b.classList.toggle("on", !!((mask >> i) & 1)); });
-}
+function maskNow() { return (VAL.hm_scale === 3) ? (VAL.hm_mask | 0) : maskOf(VAL.hm_key | 0, VAL.hm_scale | 0); }
+function drawKeys() { var mask = maskNow(); keyBtns.forEach(function (b, i) { b.classList.toggle("on", !!((mask >> i) & 1)); }); }
 function maskOf(key, sc) {
   var base = sc === 0 ? 0xAB5 : sc === 1 ? 0x5AD : 0xFFF;
   return ((base << key) | (base >> (12 - key))) & 0xFFF;
+}
+function piano(parent) {
+  var box = el("div", "piano", parent), white = [0, 2, 4, 5, 7, 9, 11], wW = 100 / 7;
+  NOTE.forEach(function (n, i) {
+    var blk = /#/.test(n), b = el("button", blk ? "b" : "w", box, blk ? "" : n);
+    if (blk) { var left = white.indexOf(i - 1); b.style.left = ((left + 1) * wW - wW * 0.3) + "%"; b.style.width = (wW * 0.6) + "%"; }
+    else { b.style.left = (white.indexOf(i) * wW) + "%"; b.style.width = wW + "%"; }
+    b.title = n + ": allow / skip (sets Scale to Custom)";
+    b.onclick = function () {
+      var mask = maskNow() ^ (1 << i);
+      send("hm_mask", mask); send("hm_scale", "Custom");
+      CTL.hm_mask.set(mask); CTL.hm_scale && CTL.hm_scale.set(3);
+    };
+    keyBtns[i] = b;
+  });
 }
 function after(key) {
   if (/wave|wavetable|chebyshev/.test(key)) drawWave();
@@ -242,71 +426,89 @@ function after(key) {
   if (key === "engine") {
     var b = document.getElementById("engineBtn"), m = META.engine;
     var name = m ? m.options[VAL.engine | 0] : "?";
-    b.textContent = "Engine: " + name; b.classList.toggle("on", name === "Resynth");
+    b.textContent = name === "Resynth" ? "Resynth on" : "Engine: " + name + " (switch)"; b.classList.toggle("on", name === "Resynth");
   }
 }
 
 /* ---------- layout */
 function build() {
-  var grid = document.getElementById("grid");
-  var p;
-  p = el("div", "panel", grid); el("h2", "", p, "PITCH");
-  group(p, "", ["hm_tuning_mode", "hm_quantize_enabled"]);
-  el("h3", "", p, "SCALE");
-  group(p, "", ["hm_key", "hm_scale"]);
-  var keys = el("div", "keys", p);
-  NOTE.forEach(function (n, i) {
-    var b = el("button", /#/.test(n) ? "blk" : "", keys, n);
-    b.onclick = function () {
-      var mask = (VAL.hm_scale === 3) ? (VAL.hm_mask | 0) : maskOf(VAL.hm_key | 0, VAL.hm_scale | 0);
-      mask ^= 1 << i;
-      send("hm_mask", mask); send("hm_scale", "Custom");
-      CTL.hm_mask && CTL.hm_mask.set(mask); CTL.hm_scale && CTL.hm_scale.set(3);
-    };
-    keyBtns.push(b);
-  });
+  var grid = document.getElementById("grid"), p;
+  p = panel(grid, "p-pitch", "PITCH");
+  group(p, "", ["hm_tuning_mode", "hm_quantize_enabled", "hm_key", "hm_scale"]);
+  piano(p);
+  CTL.hm_mask = { set: function (v) { VAL.hm_mask = v; drawKeys(); } };     /* drawn by the keyboard */
   group(p, "QUANTIZE", ["hm_quantize", "hm_tuner_attack", "hm_tuner_hold", "hm_tuner_polarity"], true);
-  group(p, "NOTE MODE", ["hm_pitch_mono", "hm_pitch_duo", "hm_tuning_duophonic"]);
+  group(p, "NOTE MODE", ["hm_tuning_duophonic", "hm_pitch_mono", "hm_pitch_duo"]);
   group(p, "ROBOTIFY", ["hm_robotify", "hm_robotify_res", "hm_robotify_harm", "hm_robotify_flatten", "hm_robotify_emphasis"], true);
   group(p, "FORMANT", ["hm_formant_shift", "hm_formant_width"], true);
 
-  p = el("div", "panel", grid); el("h2", "", p, "SYNTHESIZE");
+  p = panel(grid, "p-synth", "SYNTHESIZE");
   group(p, "", ["hm_wave"]);
   el("canvas", "", p).id = "wtc";
   group(p, "", ["hm_transform", "hm_synth_mix", "hm_pitch_shift", "hm_octaving"], true);
   group(p, "WAVEFORM", ["hm_wavetable_stretch", "hm_wavetable_shape"]);
-  group(p, "SHAPE (ODD / EVEN)", ["hm_chebyshev_0", "hm_chebyshev_1", "hm_chebyshev_2", "hm_chebyshev_3", "hm_chebyshev_4", "hm_chebyshev_5", "hm_chebyshev_6"]);
+  group(p, "SHAPE  ·  ODD / EVEN", ["hm_chebyshev_0", "hm_chebyshev_1", "hm_chebyshev_2", "hm_chebyshev_3", "hm_chebyshev_4", "hm_chebyshev_5", "hm_chebyshev_6"]);
 
-  p = el("div", "panel", grid); el("h2", "", p, "FILTER");
+  p = panel(grid, "p-filter", "FILTER");
   el("canvas", "", p).id = "flc";
   group(p, "HIGH-PASS", ["hm_hpf_freq", "hm_hpf_res"]);
   group(p, "MID BAND", ["hm_filter_freq", "hm_filter_gain", "hm_filter_width"]);
   group(p, "LOW-PASS", ["hm_lpf_freq", "hm_lpf_res"]);
 
-  p = el("div", "panel", grid); el("h2", "", p, "UTILITY");
-  group(p, "RANGE", ["hm_min_f0", "hm_max_f0", "hm_lookahead"]);
+  p = panel(grid, "p-util", "UTILITY");
+  group(p, "RANGE", ["hm_lookahead", "hm_min_f0", "hm_max_f0"]);
   group(p, "DE-ESS", ["hm_deess", "hm_deess_sensitivity", "hm_deess_attack"], true);
   group(p, "GATE", ["hm_noisegate_threshold", "hm_noisegate_attack", "hm_noisegate_hold", "hm_noisegate_release"], true);
   group(p, "SMOOTHING", ["hm_smoothing", "hm_smoothing_pitch", "hm_smoothing_timbre"], true);
   group(p, "SHARPEN", ["hm_sharpen", "hm_sharpen_bias"], true);
 
-  p = el("div", "panel", grid); el("h2", "", p, "EFFECTS");
+  p = panel(grid, "p-fx", "EFFECTS");
   group(p, "WIDEN", ["hm_widen", "hm_widen_cutoff", "hm_widen_rate"], true);
-  group(p, "WARBLE", ["hm_warble_depth", "hm_warble_rate", "hm_warble_mode"], true);
-  group(p, "GLITCH (FREEZE)", ["hm_freeze", "hm_freeze_length", "hm_freeze_sync", "hm_freeze_synclength"], true);
+  group(p, "WARBLE", ["hm_warble_mode", "hm_warble_depth", "hm_warble_rate"], true);
+  group(p, "GLITCH  ·  FREEZE", ["hm_freeze", "hm_freeze_sync", "hm_freeze_synclength", "hm_freeze_length"], true);
 
-  p = el("div", "panel", grid); el("h2", "", p, "OUTPUT");
-  group(p, "", ["hm_input_gain", "hm_output_gain", "hm_dry_wet"], false);
+  p = panel(grid, "p-out", "OUTPUT");
+  group(p, "", ["hm_dry_wet", "hm_input_gain", "hm_output_gain"], true);
   group(p, "AUDITION", ["demo"]);
-  el("div", "hint", p, "Double-click a slider for its default. Presets: save on the Move (My Presets), or import a .baby above.");
+  el("div", "foot", p, "Dials: drag up/down or scroll (Shift for fine), double-click for the default. Save a sound on the Move (My Presets); it then shows in the preset strip above and on the Move's Presets page.");
   drawWave(); drawFilter(); drawKeys();
+}
+
+/* ---------- presets on the Move (rs_preset / rs_preset_count / rs_preset_name) */
+var P = { i: 0, n: 0, name: "" };
+function get(key) { return R.getParam(KP + key).then(function (v) { return v === undefined || v === null ? "" : String(v); }); }
+function showPreset() {
+  document.getElementById("pName").textContent = P.n > 0 ? P.name : (P.name || "no Resynth presets on the Move");
+  document.getElementById("pIdx").textContent = P.n > 0 ? "PRESET " + (P.i + 1) + " / " + P.n : "PRESET";
+}
+function readPreset() {
+  return Promise.all([get("rs_preset_count"), get("rs_preset"), get("rs_preset_name")]).then(function (r) {
+    var changed = r[2] !== P.name;
+    P.n = parseInt(r[0], 10) || 0; P.i = parseInt(r[1], 10) || 0; P.name = r[2];
+    showPreset();
+    return changed;
+  }).catch(function () { return false; });
+}
+function stepPreset(d) {
+  if (P.n <= 0) { toast("No Resynth presets on the Move yet"); return; }
+  P.i = (P.i + d + P.n) % P.n;
+  R.setParam(KP + "rs_preset", String(P.i));
+  setTimeout(function () { readPreset().then(refreshAll); }, 120);
+}
+function refreshAll() {
+  Object.keys(META).concat(["hm_wt", "engine"]).forEach(function (k) {
+    get(k).then(function (v) {
+      if (v === "") return;
+      if (k === "engine") { VAL.engine = parseVal("engine", v); after("engine"); } else incoming(k, v);
+    }).catch(function () {});
+  });
 }
 
 /* ---------- Import .baby: parse in the browser, send to the Move */
 function importBaby(text, name) {
   var doc = new DOMParser().parseFromString(text, "application/xml");
   if (!doc.querySelector("Humanoid")) { toast(name + ": not a Humanoid preset"); return; }
-  send("engine", "Resynth");
+  send("engine", "Resynth"); VAL.engine = 2; after("engine");
   doc.querySelectorAll("Humanoid > PARAM").forEach(function (p) {
     var id = p.getAttribute("id"), v = p.getAttribute("value"), key = "hm_" + id, m = META[key];
     if (!m || v === null || id === "freeze") return;
@@ -325,7 +527,7 @@ function importBaby(text, name) {
       var mask = 0;
       for (var i = 0; i < 12; i++) if (an.getAttribute("_" + i) === "1") mask |= 1 << i;
       send("hm_mask", mask); send("hm_scale", "Custom");
-      CTL.hm_mask && CTL.hm_mask.set(mask); CTL.hm_scale && CTL.hm_scale.set(3);
+      CTL.hm_mask.set(mask); CTL.hm_scale && CTL.hm_scale.set(3);
     }
   }
   var wt = doc.querySelector("wavetable_tree");
@@ -360,15 +562,16 @@ function readFiles(files) {
 /* ---------- start */
 function incoming(key, v) {
   if (key === "hm_wt") { wtCycle = v ? b64ToCycle(v) : null; drawWave(); return; }
-  if (!CTL[key]) return;
-  CTL[key].set(parseVal(key, v));
+  if (key === HELD || !CTL[key]) return;
+  var x = parseVal(key, v);
+  if (!isNaN(x)) CTL[key].set(x);
 }
 function start(cp) {
   cp.forEach(function (c) { if (c && c.key) META[c.key] = c; });
   build();
-  ["engine"].forEach(function (k) { if (META[k]) VAL[k] = META[k].default; });
+  if (META.engine) VAL.engine = META.engine.default;
   after("engine");
-  document.getElementById("hint").textContent = Object.keys(META).filter(function (k) { return /^hm_/.test(k); }).length + " Resynth controls · live both ways";
+  document.getElementById("hint").textContent = Object.keys(META).filter(function (k) { return /^hm_/.test(k); }).length + " controls · live both ways";
   R.onParamChange(function (p) {
     for (var key in p) {
       if (key.indexOf(KP) !== 0) continue;
@@ -377,12 +580,12 @@ function start(cp) {
       else incoming(k, p[key]);
     }
   });
-  Object.keys(META).concat(["hm_wt"]).forEach(function (k) {
-    R.getParam(KP + k).then(function (v) {
-      if (v === undefined || v === null || v === "") return;
-      if (k === "engine") { VAL.engine = parseVal("engine", v); after("engine"); } else incoming(k, v);
-    }).catch(function () {});
-  });
+  refreshAll();
+  readPreset();
+  /* a preset chosen on the Move: follow it */
+  setInterval(function () { if (!document.hidden && !HELD) readPreset().then(function (ch) { if (ch) refreshAll(); }); }, 1500);
+  document.getElementById("prevP").onclick = function () { stepPreset(-1); };
+  document.getElementById("nextP").onclick = function () { stepPreset(1); };
   document.getElementById("engineBtn").onclick = function () { send("engine", "Resynth"); VAL.engine = 2; after("engine"); };
   var drop = document.getElementById("drop"), file = document.getElementById("file");
   drop.onclick = function (e) { if (e.target !== file) file.click(); };
