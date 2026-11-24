@@ -167,8 +167,14 @@ void hm_set_wavetable(hm_t *h, const float *cycle, int n)
 {
     if (!cycle || n < 2) return;
     if (n > HM_WT_SRC) n = HM_WT_SRC;
-    for (int i = 0; i < n; i++) h->wt_src[i] = (cycle[i] == cycle[i]) ? clampf(cycle[i], -4.0f, 4.0f) : 0.0f;
-    h->wt_src_n = n;
+    /* Humanoid plays a table zero-padded to max(256, the next power of two) samples as one cycle (measured on
+     * four library tables of 92 / 184 / 600 / 4096 samples: within 0.3 dB per harmonic), so a short table is
+     * much brighter than its own spectrum. A 512-sample cycle (the module's hm_wt) is unchanged. */
+    int np2 = 256;
+    while (np2 < n) np2 <<= 1;
+    for (int i = 0; i < np2; i++)
+        h->wt_src[i] = (i < n && cycle[i] == cycle[i]) ? clampf(cycle[i], -4.0f, 4.0f) : 0.0f;
+    h->wt_src_n = np2;
     h->wt_dirty = 1;
 }
 

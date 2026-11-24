@@ -680,8 +680,11 @@ function importBaby(text, name) {
     var bin = atob(wt.getAttribute("wavetable_base64")), n = bin.length >> 2;
     var dv = new DataView(new ArrayBuffer(n * 4));
     for (var j = 0; j < n * 4; j++) dv.setUint8(j, bin.charCodeAt(j));
-    var src = new Float32Array(n), peak = 1e-9;
+    /* Humanoid plays the table zero-padded to max(256, next power of two) samples as one cycle (measured) */
+    var pad = 256; while (pad < n) pad *= 2;
+    var src = new Float32Array(pad), peak = 1e-9;
     for (j = 0; j < n; j++) { src[j] = dv.getFloat32(4 * j, true); peak = Math.max(peak, Math.abs(src[j])); }
+    n = pad;
     var out = "", N = 512;
     for (j = 0; j < N; j++) {
       var pos = j * n / N, a = Math.floor(pos), t = pos - a;

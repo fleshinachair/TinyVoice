@@ -2,6 +2,7 @@
  * The sound itself is calibrated against Humanoid offline (in TinyVoice-lab, outside this repo): these check the module. */
 
 #include <time.h>
+#include "hm.h"
 
 /* a 6-harmonic tone at f Hz, amplitude a, as stereo blocks through the whole module */
 static void rs_run(vt_t *vt, double f, float a, int frames, float *out_l)
@@ -64,6 +65,27 @@ static void test_resynth_tuning(void)
     if (fabs(1200.0 * log2(f / 207.65)) > 10.0) printf("  C# major: %.2f Hz\n", f);
     CHECK(fabs(1200.0 * log2(f / 207.65)) < 10.0);
     dsp_cleanup(vt);
+}
+
+/* Humanoid plays a wavetable zero-padded to max(256, next power of two) samples as one cycle (measured in the lab) */
+static void test_resynth_wavetable_pad(void)
+{
+    hm_t *h = calloc(1, sizeof *h);
+    CHECK(h != NULL);
+    if (!h) return;
+    hm_init(h, (float)VT_SAMPLE_RATE);
+    static float cyc[4096];
+    for (int i = 0; i < 4096; i++) cyc[i] = sinf(6.2831853f * (float)i / 92.0f) + 0.5f;
+    hm_set_wavetable(h, cyc, 92);           /* 92 samples of wave, then 164 zeros */
+    CHECK(h->wt_src_n == 256);
+    CHECK(h->wt_src[91] == cyc[91] && h->wt_src[92] == 0.0f && h->wt_src[255] == 0.0f);
+    hm_set_wavetable(h, cyc, 600);          /* -> 1024 */
+    CHECK(h->wt_src_n == 1024 && h->wt_src[599] == cyc[599] && h->wt_src[600] == 0.0f);
+    hm_set_wavetable(h, cyc, 512);          /* the module's hm_wt: unchanged */
+    CHECK(h->wt_src_n == 512 && h->wt_src[511] == cyc[511]);
+    hm_set_wavetable(h, cyc, 4096);
+    CHECK(h->wt_src_n == 4096);
+    free(h);
 }
 
 static void test_resynth_midi(void)

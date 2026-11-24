@@ -39,6 +39,12 @@ def wavetable_b64(xml: str) -> str | None:
     if n < 2:
         return None
     src = struct.unpack("<%df" % n, raw[:4 * n])
+    # Humanoid plays the table zero-padded to max(256, next power of two) samples as one cycle (measured)
+    pad = 256
+    while pad < n:
+        pad *= 2
+    src = src + (0.0,) * (pad - n)
+    n = pad
     out = []
     for i in range(WT_N):                         # periodic linear resampling to 512 points
         pos = i * n / WT_N

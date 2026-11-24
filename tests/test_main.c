@@ -4550,6 +4550,7 @@ int main(void)
     /* Resynth (tests/resynth_tests.inc) */
     RUN(test_resynth_tuning);
     RUN(test_resynth_midi);
+    RUN(test_resynth_wavetable_pad);
     RUN(test_resynth_pads);
     RUN(test_resynth_state);
     RUN(test_resynth_isolation);
