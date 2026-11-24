@@ -33,6 +33,10 @@
  *    <auto gain dB>,<held pad note or -1>,<note-on count>,<transport beat or -1>"
  *   (the last four optional)
  */
+/* The host's own knob pictures (dial, option square, big number), so a gated knob that acts looks exactly like the stock
+ * cell it replaces: a custom widget owns its cell and cannot hand it back. The same import other modules' ui.js make;
+ * a missing export falls back to the value as text. tests/canvas_test.mjs swaps this line for a stub. */
+import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_page_movy.mjs";
 (function () {
     /* the modes that draw 16 analysis bands (the vocoders: Robot 0, Nightcall 5) */
     const BAND_MODES = [0, 5];
@@ -320,6 +324,41 @@
         ctx.print(x, ty, txt, on ? 0 : 1);
     }
 
+    /* The stock picture for a knob that acts, from the host's renderer and its metadata for the key (payload.metaIndex):
+     * widgetKindFor picks a dial (a range), an option square (an enum) or a big number (a small whole-number range),
+     * placed as drawKnobWidget places it in the cell. False when the host gave no metadata or the renderer lacks a
+     * function (the caller then prints the value). */
+    function drawStock(ctx, payload, key, raw) {
+        const R = typeof HOST_RENDER === "object" && HOST_RENDER ? HOST_RENDER : null;
+        if (!R || typeof R.widgetKindFor !== "function") return false;
+        try {
+            const mi = payload && payload.metaIndex;
+            const meta = mi && typeof mi.getOrGuess === "function" ? mi.getOrGuess(key) : null;
+            if (!meta || typeof meta !== "object") return false;
+            const W = ctx.width | 0, kind = R.widgetKindFor(meta);
+            if (kind === "enum" && typeof R.drawEnumSquare === "function") {
+                const opts = Array.isArray(meta.options) ? meta.options : [];
+                let idx = opts.indexOf(raw);
+                if (idx < 0 && typeof raw === "string") idx = opts.findIndex((o) => String(o).toLowerCase() === raw.toLowerCase());
+                if (idx < 0) { const n = Number(raw); if (raw !== "" && raw !== null && Number.isInteger(n) && n >= 0 && n < opts.length) idx = n; }
+                const so = Array.isArray(meta.short_options) ? meta.short_options : null;
+                const text = so && so[idx] !== undefined ? String(so[idx]) : (opts[idx] !== undefined ? String(opts[idx]) : (raw === undefined || raw === null ? "--" : String(raw)));
+                R.drawEnumSquare(ctx, Math.floor((W - (Number(R.ENUM_W) || 28)) / 2), 0, text, null, undefined, null, raw, false);
+                return true;
+            }
+            if (kind === "bignum" && typeof R.drawBigNumber === "function" && typeof R.bigNumberText === "function") {
+                R.drawBigNumber(ctx, Math.floor(W / 2), 0, R.bigNumberText(meta, raw));
+                return true;
+            }
+            if (kind === "knob" && typeof R.drawArcKnob === "function") {
+                const nv = typeof R.normalizedOf === "function" ? R.normalizedOf(meta, raw) : null;
+                R.drawArcKnob(ctx, Math.floor((W - (Number(R.KW) || 17)) / 2), 0, typeof nv === "number" && isFinite(nv) ? nv : 0);
+                return true;
+            }
+        } catch (e) { /* the text below instead */ }
+        return false;
+    }
+
     /* The knobs that do nothing in some modes: Key, Scale, Retune,
      * Glide, Beauty (all on PITCH). Where a knob acts the widget shows its value as
      * the stock knob would; where it doesn't, a dimmed "N/A" (every other
@@ -350,6 +389,7 @@
         const ty = Math.max(0, Math.min(H - TEXT_H, Math.floor((H - TEXT_H - 3) / 2)));
         const mode = optName(values.mode, MODES, null);
         const dim = !!mode && g.acts.indexOf(mode) < 0;
+        if (!dim && drawStock(ctx, payload, key, values[key])) return;
         const cands = dim ? ["N/A"] : g.text(values[key]);
         let txt = cands[cands.length - 1];
         for (const c of cands) if (tw(c) <= W - 2) { txt = c; break; }
@@ -507,6 +547,7 @@
         } catch (e) { meta = own; }
         const acts = rule ? rule((k) => values[k]) : true;
         if (acts === false) { drawText(ctx, ["N/A"], true); return; }
+        if (drawStock(ctx, payload, key, values[key])) return;
         const full = values[key] === undefined ? "" : fmtValue(values[key], meta);
         const sp = full.lastIndexOf(" ");                              /* "-6.0 dB" -> "-6.0dB" -> "-6.0" where the cell is narrow */
         drawText(ctx, sp > 0 ? [full, full.slice(0, sp) + full.slice(sp + 1), full.slice(0, sp)] : [full], false);
@@ -584,5 +625,5 @@
         },
     };
     /* test seam (tests/canvas_test.mjs) */
-    globalThis.TINYVOICE_SCOPE_FOR_TEST = { draw, drawFreeze, drawLatch, drawBeauty, drawGated, GATED, parse, loopPhase, recFill, noteName, st, drawRs, RS_ACTS, RS_DEPS, RS_META, fmtValue, drawPresetPage, wrapName };
+    globalThis.TINYVOICE_SCOPE_FOR_TEST = { draw, drawFreeze, drawLatch, drawBeauty, drawGated, GATED, parse, loopPhase, recFill, noteName, st, drawRs, RS_ACTS, RS_DEPS, RS_META, fmtValue, drawPresetPage, wrapName, drawStock };
 })();

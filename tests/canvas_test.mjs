@@ -9,7 +9,24 @@ import { dirname, join } from "node:path";
 import vm from "node:vm";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-vm.runInThisContext(readFileSync(join(root, "src/ui/canvas.js"), "utf8"), { filename: "canvas.js" });
+// canvas.js imports the host's renderer (render_page_movy.mjs on the Move); here that line becomes a stub the tests switch
+// on (stockOn) to check the stock pictures are asked for, and off to check the value-as-text fallback.
+const STOCK_CALLS = [];
+let stockOn = false;
+const STOCK_IMPL = {
+    widgetKindFor: (m) => (m.type === "enum" ? "enum" : (m.step === 1 && typeof m.min === "number" && m.max - m.min <= 24 ? "bignum" : "knob")),
+    drawArcKnob: (ctx, kx, ky, nv) => { STOCK_CALLS.push(["knob", kx, ky, nv]); ctx.fillRect(kx, ky, 17, 15, 1); },
+    drawEnumSquare: (ctx, kx, ky, text) => { STOCK_CALLS.push(["enum", kx, ky, text]); ctx.fillRect(kx, ky, 28, 15, 1); },
+    drawBigNumber: (ctx, cx, ky, text) => { STOCK_CALLS.push(["bignum", cx, ky, text]); },
+    bigNumberText: (m, raw) => (Number(raw) > 0 && m.min < 0 ? "+" : "") + Math.round(Number(raw)),
+    normalizedOf: (m, raw) => (Number(raw) - m.min) / (m.max - m.min),
+    KW: 17, ENUM_W: 28,
+};
+globalThis.__TV_HOST_RENDER = new Proxy({}, { get: (t, k) => (stockOn ? STOCK_IMPL[k] : undefined) });
+const IMPORT_LINE = 'import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_page_movy.mjs";';
+const canvasSrc = readFileSync(join(root, "src/ui/canvas.js"), "utf8");
+if (canvasSrc.indexOf(IMPORT_LINE) < 0) { console.log("  FAIL canvas.js no longer imports the host renderer as expected"); process.exitCode = 1; }
+vm.runInThisContext(canvasSrc.replace(IMPORT_LINE, "const HOST_RENDER = globalThis.__TV_HOST_RENDER;"), { filename: "canvas.js" });
 
 let failures = 0, checks = 0;
 const check = (cond, what) => { checks++; if (!cond) { failures++; console.log("  FAIL", what); } };
@@ -468,6 +485,56 @@ check(Object.entries(EXPECT).every(([k2, ex]) => JSON.stringify(T.GATED[k2].acts
           pgs[0].canvas_script === "canvas.js" && !pgs[0].enterable &&
           mjp.capabilities.ui_hierarchy.levels.resynth.params.includes("rs_presets_page") && mjp.capabilities.ui_hierarchy.levels.resynth.list_param === "rs_preset",
           "presets page: module.json declares it as the resynth level's preset browser");
+}
+
+// ---- the stock pictures: a gated knob that acts draws what the host would (its renderer, imported), N/A stays text
+{
+    const mjs = JSON.parse(readFileSync(join(root, "module.json"), "utf8"));
+    const cps = {}; for (const p of mjs.capabilities.chain_params) cps[p.key] = p;
+    const miS = { getOrGuess: (k) => cps[k] || null };
+    const rsK = ov.widgetKinds["custom:tinyvoice_rsna"];
+    const base2 = { hm_synth_mix: 1, hm_transform: 1, hm_tuning_mode: "Scale", hm_midi_idle: "Tune", hm_quantize_enabled: "Off", hm_pitch_shift: 0,
+                    hm_filter_gain: 3, hm_autolevel: "Off", hm_warble_depth: 0.5, hm_warble_rate: 0.5, hm_freeze_sync: "On", hm_tuning_duophonic: "On" };
+    const drawK = (key, vals, mi = miS) => { STOCK_CALLS.length = 0; const k = ltCtx(32); rsK.draw(k, { values: Object.assign({}, base2, vals), group: { keys: [key] }, metaIndex: mi, nowMs: 0 }); return { k, calls: STOCK_CALLS.slice() }; };
+    stockOn = true;
+    let r = drawK("hm_filter_freq", { hm_filter_freq: 77.5 });
+    check(r.calls.length === 1 && r.calls[0][0] === "knob" && Math.abs(r.calls[0][3] - 0.5) < 1e-9 && r.calls[0][1] === Math.floor((32 - 17) / 2) && r.k.runs.length === 0,
+          "stock: Mid Freq that acts is the host's dial, at its value, placed as the stock cell (no text)");
+    r = drawK("hm_filter_freq", { hm_filter_freq: 77.5, hm_filter_gain: 0 });
+    check(r.calls.length === 0 && r.k.runs.length === 1 && r.k.runs[0].t === "N/A", "stock: Mid Freq at Mid Gain 0 is still the dimmed N/A");
+    r = drawK("hm_wave", { hm_wave: "Square" });
+    check(r.calls.length === 1 && r.calls[0][0] === "enum" && r.calls[0][3] === "Square", "stock: Wave is the host's option square, by name");
+    r = drawK("hm_wave", { hm_wave: 3 });
+    check(r.calls.length === 1 && r.calls[0][3] === "Sine", "stock: an enum read as its index shows the option's name");
+    r = drawK("hm_pitch_shift", { hm_pitch_shift: 7 });
+    check(r.calls.length === 1 && r.calls[0][0] === "bignum" && r.calls[0][3] === "+7", "stock: Shift is the host's big number");
+    r = drawK("hm_filter_freq", { hm_filter_freq: 77.5 }, null);
+    check(r.calls.length === 0 && r.k.runs.length === 1 && r.k.runs[0].t === "77.5", "stock: no metadata from the host, the value as text");
+    const thrower = Object.assign({}, STOCK_IMPL, { drawArcKnob() { throw new Error("x"); } });
+    const keep = STOCK_IMPL.drawArcKnob; STOCK_IMPL.drawArcKnob = thrower.drawArcKnob;
+    r = drawK("hm_transform", { hm_transform: 0.5 });
+    STOCK_IMPL.drawArcKnob = keep;
+    check(r.k.runs.length === 1 && r.k.runs[0].t === "0.50", "stock: a renderer that throws falls back to the text, the widget survives");
+    // every one of the 17, acting, asks the renderer once and prints nothing
+    let all = true;
+    for (const key of Object.keys(T.RS_DEPS)) {
+        const v = { [key]: cps[key].type === "enum" ? 0 : cps[key].min };
+        if (key === "hm_pitch_duo") v.hm_tuning_mode = "Note";
+        if (key === "hm_tuning_duophonic" || key === "hm_pitch_mono") v.hm_tuning_mode = "Note";
+        if (key === "hm_midi_idle") v.hm_tuning_mode = "MIDI";
+        const rr = drawK(key, v);
+        if (rr.calls.length !== 1 || rr.k.runs.length !== 0) { all = false; console.log("    stock", key, JSON.stringify(rr.calls), JSON.stringify(rr.k.runs)); }
+    }
+    check(all, "stock: all 17 Resynth knobs draw the stock picture where they act");
+    // the vocoder's gated knobs too: Retune in Snap is a dial, Key in Tape is N/A
+    const gk = (key, vals) => { STOCK_CALLS.length = 0; const k = ltCtx(32); ov.widgetKinds["custom:tinyvoice_" + key].draw(k, { values: vals, group: { keys: [key] }, metaIndex: miS, nowMs: 0 }); return { k, calls: STOCK_CALLS.slice() }; };
+    r = gk("retune", { mode: "Snap", retune: 250 });
+    check(r.calls.length === 1 && r.calls[0][0] === "knob" && Math.abs(r.calls[0][3] - 0.5) < 1e-9 && r.k.runs.length === 0, "stock: Retune in Snap is the host's dial");
+    r = gk("key", { mode: "Snap", key: "D" });
+    check(r.calls.length === 1 && r.calls[0][0] === "enum" && r.calls[0][3] === "D", "stock: Key in Snap is the host's option square");
+    r = gk("key", { mode: "Tape", key: "D" });
+    check(r.calls.length === 0 && r.k.runs[0].t === "N/A", "stock: Key in Tape is still N/A");
+    stockOn = false;
 }
 console.log(`canvas.js: ${checks} checks, ${failures} failed`);
 process.exit(failures ? 1 : 0);
