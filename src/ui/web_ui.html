@@ -434,7 +434,7 @@ function after(key) {
 function build() {
   var grid = document.getElementById("grid"), p;
   p = panel(grid, "p-pitch", "PITCH");
-  group(p, "", ["hm_tuning_mode", "hm_quantize_enabled", "hm_key", "hm_scale"]);
+  group(p, "", ["hm_tuning_mode", "hm_quantize_enabled", "hm_key", "hm_scale", "hm_scale_hold"]);
   piano(p);
   CTL.hm_mask = { set: function (v) { VAL.hm_mask = v; drawKeys(); } };     /* drawn by the keyboard */
   group(p, "QUANTIZE", ["hm_quantize", "hm_tuner_attack", "hm_tuner_hold", "hm_tuner_polarity"], true);
@@ -523,7 +523,8 @@ function importBaby(text, name) {
     send("hm_tuning_mode", mode); CTL.hm_tuning_mode && CTL.hm_tuning_mode.set(mode);
     send("hm_tuning_duophonic", duo); CTL.hm_tuning_duophonic && CTL.hm_tuning_duophonic.set(duo);
     var an = tt.querySelector("tuning_auto_notes");
-    if (an) {
+    if (an && VAL.hm_scale_hold === 1) toast("Kept your Key / Scale (Hold Scale is on)");
+    else if (an) {
       var mask = 0;
       for (var i = 0; i < 12; i++) if (an.getAttribute("_" + i) === "1") mask |= 1 << i;
       send("hm_mask", mask); send("hm_scale", "Custom");

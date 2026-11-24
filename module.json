@@ -64,8 +64,8 @@
                 },
                 "rs_pitch": {
                     "label": "Pitch",
-                    "knobs": ["hm_tuning_mode", "hm_key", "hm_scale", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_lookahead", "hm_tuning_duophonic"],
-                    "params": ["hm_tuning_mode", "hm_key", "hm_scale", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_lookahead", "hm_tuning_duophonic"]
+                    "knobs": ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_tuning_duophonic"],
+                    "params": ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_tuning_duophonic"]
                 },
                 "rs_synth": {
                     "label": "Synth",
@@ -79,8 +79,8 @@
                 },
                 "rs_play": {
                     "label": "Play",
-                    "knobs": ["hm_freeze", "hm_freeze_length", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"],
-                    "params": ["hm_freeze", "hm_freeze_length", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"]
+                    "knobs": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"],
+                    "params": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"]
                 }
             }
         },
@@ -181,6 +181,7 @@
             {"key": "hm_key", "name": "Key", "type": "enum", "options": ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], "default": 0},
             {"key": "hm_scale", "name": "Scale", "type": "enum", "options": ["Major", "Minor", "Chromatic", "Custom"], "default": 0},
             {"key": "hm_mask", "name": "Notes", "type": "float", "min": 0, "max": 4095, "step": 1, "default": 2741},
+            {"key": "hm_scale_hold", "name": "Hold Scale", "type": "enum", "options": ["Off", "On"], "default": 1},
             {"key": "hm_wave", "name": "Wave", "type": "enum", "options": ["Saw", "Square", "Triangle", "Sine", "Preset"], "default": 0},
             {"key": "freeze", "name": "Freeze", "type": "enum", "options": ["Off", "Rec", "Loop"], "default": 0, "viz": {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": "a", "extra_keys": ["scope"]}},
             {"key": "demo", "name": "Demo", "type": "enum", "options": ["Off", "On"], "default": 0},

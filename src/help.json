@@ -461,15 +461,16 @@
             "Octave, Quantize,",
             "Dry/Wet.",
             "Pitch: mode, Key,",
-            "Scale, range,",
-            "latency, Duo.",
+            "Scale, Hold Scale,",
+            "range, Duo.",
             "Synth: wave, Shape,",
             "Stretch, Warble,",
             "Widen, Smoothing.",
             "Tone: filters, Gate,",
             "De-ess, Sharpen.",
-            "Play: Glitch, notes,",
-            "input gain, Demo."
+            "Play: Glitch, delay,",
+            "notes, gain, Demo.",
+            "Presets: first page."
           ]
         },
         {
@@ -479,6 +480,10 @@
             "nearest note of Key",
             "and Scale (Custom:",
             "a preset's notes).",
+            "Hold Scale (on):",
+            "presets keep your",
+            "Key and Scale; turn",
+            "it off to use theirs.",
             "Note: one note (Duo",
             "adds a second).",
             "MIDI: the pads you",
@@ -508,8 +513,11 @@
         {
           "title": "Presets",
           "lines": [
-            "Save and load on My",
-            "Presets. Humanoid",
+            "Presets page: turn",
+            "to audition, press",
+            "to keep. Save your",
+            "own on My Presets.",
+            "Humanoid",
             "presets you own can",
             "be converted on a",
             "computer (the repo's",

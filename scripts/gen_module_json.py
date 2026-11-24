@@ -95,6 +95,7 @@ HM_EXTRA = [
     enum("hm_key", "Key", KEYS, 0),
     enum("hm_scale", "Scale", ["Major", "Minor", "Chromatic", "Custom"], 0),   # Custom = the preset's own note mask (hm_mask)
     flt("hm_mask", "Notes", 0, 4095, 1, 2741),                                  # tuning_auto_notes, bit pc (2741 = C major)
+    enum("hm_scale_hold", "Hold Scale", ["Off", "On"], 1),                      # On: a preset keeps your Key / Scale / Notes (set and forget)
     enum("hm_wave", "Wave", ["Saw", "Square", "Triangle", "Sine", "Preset"], 0),  # Preset = the wavetable a preset carried (hm_wt)
 ]
 PARAMS += HM + HM_EXTRA + [
@@ -152,10 +153,10 @@ AUDITION = ["demo"]
 VOICEFX = ["vf_vowel", "vf_tract", "vf_peak", "vf_choir", "vf_breath", "vf_attack", "vf_release", "vf_mix"]
 # Resynth: the main controls on the Move, four more pages; everything else is on the Remote UI (web_ui.html).
 RS_MAIN  = ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet"]
-RS_PITCH = ["hm_tuning_mode", "hm_key", "hm_scale", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_lookahead", "hm_tuning_duophonic"]
+RS_PITCH = ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_tuning_duophonic"]
 RS_SYNTH = ["hm_wave", "hm_wavetable_shape", "hm_wavetable_stretch", "hm_warble_depth", "hm_warble_rate", "hm_warble_mode", "hm_widen", "hm_smoothing"]
 RS_TONE  = ["hm_hpf_freq", "hm_lpf_freq", "hm_filter_freq", "hm_filter_gain", "hm_noisegate_threshold", "hm_deess", "hm_sharpen", "hm_output_gain"]
-RS_PLAY  = ["hm_freeze", "hm_freeze_length", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"]
+RS_PLAY  = ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"]
 MENU_ONLY = {}
 
 CHAIN = PARAMS + READOUTS

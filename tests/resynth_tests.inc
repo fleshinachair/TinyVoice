@@ -278,6 +278,7 @@ static void test_resynth_bank(void)
     CHECK(dsp_get_param(vt, "rs_preset_count", b, sizeof b) > 0 && strcmp(b, "4") == 0);
 
     /* choosing loads it over Resynth's defaults: nothing of the last preset or of a hand on a knob carries over */
+    dsp_set_param(vt, "hm_scale_hold", "Off");              /* (Hold Scale is tested below: here the preset's own notes apply) */
     dsp_set_param(vt, "engine", "Vocoder");
     dsp_set_param(vt, "hm_transform", "0.9");
     dsp_set_param(vt, "hm_dry_wet", "0.3");
@@ -323,4 +324,54 @@ static void test_resynth_bank(void)
         CHECK(st && strcmp(st, "{\"engine\":\"Resynth\"}") == 0 && strcmp(nm, "s") == 0);
         free(st);
     }
+}
+
+/* Hold Scale: Key, Scale and Notes set by hand survive a preset (the Presets page, My Presets), so many
+ * presets can be tried over one song; Off lets a preset bring its own */
+static void test_resynth_hold_scale(void)
+{
+    char b[128];
+    static char st[8192];
+    vt_t *vt = dsp_init(VT_SAMPLE_RATE);
+    rsbank_t *bk = rsbank_load("tests/fixtures/rs_presets");     /* 1 = Bravo: Custom scale, notes mask 1; 0 = alpha: no scale */
+    CHECK(bk && bk->count == 4 && dsp_set_rs_bank(vt, bk) == 0);
+    CHECK(dsp_get_param(vt, "hm_scale_hold", b, sizeof b) > 0 && strcmp(b, "On") == 0);     /* on by default */
+    dsp_set_param(vt, "hm_key", "A");
+    dsp_set_param(vt, "hm_scale", "Minor");
+    CHECK(dsp_set_param(vt, "rs_preset", "1") == 0);
+    CHECK(fabsf(rs_get(vt, "hm_transform") - 0.7f) < 1e-6f);                                 /* the preset itself loaded... */
+    CHECK(dsp_get_param(vt, "hm_key", b, sizeof b) > 0 && strcmp(b, "A") == 0);              /* ...Key, Scale and Notes did not */
+    CHECK(dsp_get_param(vt, "hm_scale", b, sizeof b) > 0 && strcmp(b, "Minor") == 0);
+    CHECK((int)rs_get(vt, "hm_mask") == 2741);
+    CHECK(dsp_set_param(vt, "rs_preset", "0") == 0 && dsp_get_param(vt, "hm_scale", b, sizeof b) > 0 && strcmp(b, "Minor") == 0);
+    /* a hand on them still works, and is what the next preset keeps */
+    dsp_set_param(vt, "hm_key", "D");
+    dsp_set_param(vt, "rs_preset", "2");
+    CHECK(dsp_get_param(vt, "hm_key", b, sizeof b) > 0 && strcmp(b, "D") == 0);
+    /* My Presets recalls a state through set_param("state"): after load it keeps them too */
+    {
+        static float sink[VT_SAMPLE_RATE + 4096];
+        rs_run(vt, 220.0, 0.2f, VT_SAMPLE_RATE + 4096, sink);                                /* the module has been running */
+        CHECK(dsp_set_param(vt, "state", "{\"engine\":\"Resynth\",\"hm_key\":\"F#\",\"hm_scale\":\"Custom\",\"hm_mask\":5,\"hm_robotify\":0.9}") == 0);
+        CHECK(fabsf(rs_get(vt, "hm_robotify") - 0.9f) < 1e-6f);
+        CHECK(dsp_get_param(vt, "hm_key", b, sizeof b) > 0 && strcmp(b, "D") == 0);
+        CHECK(dsp_get_param(vt, "hm_scale", b, sizeof b) > 0 && strcmp(b, "Minor") == 0);
+        /* a state that says Hold Scale Off applies in full, and turns it off */
+        CHECK(dsp_set_param(vt, "state", "{\"hm_key\":\"F#\",\"hm_scale\":\"Custom\",\"hm_mask\":5,\"hm_scale_hold\":\"Off\"}") == 0);
+        CHECK(dsp_get_param(vt, "hm_key", b, sizeof b) > 0 && strcmp(b, "F#") == 0 && (int)rs_get(vt, "hm_mask") == 5);
+        CHECK(dsp_get_param(vt, "hm_scale_hold", b, sizeof b) > 0 && strcmp(b, "Off") == 0);
+    }
+    /* Off: the preset's own notes apply */
+    CHECK(dsp_set_param(vt, "rs_preset", "1") == 0);
+    CHECK(dsp_get_param(vt, "hm_scale", b, sizeof b) > 0 && strcmp(b, "Custom") == 0 && (int)rs_get(vt, "hm_mask") == 1);
+    /* the restore at load is not a recall: a fresh instance takes the state in full, Hold On or not, and it saves */
+    dsp_set_param(vt, "hm_scale_hold", "On");
+    CHECK(dsp_get_param(vt, "state", st, sizeof st) > 0 && strstr(st, "\"hm_scale_hold\":\"On\"") != NULL);
+    {
+        vt_t *fresh = dsp_init(VT_SAMPLE_RATE);
+        CHECK(dsp_set_param(fresh, "state", st) == 0);
+        CHECK(dsp_get_param(fresh, "hm_scale", b, sizeof b) > 0 && strcmp(b, "Custom") == 0 && (int)rs_get(fresh, "hm_mask") == 1);
+        dsp_cleanup(fresh);
+    }
+    dsp_cleanup(vt);
 }

@@ -150,6 +150,7 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     [VT_P_HM_KEY]    = ENUM_DEF("hm_key",   k_root_opts,     0),
     [VT_P_HM_SCALE]  = ENUM_DEF("hm_scale", k_hm_scale_opts, 0),       /* Major */
     [VT_P_HM_MASK]   = FLOAT_DEF("hm_mask",  0.0f, 4095.0f, 2741.0f),  /* C major */
+    [VT_P_HM_HOLD]   = ENUM_DEF("hm_scale_hold", k_onoff_opts, 1),     /* On: a preset keeps Key / Scale / Notes */
     [VT_P_HM_WAVE]   = ENUM_DEF("hm_wave",  k_hm_wave_opts,  0),       /* Saw */
     /* performance toggles: never saved in "state" */
     [VT_P_FREEZE]   = TRANSIENT_ENUM_DEF("freeze", k_freeze_opts),
@@ -217,6 +218,7 @@ struct vt {
     int   hm_wave_set;          /* the wave the engine holds (-1 = none yet) */
     int   hm_wt_gen;            /* bumped when hm_wt changes */
     int   hm_wt_gen_set;
+    int   hold_skip;            /* inside a preset load with Hold Scale on: hm_key / hm_scale / hm_mask are left alone */
     int   hm_held[VT_MAX_VOICES], hm_nheld;   /* pads the engine holds (MIDI mode), oldest first */
     _Atomic(rsbank_t *) rs_bank;  /* Resynth's presets, published once by the loader thread (dsp_set_rs_bank) */
     /* Ghost hands, as the screen sees them. While the Showcase Tour runs, get_param on Voice FX's knobs answers
@@ -667,7 +669,15 @@ static int tour_moves(int id)
 int dsp_set_param(vt_t *vt, const char *key, const char *val)
 {
     if (!vt || !key || !val) return -1;
-    if (strcmp(key, "state") == 0) return apply_state(vt, val);
+    if (strcmp(key, "state") == 0) {
+        /* Hold Scale: a state set after the module has been running is a preset recalled by hand (My Presets), and
+         * keeps the Key / Scale / Notes in force. The restore at load (autosave, config) is not: it sets them. A state
+         * that itself says Hold Scale Off applies in full. */
+        vt->hold_skip = (int)vt->p[VT_P_HM_HOLD] == 1 && vt->warm_samples >= vt->sample_rate && !strstr(val, "\"hm_scale_hold\":\"Off\"");
+        const int r = apply_state(vt, val);
+        vt->hold_skip = 0;
+        return r;
+    }
     if (strcmp(key, "hm_wt") == 0) return set_hm_wt(vt, val, strlen(val));
     if (strcmp(key, "auto") == 0) {
         /* The old Auto switch (sets saved before Gate took it in, tests):
@@ -767,10 +777,16 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
         const int n = bk ? bk->count : 0;
         const int i = (int)lroundf(clampf(f, 0.0f, (float)(n > 0 ? n - 1 : 0)));
         if (n > 0) {
-            for (int k = VT_P_HM_FIRST; k <= VT_P_HM_WAVE; k++)        /* nothing of the last preset carries over */
-                if (!k_params[k].transient) vt->p[k] = k_params[k].def;
+            const int hold = (int)vt->p[VT_P_HM_HOLD] == 1;            /* Hold Scale: Key, Scale and Notes stay as they are */
+            for (int k = VT_P_HM_FIRST; k <= VT_P_HM_WAVE; k++) {      /* nothing of the last preset carries over */
+                if (k_params[k].transient || k == VT_P_HM_HOLD) continue;
+                if (hold && (k == VT_P_HM_KEY || k == VT_P_HM_SCALE || k == VT_P_HM_MASK)) continue;
+                vt->p[k] = k_params[k].def;
+            }
             set_hm_wt(vt, "", 0);
+            vt->hold_skip = hold && !strstr(bk->e[i].state, "\"hm_scale_hold\":\"Off\"");
             apply_state(vt, bk->e[i].state);
+            vt->hold_skip = 0;
         }
         vt->p[VT_P_RS_PRESET] = (float)i;
         return 0;
@@ -920,6 +936,12 @@ static const char *skip_string(const char *p)    /* p at opening quote */
     return *p ? p + 1 : p;
 }
 
+/* Resynth's Key, Scale and Notes: what Hold Scale keeps across presets */
+static int is_scale_key(const char *key)
+{
+    return strcmp(key, "hm_key") == 0 || strcmp(key, "hm_scale") == 0 || strcmp(key, "hm_mask") == 0;
+}
+
 static int is_transient(const char *key)
 {
     int id = dsp_param_index(key);
@@ -971,7 +993,7 @@ static int apply_members(vt_t *vt, const char *json)
             if (vn >= sizeof val) vn = sizeof val - 1;
             memcpy(val, vs, vn); val[vn] = '\0';
             if (strcmp(key, "auto") == 0) snprintf(legacy_auto, sizeof legacy_auto, "%s", val);
-            else if (!is_transient(key)) dsp_set_param(vt, key, val);
+            else if (!is_transient(key) && !(vt->hold_skip && is_scale_key(key))) dsp_set_param(vt, key, val);
         } else if (*p == '{' || *p == '[') {
             int depth = 0;
             do {
@@ -988,7 +1010,7 @@ static int apply_members(vt_t *vt, const char *json)
             }
             val[vn] = '\0';
             if (strcmp(key, "auto") == 0) snprintf(legacy_auto, sizeof legacy_auto, "%s", val);
-            else if (!is_transient(key)) dsp_set_param(vt, key, val);
+            else if (!is_transient(key) && !(vt->hold_skip && is_scale_key(key))) dsp_set_param(vt, key, val);
         }
     }
 }

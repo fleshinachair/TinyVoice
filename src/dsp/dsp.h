@@ -82,6 +82,7 @@ typedef enum {
     VT_P_HM_KEY,        /* enum  C..B: the root the Scale is built on */
     VT_P_HM_SCALE,      /* enum  Major, Minor, Chromatic, Custom (Custom = hm_mask, a preset's own notes) */
     VT_P_HM_MASK,       /* 0..4095 the 12-note mask (bit pc), used when Scale is Custom */
+    VT_P_HM_HOLD,       /* enum  Off, On: Hold Scale. On = loading a preset leaves Key, Scale and Notes as they are */
     VT_P_HM_WAVE,       /* enum  Saw, Square, Triangle, Sine, Preset (Preset = the cycle in hm_wt) */
     /* Performance toggles (knobs on MORE), not saved in "state" */
     VT_P_FREEZE,       /* enum  Off, On: loop the last 4 s of input into the engine */
