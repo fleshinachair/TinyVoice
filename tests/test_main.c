@@ -4578,6 +4578,7 @@ int main(void)
     RUN(test_resynth_bank);
     RUN(test_resynth_bank_kinds);
     RUN(test_resynth_bank_place);
+    RUN(test_resynth_preset_name_header);
     RUN(test_resynth_mic_gate);
     RUN(test_resynth_gate_rms);
     RUN(test_resynth_hold_scale);

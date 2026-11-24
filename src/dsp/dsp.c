@@ -978,7 +978,11 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
     } else if (strcmp(key, "rs_preset_count") == 0) {              /* the Resynth level's preset browser */
         const rsbank_t *bk = rs_bank_of(vt);
         n = snprintf(buf, (size_t)buf_len, "%d", bk ? bk->count[(int)vt->p[VT_P_RS_BANK]] : 0);
-    } else if (strcmp(key, "rs_preset_name") == 0) {
+    } else if (strcmp(key, "rs_preset_name") == 0 ||
+               /* the header's name: on the drawn Presets page (a canvas preset_browser) the host runs its knob rotation as
+                * well as the browser's, and that one reads `preset_name`; unanswered it cleared the name the browser had just
+                * set, and the header flickered between the preset and the module. So, in Resynth, the very same string. */
+               (strcmp(key, "preset_name") == 0 && (int)vt->p[VT_P_ENGINE] == VT_ENGINE_RESYNTH)) {
         const rsbank_t *bk = rs_bank_of(vt);
         const int i = (int)vt->p[VT_P_RS_PRESET];
         const int bn = (int)vt->p[VT_P_RS_BANK];

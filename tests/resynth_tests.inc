@@ -820,3 +820,25 @@ static void test_resynth_gate_rms(void)
     CHECK(fabs(10.0 * log10(e[2] / e[0])) < 0.5);
     free(h);
 }
+
+/* The header's name on Resynth's drawn Presets page: `preset_name` answers exactly what the browser's `rs_preset_name` does
+ * (two host rotations read one each and both set the header: any difference flickered), and only in Resynth. */
+static void test_resynth_preset_name_header(void)
+{
+    vt_t *vt = dsp_init(VT_SAMPLE_RATE);
+    char a[128], b[128];
+    CHECK(dsp_get_param(vt, "preset_name", a, sizeof a) < 0);                  /* the Vocoder has no browser: unanswered, as before */
+    dsp_set_param(vt, "engine", "Resynth");
+    CHECK(dsp_get_param(vt, "preset_name", a, sizeof a) > 0 && dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(a, b) == 0);
+    CHECK(dsp_set_rs_bank(vt, rsbank_load("tests/fixtures/rs_default", "tests/fixtures/rs_presets")) == 0);
+    dsp_set_param(vt, "rs_bank", "Imported");
+    for (int i = 0; i < 4; i++) {
+        char v[8]; snprintf(v, sizeof v, "%d", i);
+        dsp_set_param(vt, "rs_preset", v);
+        CHECK(dsp_get_param(vt, "preset_name", a, sizeof a) > 0 && dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(a, b) == 0);
+        if (i == 2) CHECK(strcmp(a, "Caf\xc3\xa9 \"Q\"") == 0);
+    }
+    dsp_set_param(vt, "engine", "Synth Voice");
+    CHECK(dsp_get_param(vt, "preset_name", a, sizeof a) < 0);
+    dsp_cleanup(vt);
+}
