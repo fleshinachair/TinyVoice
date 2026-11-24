@@ -9,6 +9,8 @@
 
 /* Output gain of the resynthesis over the input: Humanoid's INIT measures +2.3 dB. */
 #define HM_MAKEUP 1.303f
+#define HM_LEVEL_CEIL 0.30f           /* the limiter's ceiling: -10.5 dBFS, under the module's headroom stage */
+#define HM_LEVEL_TARGET_MS 0.016f    /* the leveller's aim: -18 dBFS RMS (sung averages land a few dB under) */
 /* Partials stop below this (Hz), whatever the sample rate. */
 #define HM_FMAX 18000.0f
 
@@ -91,6 +93,7 @@ void hm_init(hm_t *h, float sample_rate)
 {
     memset(h, 0, sizeof(*h));
     h->sr = sample_rate;
+    h->lv_g = 1.0f; h->lv_lim = 1.0f;  /* autolevel is off here (the A/B tools compare with Humanoid untouched); the module turns it on */
     fft_init(&h->fft, HM_NFFT);
     for (int i = 0; i < HM_NPARAM; i++) h->p[i] = k_par[i].def;
     h->mask = 0xAB5;                  /* C major, as INIT */
@@ -133,6 +136,7 @@ void hm_reset(hm_t *h)
     memset(h->fr_prev, 0, sizeof h->fr_prev);
     h->cnt = 0; h->voiced = 0; h->lp_dev = 0; h->ref_note = -1000; h->env_valid = 0;
     h->gate_env = 0; h->gate_g = 0; h->gate_hold = 0;
+    h->lv_pow = 0.0f; h->lv_ms = 0.0f; h->lv_g = 1.0f; h->lv_lim = 1.0f;
 }
 
 void hm_set(hm_t *h, int id, float v)
@@ -751,6 +755,12 @@ void hm_begin(hm_t *h)
     h->k_gopen = 1.0f / (h->sr * fmaxf(h->p[HM_GATE_RELEASE], 0.001f));
     h->k_ghold = (int)(h->sr * h->p[HM_GATE_HOLD]);
     hmfx_begin(&h->fx, h->p, h->bpm);
+    h->k_lv_p  = 1.0f - expf(-1.0f / (0.020f * h->sr));    /* short-term power */
+    h->k_lv_up = 1.0f - expf(-1.0f / (0.250f * h->sr));    /* the level reference: a slow RMS (250 ms) */
+    h->k_lv_dn = h->k_lv_up;
+    h->k_lv_g  = 1.0f - expf(-1.0f / (0.150f * h->sr));
+    h->k_lim_a = 1.0f - expf(-1.0f / (0.0004f * h->sr));   /* the peak limiter: 0.4 ms attack, 120 ms release */
+    h->k_lim_r = 1.0f - expf(-1.0f / (0.120f * h->sr));
 }
 
 void hm_tick(hm_t *h, float x, float *outl, float *outr)
@@ -778,8 +788,34 @@ void hm_tick(hm_t *h, float x, float *outl, float *outr)
     float l = y, rr = y;
     hmfx_tick(&h->fx, &l, &rr);
     /* the output stage (makeup and Output gain) takes the dry too: Dry/Wet 0 measured +2 dB */
-    *outl = h->k_og * ((1.0f - h->k_dw) * dry + h->k_dw * l);
-    *outr = h->k_og * ((1.0f - h->k_dw) * dry + h->k_dw * rr);
+    float ol = (1.0f - h->k_dw) * dry + h->k_dw * l, orr = (1.0f - h->k_dw) * dry + h->k_dw * rr;
+    if (h->autolevel) {
+        /* Leveller: the mix is held at HM_LEVEL_TARGET (RMS) whatever the preset or the input level. The reference is a
+         * slow RMS that cannot jump more than 4x (6 dB) in one step, so the clicks a synth path makes at note onsets don't
+         * set it (they held the gain down for seconds), and it stands still in pauses, so the gain neither pumps on a
+         * phrase onset nor lifts the room between phrases. Out Gain applies after it, as a trim. */
+        const float p = 0.5f * (ol * ol + orr * orr);
+        h->lv_pow += (p - h->lv_pow) * h->k_lv_p;
+        if (h->lv_pow < 1e-20f) h->lv_pow = 0.0f;
+        if (h->lv_pow > 1e-6f) {                                  /* above -60 dBFS: there is sound to level */
+            if (h->lv_ms < 1e-9f) h->lv_ms = h->lv_pow;               /* the first sound sets the reference */
+            const float pin = h->lv_pow > 4.0f * h->lv_ms ? 4.0f * h->lv_ms : h->lv_pow;
+            h->lv_ms += (pin - h->lv_ms) * (pin > h->lv_ms ? h->k_lv_up : h->k_lv_dn);
+            float goal = sqrtf(HM_LEVEL_TARGET_MS / h->lv_ms);
+            goal = goal < 0.25f ? 0.25f : goal > 24.0f ? 24.0f : goal;   /* -12..+27.6 dB */
+            h->lv_g += (goal - h->lv_g) * h->k_lv_g;
+        }
+        ol *= h->lv_g; orr *= h->lv_g;
+        /* A peak limiter after it: the gain is a guess at the start of a note (it can be 20 dB too high for the first
+         * half second), so anything past HM_LEVEL_CEIL is pulled down at once and let back up over 120 ms. */
+        const float pk = fmaxf(fabsf(ol), fabsf(orr));
+        const float need = pk > HM_LEVEL_CEIL ? HM_LEVEL_CEIL / pk : 1.0f;
+        h->lv_lim += (need - h->lv_lim) * (need < h->lv_lim ? h->k_lim_a : h->k_lim_r);
+        if (need < h->lv_lim) h->lv_lim = need;                    /* never let a sample through over the ceiling */
+        ol *= h->lv_lim; orr *= h->lv_lim;
+    }
+    *outl = h->k_og * ol;
+    *outr = h->k_og * orr;
 }
 
 void hm_process(hm_t *h, const float *in, float *outl, float *outr, int n)

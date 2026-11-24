@@ -393,6 +393,10 @@ int main(int argc, char **argv)
         }
         clock_gettime(CLOCK_MONOTONIC, &t1);
         api->get_param(inst, "rs_preset_count", cnt, sizeof cnt);
+        printf("  Default bank: %s presets\n", cnt);
+        CHECK(atoi(cnt) == 30);                               /* the shipped bank */
+        api->set_param(inst, "rs_bank", "Imported");
+        api->get_param(inst, "rs_preset_count", cnt, sizeof cnt);
         count = atoi(cnt);
         printf("  Resynth bank: %d presets, ready after %.0f ms (first: %s)\n", count,
                (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6, name);

@@ -470,7 +470,8 @@
             "De-ess, Sharpen.",
             "Play: Glitch, delay,",
             "notes, gain, Demo.",
-            "Presets: first page."
+            "Presets: first page.",
+            "Bank: last page."
           ]
         },
         {
@@ -515,8 +516,15 @@
           "lines": [
             "Presets page: turn",
             "to audition, press",
-            "to keep. Save your",
-            "own on My Presets.",
+            "to keep. Bank page:",
+            "Default (30, with",
+            "TinyVoice) or",
+            "Imported (yours).",
+            "Save your own on My",
+            "Presets. Demo plays",
+            "5 Default presets.",
+            "Auto Level (Remote",
+            "UI) evens loudness.",
             "Humanoid",
             "presets you own can",
             "be converted on a",

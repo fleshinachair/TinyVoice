@@ -873,7 +873,7 @@ static void test_state_roundtrip(void)
     };
     /* every saved param (not freeze, demo, the preset index or Resynth's Glitch) off its default: the list
      * above, then every Resynth param (hm_*) by rule */
-    CHECK(sizeof set / sizeof set[0] + (VT_P_HM_WAVE - VT_P_HM_FIRST + 1) - 1 == VT_P_COUNT - 5);
+    CHECK(sizeof set / sizeof set[0] + (VT_P_HM_WAVE - VT_P_HM_FIRST + 1) - 1 == VT_P_COUNT - 6);
     for (size_t i = 0; i < sizeof set / sizeof set[0]; i++) CHECK(dsp_set_param(a, set[i][0], set[i][1]) == 0);
     for (int id = VT_P_HM_FIRST; id <= VT_P_HM_WAVE; id++) {
         const vt_param_def *d = dsp_param_def(id);
@@ -1242,14 +1242,14 @@ static void test_module_json_matches_params(void)
     int nlevels = 0;
     char names[16][32];
     while (js_nth_member(levels, nlevels, names[nlevels], sizeof names[0]) && nlevels < 16) nlevels++;
-    CHECK(nlevels == 11);
+    CHECK(nlevels == 12);
     CHECK(strcmp(names[0], "vocoder") == 0);
     for (int l = 1; l < nlevels && l < 4; l++) CHECK(strcmp(names[l], page_names[l - 1]) == 0);
     CHECK(strcmp(names[4], "voicefx") == 0);
     CHECK(strcmp(names[5], "audition") == 0);
     {   /* Resynth: its root (the main controls) and four pages */
-        static const char *const rs_names[5] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play" };
-        for (int l = 0; l < 5; l++) CHECK(nlevels > 6 + l && strcmp(names[6 + l], rs_names[l]) == 0);
+        static const char *const rs_names[6] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_bank" };
+        for (int l = 0; l < 6; l++) CHECK(nlevels > 6 + l && strcmp(names[6 + l], rs_names[l]) == 0);
     }
 
     int listed_on[VT_P_COUNT] = {0}, referenced[16] = {0};
@@ -1338,6 +1338,11 @@ static void test_module_json_matches_params(void)
                 if (id >= 0) listed_on[id]++;
             }
         }
+    }
+    {   /* the Bank page: one knob, the bank the Presets page lists */
+        const char *knobs = js_get(js_get(levels, "rs_bank"), "knobs");
+        CHECK(knobs && js_arr_len(knobs) == 1 && js_str(js_elem(knobs, 0), s, sizeof s) && strcmp(s, "rs_bank") == 0);
+        listed_on[VT_P_RS_BANK]++;
     }
     for (int i = 0; i < VT_P_COUNT; i++) {
         const int hm = i >= VT_P_HM_FIRST && i <= VT_P_HM_WAVE;
@@ -4550,6 +4555,7 @@ int main(void)
     RUN(test_resynth_cpu);
     RUN(test_resynth_bank);
     RUN(test_resynth_hold_scale);
+    RUN(test_resynth_demo);
     RUN(test_midi_agnostic_modes);
     RUN(test_latency_budget);
     RUN(test_headroom);

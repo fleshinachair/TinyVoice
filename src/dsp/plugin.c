@@ -18,7 +18,8 @@ typedef struct {
     vt_t *vt;
     pthread_t loader;
     int loader_on;
-    char dir[512];
+    char dir[512];          /* Imported bank: Schwung's preset folder for this module */
+    char dflt[512];         /* Default bank: the presets shipped in the module folder */
 } vt_inst;
 
 #define VT(inst) (((vt_inst *)(inst))->vt)
@@ -27,7 +28,7 @@ typedef struct {
 static void *bank_loader(void *arg)
 {
     vt_inst *in = (vt_inst *)arg;
-    rsbank_t *b = rsbank_load(in->dir);
+    rsbank_t *b = rsbank_load(in->dflt, in->dir);
     if (b && dsp_set_rs_bank(in->vt, b) != 0) rsbank_free(b);
     return NULL;
 }
@@ -51,6 +52,7 @@ static void *vt_create_instance(const char *module_dir, const char *config_json)
      * Unknown or nested members are ignored. */
     if (config_json) (void)dsp_set_param(in->vt, "state", config_json);
     preset_dir(module_dir, in->dir, sizeof in->dir);
+    snprintf(in->dflt, sizeof in->dflt, "%s/presets", module_dir ? module_dir : "");
     in->loader_on = pthread_create(&in->loader, NULL, bank_loader, in) == 0;
     return in;
 }

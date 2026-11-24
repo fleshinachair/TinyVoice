@@ -73,6 +73,7 @@ typedef enum {
     VT_P_VF_MIX,        /* 0..1  Mix/Drive: wet/dry up to 0.7, then all wet with the drive climbing */
     VT_P_VF_PRESET,     /* index into the Voice FX bank (presets.c); writing it loads that preset into the
                          * eight knobs above. Transient: a saved state holds the knob values, not the preset. */
+    VT_P_RS_BANK,       /* enum  Default, Imported: which bank the Presets page lists (transient) */
     VT_P_RS_PRESET,     /* index into the Resynth bank (rsbank.c: the Resynth presets in Schwung's preset folder,
                          * loaded off the audio thread); writing it loads that preset. Transient, like vf_preset. */
     /* The Resynth personality (src/dsp/hm.c): one param per Humanoid control, key "hm_" + its preset id,
@@ -83,6 +84,7 @@ typedef enum {
     VT_P_HM_SCALE,      /* enum  Major, Minor, Chromatic, Custom (Custom = hm_mask, a preset's own notes) */
     VT_P_HM_MASK,       /* 0..4095 the 12-note mask (bit pc), used when Scale is Custom */
     VT_P_HM_HOLD,       /* enum  Off, On: Hold Scale. On = loading a preset leaves Key, Scale and Notes as they are */
+    VT_P_HM_LEVEL,      /* enum  Off, On: Auto Level, the output leveller (every preset at one loudness) */
     VT_P_HM_WAVE,       /* enum  Saw, Square, Triangle, Sine, Preset (Preset = the cycle in hm_wt) */
     /* Performance toggles (knobs on MORE), not saved in "state" */
     VT_P_FREEZE,       /* enum  Off, On: loop the last 4 s of input into the engine */

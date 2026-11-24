@@ -73,6 +73,7 @@ PARAMS = [
     flt("vf_release", "Release", 0, 1, 0.01, 0.3, "%"),     # tail
     flt("vf_mix", "Mix/Drv", 0, 1, 0.01, 0.75, "%"),        # wet/dry up to 70 %, then all wet with the drive climbing
     flt("vf_preset", "Preset", 0, 5, 1, 5),                 # the Voice FX bank (presets.c); the host's preset browser writes it
+    enum("rs_bank", "Bank", ["Default", "Imported"], 0),    # which bank the Presets page lists: the shipped presets, or yours (imported / saved)
     flt("rs_preset", "Preset", 0, 1023, 1, 0),              # the Resynth bank (rsbank.c: the preset folder's Resynth presets); its browser writes it
 ] + []   # the Resynth block is appended below (it is read from src/dsp/hm_params.h)
 
@@ -96,6 +97,7 @@ HM_EXTRA = [
     enum("hm_scale", "Scale", ["Major", "Minor", "Chromatic", "Custom"], 0),   # Custom = the preset's own note mask (hm_mask)
     flt("hm_mask", "Notes", 0, 4095, 1, 2741),                                  # tuning_auto_notes, bit pc (2741 = C major)
     enum("hm_scale_hold", "Hold Scale", ["Off", "On"], 1),                      # On: a preset keeps your Key / Scale / Notes (set and forget)
+    enum("hm_autolevel", "Auto Level", ["Off", "On"], 1),                       # On: the output leveller holds every preset at one loudness
     enum("hm_wave", "Wave", ["Saw", "Square", "Triangle", "Sine", "Preset"], 0),  # Preset = the wavetable a preset carried (hm_wt)
 ]
 PARAMS += HM + HM_EXTRA + [
@@ -150,6 +152,7 @@ PITCH = ["key", "scale", "retune", "glide", "pitch", "target", "cents"]
 MORE  = ["spread", "tone", "freeze", "freeze_len", "gate", "latch", "beauty", "demo"]
 # Voice FX: its whole UI. No Mode, Key, Scale, Gate, Level or Latch: the engine runs with the automatic front end.
 AUDITION = ["demo"]
+RS_BANK = ["rs_bank"]
 VOICEFX = ["vf_vowel", "vf_tract", "vf_peak", "vf_choir", "vf_breath", "vf_attack", "vf_release", "vf_mix"]
 # Resynth: the main controls on the Move, four more pages; everything else is on the Remote UI (web_ui.html).
 RS_MAIN  = ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet"]
@@ -223,10 +226,12 @@ a('                    "count_param": "rs_preset_count",')
 a('                    "name_param": "rs_preset_name",')
 a('                    "knobs": %s,' % line(RS_MAIN))
 a('                    "params": %s' % line(RS_MAIN + [{"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"},
-                                                      {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"}]))
+                                                      {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"},
+                                                      {"level": "rs_bank", "label": "Bank"}]))
 a('                },')
 for name, label, keys, last in [("rs_pitch", "Pitch", RS_PITCH, False), ("rs_synth", "Synth", RS_SYNTH, False),
-                                ("rs_tone", "Tone", RS_TONE, False), ("rs_play", "Play", RS_PLAY, True)]:
+                                ("rs_tone", "Tone", RS_TONE, False), ("rs_play", "Play", RS_PLAY, False),
+                                ("rs_bank", "Bank", RS_BANK, True)]:
     a('                "%s": {' % name)
     a('                    "label": "%s",' % label)
     a('                    "knobs": %s,' % line(keys))

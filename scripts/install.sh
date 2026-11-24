@@ -23,6 +23,6 @@ echo "installing to $MOVE_USER@$MOVE_HOST:$DEST"
 # Extract beside it and mv each file in: a rename leaves the old, mapped copy
 # intact for the running process, and the new one loads on the next restart.
 STAGE="$(dirname "$(dirname "$(dirname "$DEST")")")/.stage-$MODULE_ID"      # same filesystem, outside modules/
-tar -C "$SRC" -cf - . | ssh "$MOVE_USER@$MOVE_HOST" "rm -rf '$STAGE' && mkdir -p '$STAGE' '$DEST' && tar -C '$STAGE' -xf - && chmod 755 '$STAGE'/*.so && rm -f '$DEST/dsp.so' '$DEST/ui.js' '$DEST/ui_chain.js' && for f in '$STAGE'/*; do mv -f \"\$f\" '$DEST'/; done && rm -rf '$STAGE'"
+tar -C "$SRC" -cf - . | ssh "$MOVE_USER@$MOVE_HOST" "rm -rf '$STAGE' && mkdir -p '$STAGE' '$DEST' && tar -C '$STAGE' -xf - && chmod 755 '$STAGE'/*.so && rm -f '$DEST/dsp.so' '$DEST/ui.js' '$DEST/ui_chain.js' && rm -rf '$DEST/presets' && for f in '$STAGE'/*; do mv -f \"\$f\" '$DEST'/; done && rm -rf '$STAGE'"
 
 echo "done. Reload the module (or restart Schwung) to pick up the new $MODULE_ID.so."

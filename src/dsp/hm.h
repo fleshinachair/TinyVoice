@@ -103,6 +103,9 @@ typedef struct {
 
     /* per-block constants (hm_begin) */
     float k_ig, k_og, k_dw, k_thr, k_grel, k_gclose, k_gopen;
+    /* output leveller (autolevel on): every preset lands at the same loudness whatever the input level */
+    int   autolevel;
+    float lv_pow, lv_ms, lv_g, lv_lim, k_lv_p, k_lv_up, k_lv_dn, k_lv_g, k_lim_a, k_lim_r;
     int k_lat, k_gate_on, k_ghold;
 
     int lat_set;                      /* latency setting the analysis lag was made for */

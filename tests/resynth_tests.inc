@@ -252,15 +252,15 @@ static void test_resynth_bank(void)
     /* the loader: Resynth presets of this module only, a state stored as an object or as a string, sorted by name
      * case-insensitively, a missing name taken from the file, escapes decoded; Vocoder states, other modules,
      * broken files and non-.json files skipped */
-    rsbank_t *bk = rsbank_load("tests/fixtures/rs_presets");
-    CHECK(bk && bk->count == 4);
-    if (!bk || bk->count != 4) { rsbank_free(bk); return; }
-    CHECK(strcmp(bk->e[0].name, "alpha") == 0 && strcmp(bk->e[1].name, "Bravo") == 0);
-    CHECK(strcmp(bk->e[2].name, "Caf\xc3\xa9 \"Q\"") == 0 && strcmp(bk->e[3].name, "g") == 0);
-    CHECK(strstr(bk->e[0].state, "\"hm_robotify\":0.4") != NULL && bk->e[0].state[0] == '{');   /* unescaped */
+    rsbank_t *bk = rsbank_load("tests/fixtures/rs_default", "tests/fixtures/rs_presets");
+    CHECK(bk && bk->count[1] == 4 && bk->count[0] == 4);
+    if (!bk || bk->count[1] != 4) { rsbank_free(bk); return; }
+    CHECK(strcmp(bk->e[1][0].name, "alpha") == 0 && strcmp(bk->e[1][1].name, "Bravo") == 0);
+    CHECK(strcmp(bk->e[1][2].name, "Caf\xc3\xa9 \"Q\"") == 0 && strcmp(bk->e[1][3].name, "g") == 0);
+    CHECK(strstr(bk->e[1][0].state, "\"hm_robotify\":0.4") != NULL && bk->e[1][0].state[0] == '{');   /* unescaped */
     {
-        rsbank_t *none = rsbank_load("tests/fixtures/no_such_folder");
-        CHECK(none && none->count == 0);
+        rsbank_t *none = rsbank_load("tests/fixtures/no_such_folder", NULL);
+        CHECK(none && none->count[0] == 0 && none->count[1] == 0);
         rsbank_free(none);
     }
 
@@ -270,8 +270,16 @@ static void test_resynth_bank(void)
     CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "(loading)") == 0);
     CHECK(dsp_set_param(vt, "rs_preset", "2") == 0 && (int)rs_get(vt, "rs_preset") == 0);
     CHECK(dsp_set_rs_bank(vt, bk) == 0);
+    /* two banks: Default (shipped) is listed first, sorted; Imported is the user's folder */
+    CHECK(dsp_get_param(vt, "rs_bank", b, sizeof b) > 0 && strcmp(b, "Default") == 0);
+    CHECK(dsp_get_param(vt, "rs_preset_count", b, sizeof b) > 0 && strcmp(b, "4") == 0);
+    CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Alpha shipped") == 0);
+    CHECK(dsp_set_param(vt, "rs_preset", "3") == 0 && dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Zed first") == 0);
+    CHECK(fabsf(rs_get(vt, "hm_robotify") - 0.9f) < 1e-6f);                                     /* a Default preset loads like any */
+    CHECK(dsp_set_param(vt, "rs_bank", "Imported") == 0 && (int)rs_get(vt, "rs_preset") == 0);   /* a new list starts at its first */
+    CHECK(dsp_get_param(vt, "rs_bank", b, sizeof b) > 0 && strcmp(b, "Imported") == 0);
     {
-        rsbank_t *again = rsbank_load("tests/fixtures/rs_presets");
+        rsbank_t *again = rsbank_load("tests/fixtures/rs_default", "tests/fixtures/rs_presets");
         CHECK(dsp_set_rs_bank(vt, again) == -1);           /* one handover; the caller keeps the second */
         rsbank_free(again);
     }
@@ -333,8 +341,9 @@ static void test_resynth_hold_scale(void)
     char b[128];
     static char st[8192];
     vt_t *vt = dsp_init(VT_SAMPLE_RATE);
-    rsbank_t *bk = rsbank_load("tests/fixtures/rs_presets");     /* 1 = Bravo: Custom scale, notes mask 1; 0 = alpha: no scale */
-    CHECK(bk && bk->count == 4 && dsp_set_rs_bank(vt, bk) == 0);
+    rsbank_t *bk = rsbank_load("tests/fixtures/rs_default", "tests/fixtures/rs_presets");     /* 1 = Bravo: Custom scale, notes mask 1; 0 = alpha: no scale */
+    CHECK(bk && bk->count[1] == 4 && bk->count[0] == 4 && dsp_set_rs_bank(vt, bk) == 0);
+    dsp_set_param(vt, "rs_bank", "Imported");
     CHECK(dsp_get_param(vt, "hm_scale_hold", b, sizeof b) > 0 && strcmp(b, "On") == 0);     /* on by default */
     dsp_set_param(vt, "hm_key", "A");
     dsp_set_param(vt, "hm_scale", "Minor");
@@ -374,4 +383,41 @@ static void test_resynth_hold_scale(void)
         dsp_cleanup(fresh);
     }
     dsp_cleanup(vt);
+}
+
+/* Resynth's Demo: five Default presets in turn (here the two the fixtures have), the Presets page following,
+ * the player's own sound back at the end, and a hand on a knob pinning the tour */
+static void test_resynth_demo(void)
+{
+    char b[64];
+    static float sink[VT_SAMPLE_RATE];
+    for (int pin = 0; pin < 3; pin++) {
+        vt_t *vt = dsp_init(VT_SAMPLE_RATE);
+        rsbank_t *bk = rsbank_load("tests/fixtures/rs_default", "tests/fixtures/rs_presets");
+        CHECK(bk && dsp_set_rs_bank(vt, bk) == 0);
+        dsp_set_bpm(vt, 400.0f);                                 /* a bar is 0.6 s: four bars 2.4 s */
+        dsp_set_param(vt, "engine", "Resynth");
+        dsp_set_param(vt, "hm_robotify", "0.123");
+        dsp_set_param(vt, "hm_transform", "0.77");
+        dsp_set_param(vt, "demo", "On");
+        rs_run(vt, 220.0, 0.2f, VT_SAMPLE_RATE / 2, sink);       /* step 0: "Tune - Hard Snap" */
+        CHECK(fabsf(rs_get(vt, "hm_robotify") - 0.35f) < 1e-6f && fabsf(rs_get(vt, "hm_transform") - 0.0f) < 1e-6f);
+        CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Tune - Hard Snap") == 0);   /* the Presets page follows */
+        if (pin == 1) { dsp_set_param(vt, "hm_robotify", "0.5"); }                       /* a hand on a knob */
+        if (pin == 2) { dsp_set_param(vt, "rs_preset", "0"); }                           /* or on the Presets page */
+        for (int k = 0; k < 11; k++) rs_run(vt, 220.0, 0.2f, VT_SAMPLE_RATE, sink);      /* past step 4: 4 * 2.4 s = 9.6 s */
+        if (pin == 0) CHECK(fabsf(rs_get(vt, "hm_robotify") - 0.8f) < 1e-6f);            /* step 4: "Fx - Dark Choir" */
+        else if (pin == 1) CHECK(fabsf(rs_get(vt, "hm_robotify") - 0.5f) < 1e-6f);       /* pinned on the knob's value: no step */
+        else CHECK(fabsf(rs_get(vt, "hm_transform") - 0.2f) < 1e-6f);                    /* pinned on "Alpha shipped": no step */
+        dsp_set_param(vt, "demo", "Off");
+        rs_run(vt, 220.0, 0.2f, 1024, sink);
+        if (pin == 0) {                                          /* the player's own sound is back */
+            CHECK(fabsf(rs_get(vt, "hm_robotify") - 0.123f) < 1e-6f && fabsf(rs_get(vt, "hm_transform") - 0.77f) < 1e-6f);
+            CHECK(dsp_get_param(vt, "hm_wave", b, sizeof b) > 0 && strcmp(b, "Saw") == 0);
+        } else {                                                 /* pinned: what the player stopped on stays (not their old sound) */
+            CHECK(fabsf(rs_get(vt, "hm_transform") - 0.77f) > 1e-6f);
+            if (pin == 1) CHECK(fabsf(rs_get(vt, "hm_robotify") - 0.5f) < 1e-6f);
+        }
+        dsp_cleanup(vt);
+    }
 }

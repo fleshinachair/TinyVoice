@@ -92,6 +92,7 @@ static const char *const k_hm_HM_OPTS_LAT[]   = {HM_OPTS_LAT};
 static const char *const k_hm_HM_OPTS_SYNC[]  = {HM_OPTS_SYNC};
 static const char *const k_hm_HM_OPTS_WMODE[] = {HM_OPTS_WMODE};
 static const char *const k_hm_HM_OPTS_PMODE[] = {HM_OPTS_PMODE};
+static const char *const k_rs_bank_opts[] = {"Default", "Imported"};
 static const char *const k_hm_scale_opts[] = {"Major", "Minor", "Chromatic", "Custom"};
 static const char *const k_hm_wave_opts[]  = {"Saw", "Square", "Triangle", "Sine", "Preset"};
 #define HM_SCALE_CUSTOM 3
@@ -145,12 +146,14 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     [VT_P_VF_RELEASE] = FLOAT_DEF("vf_release", 0.0f, 1.0f,   0.3f),
     [VT_P_VF_MIX]    = FLOAT_DEF("vf_mix",     0.0f,  1.0f,   0.75f),
     [VT_P_VF_PRESET] = {"vf_preset", VT_PTYPE_FLOAT, 0, 5, 5, NULL, 0, 1},    /* 0..5 = the bank; transient; 5 = Vowel Morph Solo */
+    [VT_P_RS_BANK]   = TRANSIENT_ENUM_DEF("rs_bank", k_rs_bank_opts),     /* which bank the Presets page lists */
     [VT_P_RS_PRESET] = {"rs_preset", VT_PTYPE_FLOAT, 0, RSBANK_MAX - 1, 0, NULL, 0, 1},   /* the Resynth bank (rsbank.c); transient */
     HM_PARAM_LIST(VT_X_HM)
     [VT_P_HM_KEY]    = ENUM_DEF("hm_key",   k_root_opts,     0),
     [VT_P_HM_SCALE]  = ENUM_DEF("hm_scale", k_hm_scale_opts, 0),       /* Major */
     [VT_P_HM_MASK]   = FLOAT_DEF("hm_mask",  0.0f, 4095.0f, 2741.0f),  /* C major */
     [VT_P_HM_HOLD]   = ENUM_DEF("hm_scale_hold", k_onoff_opts, 1),     /* On: a preset keeps Key / Scale / Notes */
+    [VT_P_HM_LEVEL]  = ENUM_DEF("hm_autolevel", k_onoff_opts, 1),      /* On: the output leveller */
     [VT_P_HM_WAVE]   = ENUM_DEF("hm_wave",  k_hm_wave_opts,  0),       /* Saw */
     /* performance toggles: never saved in "state" */
     [VT_P_FREEZE]   = TRANSIENT_ENUM_DEF("freeze", k_freeze_opts),
@@ -218,6 +221,11 @@ struct vt {
     int   hm_wave_set;          /* the wave the engine holds (-1 = none yet) */
     int   hm_wt_gen;            /* bumped when hm_wt changes */
     int   hm_wt_gen_set;
+    /* Resynth's Demo: it steps through five Default presets, and puts the player's own sound back at the end */
+    int   demo_rs_snap, demo_rs_step;       /* a snapshot is held / the step of the tour last loaded (-1 none) */
+    float demo_rs_p[VT_P_HM_WAVE - VT_P_HM_FIRST + 1];
+    char  demo_rs_wt[VT_HM_WT_STR];
+    int   demo_rs_wt_valid, demo_rs_bank, demo_rs_idx;
     int   hold_skip;            /* inside a preset load with Hold Scale on: hm_key / hm_scale / hm_mask are left alone */
     int   hm_held[VT_MAX_VOICES], hm_nheld;   /* pads the engine holds (MIDI mode), oldest first */
     _Atomic(rsbank_t *) rs_bank;  /* Resynth's presets, published once by the loader thread (dsp_set_rs_bank) */
@@ -428,6 +436,7 @@ static void hm_sync(vt_t *vt)
 {
     hm_t *h = &vt->hm;
     for (int i = 0; i < VT_HM_COUNT; i++) h->p[i] = vt->p[VT_P_HM_FIRST + i];
+    h->autolevel = (int)vt->p[VT_P_HM_LEVEL];
     hm_set_mask(h, hm_mask_of(vt));
     hm_set_bpm(h, vt->bpm);
     const int wave = (int)vt->p[VT_P_HM_WAVE];
@@ -666,6 +675,26 @@ static int tour_moves(int id)
            id == VT_P_VF_MIX || id == VT_P_VF_PRESET;
 }
 
+/* Resynth's Demo: the Default-bank presets it shows off, in order (a range: tuner, vocoder, harmony, synth, fx) */
+#define RS_DEMO_N 5
+static const char *const k_rs_demo[RS_DEMO_N] = { "Tune - Hard Snap", "Voco - Saw Choir", "Harm - Fifth Above", "Synth - Bell Tone", "Fx - Dark Choir" };
+
+/* Load preset `i` of bank `bn` over Resynth's defaults (the Presets page, and the Demo tour). Hold Scale keeps
+ * Key, Scale and Notes; Auto Level and Hold Scale themselves are the player's and stay. */
+static void rs_load(vt_t *vt, const rsbank_t *bk, int bn, int i)
+{
+    const int hold = (int)vt->p[VT_P_HM_HOLD] == 1;
+    for (int k = VT_P_HM_FIRST; k <= VT_P_HM_WAVE; k++) {            /* nothing of the last preset carries over */
+        if (k_params[k].transient || k == VT_P_HM_HOLD || k == VT_P_HM_LEVEL) continue;
+        if (hold && (k == VT_P_HM_KEY || k == VT_P_HM_SCALE || k == VT_P_HM_MASK)) continue;
+        vt->p[k] = k_params[k].def;
+    }
+    set_hm_wt(vt, "", 0);
+    vt->hold_skip = hold && !strstr(bk->e[bn][i].state, "\"hm_scale_hold\":\"Off\"");
+    apply_state(vt, bk->e[bn][i].state);
+    vt->hold_skip = 0;
+}
+
 int dsp_set_param(vt_t *vt, const char *key, const char *val)
 {
     if (!vt || !key || !val) return -1;
@@ -739,11 +768,15 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
      * the player takes over from where the dial was) or on the preset browser: the tour steps aside. Demo goes Off,
      * the value written is the user's, and every other knob is back on the user's own value. A state restore is not
      * a hand; neither is a knob the tour leaves alone (Breath, Attack, Release). */
+    /* A hand on Resynth (a knob, or the Presets page) pins its Demo tour on the preset it is playing. */
+    if (!vt->restoring && vt->demo_active && (id == VT_P_RS_PRESET || id == VT_P_RS_BANK || (id >= VT_P_HM_FIRST && id <= VT_P_HM_WAVE)))
+        vt->demo_pinned = 1;
     if (!vt->restoring && vt->disp_on && vt->demo_active && tour_moves(id)) {
         vt->p[VT_P_DEMO] = 0.0f;
         vt->disp_on = 0;
     }
 
+    if (id == VT_P_RS_BANK) vt->p[VT_P_RS_PRESET] = 0.0f;         /* a new list starts at its first preset (nothing is loaded by it) */
     if (d->type == VT_PTYPE_ENUM) {
         for (int i = 0; i < d->num_options; i++) {
             if (strcmp(d->options[i], val) == 0) {
@@ -774,20 +807,10 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
     if (end == val || !isfinite(f)) return -1;
     if (id == VT_P_RS_PRESET) {           /* Resynth's browser writes an index: that preset, over Resynth's defaults */
         const rsbank_t *bk = rs_bank_of(vt);
-        const int n = bk ? bk->count : 0;
+        const int bn = (int)vt->p[VT_P_RS_BANK];
+        const int n = bk ? bk->count[bn] : 0;
         const int i = (int)lroundf(clampf(f, 0.0f, (float)(n > 0 ? n - 1 : 0)));
-        if (n > 0) {
-            const int hold = (int)vt->p[VT_P_HM_HOLD] == 1;            /* Hold Scale: Key, Scale and Notes stay as they are */
-            for (int k = VT_P_HM_FIRST; k <= VT_P_HM_WAVE; k++) {      /* nothing of the last preset carries over */
-                if (k_params[k].transient || k == VT_P_HM_HOLD) continue;
-                if (hold && (k == VT_P_HM_KEY || k == VT_P_HM_SCALE || k == VT_P_HM_MASK)) continue;
-                vt->p[k] = k_params[k].def;
-            }
-            set_hm_wt(vt, "", 0);
-            vt->hold_skip = hold && !strstr(bk->e[i].state, "\"hm_scale_hold\":\"Off\"");
-            apply_state(vt, bk->e[i].state);
-            vt->hold_skip = 0;
-        }
+        if (n > 0) rs_load(vt, bk, bn, i);
         vt->p[VT_P_RS_PRESET] = (float)i;
         return 0;
     }
@@ -867,11 +890,12 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
         n = snprintf(buf, (size_t)buf_len, "%s", ps ? ps->name : "");
     } else if (strcmp(key, "rs_preset_count") == 0) {              /* the Resynth level's preset browser */
         const rsbank_t *bk = rs_bank_of(vt);
-        n = snprintf(buf, (size_t)buf_len, "%d", bk ? bk->count : 0);
+        n = snprintf(buf, (size_t)buf_len, "%d", bk ? bk->count[(int)vt->p[VT_P_RS_BANK]] : 0);
     } else if (strcmp(key, "rs_preset_name") == 0) {
         const rsbank_t *bk = rs_bank_of(vt);
         const int i = (int)vt->p[VT_P_RS_PRESET];
-        n = snprintf(buf, (size_t)buf_len, "%s", !bk ? "(loading)" : bk->count == 0 ? "(no presets)" : i < bk->count ? bk->e[i].name : "");
+        const int bn = (int)vt->p[VT_P_RS_BANK];
+        n = snprintf(buf, (size_t)buf_len, "%s", !bk ? "(loading)" : bk->count[bn] == 0 ? "(no presets)" : i < bk->count[bn] ? bk->e[bn][i].name : "");
     } else if (strcmp(key, "voices") == 0) {
         n = snprintf(buf, (size_t)buf_len, "%d", dsp_active_voices(vt));
     } else if (strcmp(key, "name") == 0) {
@@ -1247,9 +1271,26 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         vt->demo_time = 0.0;
         demo_reset(&vt->demo);
         groove_reset(&vt->groove);
+        vt->demo_rs_snap = 0;
+        vt->demo_rs_step = -1;
+        if ((int)vt->p[VT_P_ENGINE] == VT_ENGINE_RESYNTH) {          /* the player's own Resynth sound, to come back to */
+            memcpy(vt->demo_rs_p, &vt->p[VT_P_HM_FIRST], sizeof vt->demo_rs_p);
+            memcpy(vt->demo_rs_wt, vt->hm_wt_str, sizeof vt->demo_rs_wt);
+            vt->demo_rs_wt_valid = vt->hm_wt_valid;
+            vt->demo_rs_bank = (int)vt->p[VT_P_RS_BANK];
+            vt->demo_rs_idx = (int)vt->p[VT_P_RS_PRESET];
+            vt->demo_rs_snap = 1;
+        }
     } else if (!demo_on && vt->demo_active) {
         vt->demo_active = 0;
         if (!vt->demo_pinned) vt->p[VT_P_MODE] = (float)vt->demo_saved_mode;
+        if (vt->demo_rs_snap && !vt->demo_pinned) {                  /* (pinned: the preset or knob the player stopped on is theirs) */
+            memcpy(&vt->p[VT_P_HM_FIRST], vt->demo_rs_p, sizeof vt->demo_rs_p);
+            if (vt->demo_rs_wt_valid) set_hm_wt(vt, vt->demo_rs_wt, strlen(vt->demo_rs_wt)); else set_hm_wt(vt, "", 0);
+            vt->p[VT_P_RS_BANK] = (float)vt->demo_rs_bank;
+            vt->p[VT_P_RS_PRESET] = (float)vt->demo_rs_idx;
+        }
+        vt->demo_rs_snap = 0;
         vt->demo_pinned = 0;
     }
     int demo_chord_on = 0, demo_notes[VT_MAX_VOICES];
@@ -1257,6 +1298,21 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         const double bar = 240.0 / (double)vt->bpm;                 /* 4 beats */
         if (!vt->demo_pinned && (int)vt->p[VT_P_ENGINE] == VT_ENGINE_VOCODER)
             vt->p[VT_P_MODE] = (float)((int)(vt->demo_time / (4.0 * bar)) % VT_MODE_COUNT);
+        if (!vt->demo_pinned && vt->demo_rs_snap && (int)vt->p[VT_P_ENGINE] == VT_ENGINE_RESYNTH) {
+            /* Resynth: five Default presets, four bars each, the Presets page following along */
+            const rsbank_t *bk = rs_bank_of(vt);
+            const int step = (int)(vt->demo_time / (4.0 * bar)) % RS_DEMO_N;
+            if (bk && step != vt->demo_rs_step) {
+                vt->demo_rs_step = step;
+                for (int i = 0; i < bk->count[0]; i++)
+                    if (strcmp(bk->e[0][i].name, k_rs_demo[step]) == 0) {
+                        rs_load(vt, bk, 0, i);
+                        vt->p[VT_P_RS_BANK] = 0.0f;
+                        vt->p[VT_P_RS_PRESET] = (float)i;
+                        break;
+                    }
+            }
+        }
         int m = (int)vt->p[VT_P_MODE];
         if (latch_mode(m)) {
             demo_chord((int)(vt->demo_time / bar), demo_notes);      /* virtual pads, one chord a bar */
@@ -1328,7 +1384,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         }
         freeze_set_clock(&vt->freeze, to_db);
     }
-    const int auto_on = ((int)vt->p[VT_P_GATE] == 0 || vf) && !rs;  /* Gate = Auto (always, in Voice FX; never in Resynth) */
+    const int auto_on = (int)vt->p[VT_P_GATE] == 0 || vf || rs;     /* Gate = Auto (always, in Voice FX and Resynth: the presets' gates and tracker expect a DAW-level voice) */
     const float gate_manual_db = gate_db_of((int)vt->p[VT_P_GATE] ? (int)vt->p[VT_P_GATE] : vt->gate_mem);
     const int root = (int)vt->p[VT_P_KEY];        /* 0 = C */
     const float c1 = vt->p[VT_P_CHAR1], c2 = vt->p[VT_P_CHAR2], md = vt->p[VT_P_MOD];

@@ -197,16 +197,14 @@ static char *read_file(const char *path)
     return buf;
 }
 
-rsbank_t *rsbank_load(const char *dir)
+static void load_dir(rsbank_t *b, int bank, const char *dir)
 {
-    rsbank_t *b = (rsbank_t *)calloc(1, sizeof *b);
-    if (!b) return NULL;
     DIR *d = dir ? opendir(dir) : NULL;
-    if (!d) return b;
+    if (!d) return;
     int cap = 0;
     struct dirent *de;
     char path[1024];
-    while ((de = readdir(d)) != NULL && b->count < RSBANK_MAX) {
+    while ((de = readdir(d)) != NULL && b->count[bank] < RSBANK_MAX) {
         const char *fn = de->d_name;
         const size_t fl = strlen(fn);
         if (fl < 6 || fn[0] == '.' || strcmp(fn + fl - 5, ".json") != 0) continue;
@@ -222,26 +220,36 @@ rsbank_t *rsbank_load(const char *dir)
             memcpy(name, fn, k);
             name[k] = '\0';
         }
-        if (b->count == cap) {
+        if (b->count[bank] == cap) {
             const int nc = cap ? 2 * cap : 64;
-            rsbank_entry *ne = (rsbank_entry *)realloc(b->e, (size_t)nc * sizeof *ne);
+            rsbank_entry *ne = (rsbank_entry *)realloc(b->e[bank], (size_t)nc * sizeof *ne);
             if (!ne) { free(state); break; }
-            b->e = ne;
+            b->e[bank] = ne;
             cap = nc;
         }
-        memcpy(b->e[b->count].name, name, sizeof name);
-        b->e[b->count].state = state;
-        b->count++;
+        memcpy(b->e[bank][b->count[bank]].name, name, sizeof name);
+        b->e[bank][b->count[bank]].state = state;
+        b->count[bank]++;
     }
     closedir(d);
-    if (b->count > 1) qsort(b->e, (size_t)b->count, sizeof *b->e, name_cmp);
+    if (b->count[bank] > 1) qsort(b->e[bank], (size_t)b->count[bank], sizeof *b->e[bank], name_cmp);
+}
+
+rsbank_t *rsbank_load(const char *default_dir, const char *imported_dir)
+{
+    rsbank_t *b = (rsbank_t *)calloc(1, sizeof *b);
+    if (!b) return NULL;
+    load_dir(b, 0, default_dir);
+    load_dir(b, 1, imported_dir);
     return b;
 }
 
 void rsbank_free(rsbank_t *b)
 {
     if (!b) return;
-    for (int i = 0; i < b->count; i++) free(b->e[i].state);
-    free(b->e);
+    for (int k = 0; k < RSBANK_BANKS; k++) {
+        for (int i = 0; i < b->count[k]; i++) free(b->e[k][i].state);
+        free(b->e[k]);
+    }
     free(b);
 }

@@ -60,7 +60,7 @@
                     "count_param": "rs_preset_count",
                     "name_param": "rs_preset_name",
                     "knobs": ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet"],
-                    "params": ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet", {"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"}, {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"}]
+                    "params": ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet", {"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"}, {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"}, {"level": "rs_bank", "label": "Bank"}]
                 },
                 "rs_pitch": {
                     "label": "Pitch",
@@ -81,6 +81,11 @@
                     "label": "Play",
                     "knobs": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"],
                     "params": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"]
+                },
+                "rs_bank": {
+                    "label": "Bank",
+                    "knobs": ["rs_bank"],
+                    "params": ["rs_bank"]
                 }
             }
         },
@@ -113,6 +118,7 @@
             {"key": "vf_release", "name": "Release", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.3},
             {"key": "vf_mix", "name": "Mix/Drv", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.75},
             {"key": "vf_preset", "name": "Preset", "type": "float", "min": 0, "max": 5, "step": 1, "default": 5},
+            {"key": "rs_bank", "name": "Bank", "type": "enum", "options": ["Default", "Imported"], "default": 0},
             {"key": "rs_preset", "name": "Preset", "type": "float", "min": 0, "max": 1023, "step": 1, "default": 0},
             {"key": "hm_pitch_mono", "name": "Note", "type": "float", "min": 24, "max": 96, "step": 1, "default": 60},
             {"key": "hm_pitch_duo", "name": "Duo Note", "type": "float", "min": 24, "max": 96, "step": 1, "default": 67},
@@ -182,6 +188,7 @@
             {"key": "hm_scale", "name": "Scale", "type": "enum", "options": ["Major", "Minor", "Chromatic", "Custom"], "default": 0},
             {"key": "hm_mask", "name": "Notes", "type": "float", "min": 0, "max": 4095, "step": 1, "default": 2741},
             {"key": "hm_scale_hold", "name": "Hold Scale", "type": "enum", "options": ["Off", "On"], "default": 1},
+            {"key": "hm_autolevel", "name": "Auto Level", "type": "enum", "options": ["Off", "On"], "default": 1},
             {"key": "hm_wave", "name": "Wave", "type": "enum", "options": ["Saw", "Square", "Triangle", "Sine", "Preset"], "default": 0},
             {"key": "freeze", "name": "Freeze", "type": "enum", "options": ["Off", "Rec", "Loop"], "default": 0, "viz": {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": "a", "extra_keys": ["scope"]}},
             {"key": "demo", "name": "Demo", "type": "enum", "options": ["Off", "On"], "default": 0},
