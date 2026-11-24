@@ -76,6 +76,8 @@ typedef struct {
     float lp_dev;                     /* low-passed deviation (the part that gets corrected) */
     int ref_note;                     /* note the deviation is measured from */
     int midi_held[8], n_held;         /* MIDI mode: held notes, newest last */
+    int midi_idle_tune;               /* MIDI mode with no note held: 1 = correct to the scale (Scale mode), 0 = silence (Humanoid) */
+    int fold_note[2], fold_off[2];    /* MIDI mode: a pad is moved by whole octaves to within one of the voice; what it was moved by */
     float warble_ph;
 
     /* wavetable */

@@ -60,7 +60,7 @@
                     "count_param": "rs_preset_count",
                     "name_param": "rs_preset_name",
                     "knobs": ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet"],
-                    "params": ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet", {"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"}, {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"}, {"level": "rs_bank", "label": "Bank"}]
+                    "params": ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet", {"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"}, {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"}, {"level": "rs_notes", "label": "Notes"}, {"level": "rs_bank", "label": "Bank"}]
                 },
                 "rs_pitch": {
                     "label": "Pitch",
@@ -79,8 +79,13 @@
                 },
                 "rs_play": {
                     "label": "Play",
-                    "knobs": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"],
-                    "params": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"]
+                    "knobs": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "demo"],
+                    "params": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "demo"]
+                },
+                "rs_notes": {
+                    "label": "Notes",
+                    "knobs": ["hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"],
+                    "params": ["hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"]
                 },
                 "rs_bank": {
                     "label": "Bank",
@@ -189,6 +194,7 @@
             {"key": "hm_mask", "name": "Notes", "type": "float", "min": 0, "max": 4095, "step": 1, "default": 2741},
             {"key": "hm_scale_hold", "name": "Hold Scale", "type": "enum", "options": ["Off", "On"], "default": 1},
             {"key": "hm_autolevel", "name": "Auto Level", "type": "enum", "options": ["Off", "On"], "default": 1},
+            {"key": "hm_midi_idle", "name": "No Pad", "type": "enum", "options": ["Tune", "Silent"], "default": 0},
             {"key": "hm_wave", "name": "Wave", "type": "enum", "options": ["Saw", "Square", "Triangle", "Sine", "Preset"], "default": 0},
             {"key": "freeze", "name": "Freeze", "type": "enum", "options": ["Off", "Rec", "Loop"], "default": 0, "viz": {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": "a", "extra_keys": ["scope"]}},
             {"key": "demo", "name": "Demo", "type": "enum", "options": ["Off", "On"], "default": 0},

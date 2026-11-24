@@ -1242,14 +1242,14 @@ static void test_module_json_matches_params(void)
     int nlevels = 0;
     char names[16][32];
     while (js_nth_member(levels, nlevels, names[nlevels], sizeof names[0]) && nlevels < 16) nlevels++;
-    CHECK(nlevels == 12);
+    CHECK(nlevels == 13);
     CHECK(strcmp(names[0], "vocoder") == 0);
     for (int l = 1; l < nlevels && l < 4; l++) CHECK(strcmp(names[l], page_names[l - 1]) == 0);
     CHECK(strcmp(names[4], "voicefx") == 0);
     CHECK(strcmp(names[5], "audition") == 0);
     {   /* Resynth: its root (the main controls) and four pages */
-        static const char *const rs_names[6] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_bank" };
-        for (int l = 0; l < 6; l++) CHECK(nlevels > 6 + l && strcmp(names[6 + l], rs_names[l]) == 0);
+        static const char *const rs_names[7] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_notes", "rs_bank" };
+        for (int l = 0; l < 7; l++) CHECK(nlevels > 6 + l && strcmp(names[6 + l], rs_names[l]) == 0);
     }
 
     int listed_on[VT_P_COUNT] = {0}, referenced[16] = {0};
@@ -1328,11 +1328,12 @@ static void test_module_json_matches_params(void)
     }
     /* Resynth's pages: the knobs they hold (the rest of its params are on the Remote UI only: web_ui.html) */
     {
-        static const char *const rs_lv[5] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play" };
-        for (int l = 0; l < 5; l++) {
+        static const char *const rs_lv[6] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_notes" };
+        static const int rs_n[6] = { 8, 8, 8, 8, 6, 4 };            /* Play: 6 knobs; Notes (Note mode's notes, Latch, No Pad): 4 */
+        for (int l = 0; l < 6; l++) {
             const char *knobs = js_get(js_get(levels, rs_lv[l]), "knobs");
-            CHECK(knobs && js_arr_len(knobs) == 8);
-            for (int k = 0; k < 8 && knobs; k++) {
+            CHECK(knobs && js_arr_len(knobs) == rs_n[l]);
+            for (int k = 0; k < rs_n[l] && knobs; k++) {
                 const int id = js_str(js_elem(knobs, k), s, sizeof s) ? dsp_param_index(s) : -1;
                 CHECK(id >= 0);
                 if (id >= 0) listed_on[id]++;
@@ -1346,7 +1347,7 @@ static void test_module_json_matches_params(void)
     }
     for (int i = 0; i < VT_P_COUNT; i++) {
         const int hm = i >= VT_P_HM_FIRST && i <= VT_P_HM_WAVE;
-        int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET || i == VT_P_RS_PRESET) ? 0 : (i == VT_P_DEMO ? 3 : 1);   /* Demo: the vocoder's More page, Voice FX's Audition and Resynth's Play */   /* `engine` is the host's Mode page, `vf_preset` its preset browser: not knobs */
+        int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET || i == VT_P_RS_PRESET) ? 0 : (i == VT_P_DEMO ? 3 : i == VT_P_LATCH ? 2 : 1);   /* Demo: the vocoder's More page, Voice FX's Audition and Resynth's Play */   /* `engine` is the host's Mode page, `vf_preset` its preset browser: not knobs */
         if (hm && listed_on[i] == 0) want_pages = 0;                 /* a Resynth param on the Remote UI only */
         if (listed_on[i] != want_pages) printf("  param %s listed on %d pages\n", dsp_param_def(i)->key, listed_on[i]);
         CHECK(listed_on[i] == want_pages);
@@ -4549,6 +4550,7 @@ int main(void)
     /* Resynth (tests/resynth_tests.inc) */
     RUN(test_resynth_tuning);
     RUN(test_resynth_midi);
+    RUN(test_resynth_pads);
     RUN(test_resynth_state);
     RUN(test_resynth_isolation);
     RUN(test_resynth_numeric_safety);

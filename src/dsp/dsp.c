@@ -93,6 +93,7 @@ static const char *const k_hm_HM_OPTS_SYNC[]  = {HM_OPTS_SYNC};
 static const char *const k_hm_HM_OPTS_WMODE[] = {HM_OPTS_WMODE};
 static const char *const k_hm_HM_OPTS_PMODE[] = {HM_OPTS_PMODE};
 static const char *const k_rs_bank_opts[] = {"Default", "Imported"};
+static const char *const k_hm_idle_opts[] = {"Tune", "Silent"};
 static const char *const k_hm_scale_opts[] = {"Major", "Minor", "Chromatic", "Custom"};
 static const char *const k_hm_wave_opts[]  = {"Saw", "Square", "Triangle", "Sine", "Preset"};
 #define HM_SCALE_CUSTOM 3
@@ -154,6 +155,7 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     [VT_P_HM_MASK]   = FLOAT_DEF("hm_mask",  0.0f, 4095.0f, 2741.0f),  /* C major */
     [VT_P_HM_HOLD]   = ENUM_DEF("hm_scale_hold", k_onoff_opts, 1),     /* On: a preset keeps Key / Scale / Notes */
     [VT_P_HM_LEVEL]  = ENUM_DEF("hm_autolevel", k_onoff_opts, 1),      /* On: the output leveller */
+    [VT_P_HM_IDLE]   = ENUM_DEF("hm_midi_idle", k_hm_idle_opts, 0),    /* MIDI mode, no pad: Tune to the scale / Silent (Humanoid) */
     [VT_P_HM_WAVE]   = ENUM_DEF("hm_wave",  k_hm_wave_opts,  0),       /* Saw */
     /* performance toggles: never saved in "state" */
     [VT_P_FREEZE]   = TRANSIENT_ENUM_DEF("freeze", k_freeze_opts),
@@ -431,12 +433,15 @@ static unsigned hm_mask_of(const vt_t *vt)
     return ((base << key) | (base >> (12 - key))) & 0xFFFu;
 }
 
+static int latch_on(const vt_t *vt);
+
 /* Push Resynth's parameters, wave, scale, tempo and pads into the engine (once per block). */
 static void hm_sync(vt_t *vt)
 {
     hm_t *h = &vt->hm;
     for (int i = 0; i < VT_HM_COUNT; i++) h->p[i] = vt->p[VT_P_HM_FIRST + i];
     h->autolevel = (int)vt->p[VT_P_HM_LEVEL];
+    h->midi_idle_tune = (int)vt->p[VT_P_HM_IDLE] == 0;
     hm_set_mask(h, hm_mask_of(vt));
     hm_set_bpm(h, vt->bpm);
     const int wave = (int)vt->p[VT_P_HM_WAVE];
@@ -458,6 +463,9 @@ static void hm_sync(vt_t *vt)
     }
     /* pads, oldest first, so the engine's newest two are the newest held (MIDI mode) */
     int held[VT_MAX_VOICES], n = 0;
+    if (latch_on(vt)) {                                          /* Latch: the buffer holds the notes after the pads are let go */
+        for (int i = 0; i < VT_MAX_VOICES; i++) if (vt->latch_note[i] >= 0) held[n++] = vt->latch_note[i];
+    } else
     for (uint32_t age = 0;;) {
         int pick = -1;
         for (int i = 0; i < VT_MAX_VOICES; i++)
@@ -685,7 +693,7 @@ static void rs_load(vt_t *vt, const rsbank_t *bk, int bn, int i)
 {
     const int hold = (int)vt->p[VT_P_HM_HOLD] == 1;
     for (int k = VT_P_HM_FIRST; k <= VT_P_HM_WAVE; k++) {            /* nothing of the last preset carries over */
-        if (k_params[k].transient || k == VT_P_HM_HOLD || k == VT_P_HM_LEVEL) continue;
+        if (k_params[k].transient || k == VT_P_HM_HOLD || k == VT_P_HM_LEVEL || k == VT_P_HM_IDLE) continue;
         if (hold && (k == VT_P_HM_KEY || k == VT_P_HM_SCALE || k == VT_P_HM_MASK)) continue;
         vt->p[k] = k_params[k].def;
     }
@@ -1077,7 +1085,7 @@ static int latch_on(const vt_t *vt) { return vt->p[VT_P_LATCH] >= 0.5f; }
 static int latch_mode(int mode)
 {
     return mode == VT_MODE_ROBOT || mode == VT_MODE_CHORDS || mode == VT_MODE_PRISM ||
-           mode == VT_MODE_NIGHTCALL || mode == VT_MODE_HARMONY;
+           mode == VT_MODE_NIGHTCALL || mode == VT_MODE_HARMONY || mode == VT_MODE_RESYNTH;   /* Resynth: MIDI mode keeps the pads */
 }
 
 static void note_on(vt_t *vt, int note, int vel)

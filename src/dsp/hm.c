@@ -93,6 +93,7 @@ void hm_init(hm_t *h, float sample_rate)
 {
     memset(h, 0, sizeof(*h));
     h->sr = sample_rate;
+    h->fold_note[0] = h->fold_note[1] = -1;
     h->lv_g = 1.0f; h->lv_lim = 1.0f;  /* autolevel is off here (the A/B tools compare with Humanoid untouched); the module turns it on */
     fft_init(&h->fft, HM_NFFT);
     for (int i = 0; i < HM_NPARAM; i++) h->p[i] = k_par[i].def;
@@ -499,10 +500,28 @@ static float fc_quantize(float q)
     return expf(lf[i] + t * (lf[i + 1] - lf[i]));
 }
 
+/* A held pad, moved by whole octaves to within one octave of the voice (m, MIDI): a pad an octave up still sounds an
+ * octave up, but Move's pads (E5 and up) no longer throw a voice sung around A3 two octaves away. Once folded it stays
+ * put until the voice is more than 12.8 semitones from it, so a voice wandering near the edge doesn't flip octaves. */
+static int fold_to_voice(hm_t *h, int slot, int note, float m)
+{
+    int n = note;
+    if (h->fold_note[slot] == note) n = note + h->fold_off[slot];
+    if (h->fold_note[slot] != note || fabsf((float)n - m) > 12.8f) {
+        n = note;
+        while ((float)n - m > 12.0f) n -= 12;
+        while ((float)n - m < -12.0f) n += 12;
+    }
+    h->fold_note[slot] = note;
+    h->fold_off[slot] = n - note;
+    return n;
+}
+
 /* Returns the number of targets (0..2) and fills the output pitches (MIDI). */
 static int tune(hm_t *h, float *out_midi, int *base_note)
 {
-    const int mode = (int)lrintf(h->p[HM_TUNING_MODE]);
+    int mode = (int)lrintf(h->p[HM_TUNING_MODE]);
+    if (mode == HM_MODE_MIDI && h->n_held == 0 && h->midi_idle_tune) mode = HM_MODE_SCALE;    /* no pad: keep tuning to the scale */
     if (!h->voiced) return 0;
     const float m = hz_midi(h->f0);
     if (h->p[HM_SCALE_BYPASS] > 0.5f && mode == HM_MODE_SCALE) {
@@ -533,7 +552,7 @@ static int tune(hm_t *h, float *out_midi, int *base_note)
         base_note[0] = (int)lrintf(h->p[HM_PITCH_MONO]); nt = 1;
         if (h->p[HM_DUOPHONIC] > 0.5f) { base_note[1] = (int)lrintf(h->p[HM_PITCH_DUO]); nt = 2; }
     } else {
-        for (int i = h->n_held - 1; i >= 0 && nt < 2; i--) base_note[nt++] = h->midi_held[i];
+        for (int i = h->n_held - 1; i >= 0 && nt < 2; i--) { base_note[nt] = fold_to_voice(h, nt, h->midi_held[i], m); nt++; }
     }
     for (int i = 0; i < nt; i++) out_midi[i] = (float)base_note[i] + keep;
     return nt;

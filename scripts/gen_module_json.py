@@ -98,6 +98,7 @@ HM_EXTRA = [
     flt("hm_mask", "Notes", 0, 4095, 1, 2741),                                  # tuning_auto_notes, bit pc (2741 = C major)
     enum("hm_scale_hold", "Hold Scale", ["Off", "On"], 1),                      # On: a preset keeps your Key / Scale / Notes (set and forget)
     enum("hm_autolevel", "Auto Level", ["Off", "On"], 1),                       # On: the output leveller holds every preset at one loudness
+    enum("hm_midi_idle", "No Pad", ["Tune", "Silent"], 0),                      # MIDI mode with no pad held: keep tuning to the scale, or go silent (Humanoid)
     enum("hm_wave", "Wave", ["Saw", "Square", "Triangle", "Sine", "Preset"], 0),  # Preset = the wavetable a preset carried (hm_wt)
 ]
 PARAMS += HM + HM_EXTRA + [
@@ -159,7 +160,8 @@ RS_MAIN  = ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "
 RS_PITCH = ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_tuning_duophonic"]
 RS_SYNTH = ["hm_wave", "hm_wavetable_shape", "hm_wavetable_stretch", "hm_warble_depth", "hm_warble_rate", "hm_warble_mode", "hm_widen", "hm_smoothing"]
 RS_TONE  = ["hm_hpf_freq", "hm_lpf_freq", "hm_filter_freq", "hm_filter_gain", "hm_noisegate_threshold", "hm_deess", "hm_sharpen", "hm_output_gain"]
-RS_PLAY  = ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"]
+RS_PLAY  = ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "demo"]
+RS_NOTES = ["hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"]      # Note mode's two notes, and the pads (MIDI mode)
 MENU_ONLY = {}
 
 CHAIN = PARAMS + READOUTS
@@ -227,11 +229,11 @@ a('                    "name_param": "rs_preset_name",')
 a('                    "knobs": %s,' % line(RS_MAIN))
 a('                    "params": %s' % line(RS_MAIN + [{"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"},
                                                       {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"},
-                                                      {"level": "rs_bank", "label": "Bank"}]))
+                                                      {"level": "rs_notes", "label": "Notes"}, {"level": "rs_bank", "label": "Bank"}]))
 a('                },')
 for name, label, keys, last in [("rs_pitch", "Pitch", RS_PITCH, False), ("rs_synth", "Synth", RS_SYNTH, False),
                                 ("rs_tone", "Tone", RS_TONE, False), ("rs_play", "Play", RS_PLAY, False),
-                                ("rs_bank", "Bank", RS_BANK, True)]:
+                                ("rs_notes", "Notes", RS_NOTES, False), ("rs_bank", "Bank", RS_BANK, True)]:
     a('                "%s": {' % name)
     a('                    "label": "%s",' % label)
     a('                    "knobs": %s,' % line(keys))

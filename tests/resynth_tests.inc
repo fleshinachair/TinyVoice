@@ -73,6 +73,7 @@ static void test_resynth_midi(void)
     vt_t *vt = dsp_init(VT_SAMPLE_RATE);
     dsp_set_param(vt, "engine", "Resynth");
     dsp_set_param(vt, "hm_tuning_mode", "MIDI");
+    dsp_set_param(vt, "hm_midi_idle", "Silent");                  /* Humanoid's way: no pad, no sound (the default Tunes instead, below) */
     rs_run(vt, 200.0, 0.2f, VT_SAMPLE_RATE / 2, out);
     double e = 0;
     for (int i = VT_SAMPLE_RATE / 4; i < VT_SAMPLE_RATE / 2; i++) e += (double)out[i] * out[i];
@@ -85,6 +86,68 @@ static void test_resynth_midi(void)
     CHECK(fabs(1200.0 * log2(f / 329.63)) < 10.0);
     dsp_handle_midi(vt, off, 3);
     dsp_cleanup(vt);
+}
+
+/* The Move-side MIDI behaviour: pads folded to the voice, Latch, and a voice that keeps tuning with no pad held */
+static void test_resynth_pads(void)
+{
+    static float out[VT_SAMPLE_RATE];
+    double f;
+    const uint8_t hi[3] = { 0x90, 88, 100 }, hi_off[3] = { 0x80, 88, 0 }, e4[3] = { 0x90, 64, 100 }, e4_off[3] = { 0x80, 64, 0 };
+
+    /* octave fold: a pad at E6 (88) over a voice at G3 plays E4 (64), the octave within one of the voice, not E6 */
+    {
+        vt_t *vt = dsp_init(VT_SAMPLE_RATE);
+        dsp_set_param(vt, "engine", "Resynth");
+        dsp_set_param(vt, "hm_tuning_mode", "MIDI");
+        dsp_handle_midi(vt, hi, 3);
+        rs_run(vt, 200.0, 0.2f, VT_SAMPLE_RATE, out);
+        f = rs_pitch(out + VT_SAMPLE_RATE / 2, 8192);
+        if (fabs(1200.0 * log2(f / 329.63)) > 15.0) printf("  folded E6 -> %.2f Hz\n", f);
+        CHECK(fabs(1200.0 * log2(f / 329.63)) < 15.0);
+        dsp_handle_midi(vt, hi_off, 3);
+        dsp_cleanup(vt);
+    }
+    /* Latch: a pad let go keeps playing; Latch Off ends it (and, with No Pad = Silent, the sound) */
+    {
+        vt_t *vt = dsp_init(VT_SAMPLE_RATE);
+        dsp_set_param(vt, "engine", "Resynth");
+        dsp_set_param(vt, "hm_tuning_mode", "MIDI");
+        dsp_set_param(vt, "hm_midi_idle", "Silent");
+        dsp_set_param(vt, "latch", "On");
+        rs_run(vt, 200.0, 0.2f, 2048, out);
+        dsp_handle_midi(vt, e4, 3);
+        rs_run(vt, 200.0, 0.2f, 4096, out);
+        dsp_handle_midi(vt, e4_off, 3);
+        rs_run(vt, 200.0, 0.2f, VT_SAMPLE_RATE, out);
+        f = rs_pitch(out + VT_SAMPLE_RATE / 2, 8192);
+        if (fabs(1200.0 * log2(f / 329.63)) > 15.0) printf("  latched E4 -> %.2f Hz\n", f);
+        CHECK(fabs(1200.0 * log2(f / 329.63)) < 15.0);
+        dsp_set_param(vt, "latch", "Off");
+        rs_run(vt, 200.0, 0.2f, VT_SAMPLE_RATE / 2, out);
+        double e = 0;
+        for (int i = VT_SAMPLE_RATE / 4; i < VT_SAMPLE_RATE / 2; i++) e += (double)out[i] * out[i];
+        CHECK(e < 1e-6);
+        dsp_cleanup(vt);
+    }
+    /* No Pad = Tune (the default): with nothing held MIDI mode keeps the voice on the scale: 213 Hz -> A3 in C major */
+    {
+        vt_t *vt = dsp_init(VT_SAMPLE_RATE);
+        dsp_set_param(vt, "engine", "Resynth");
+        dsp_set_param(vt, "hm_tuning_mode", "MIDI");
+        dsp_set_param(vt, "hm_scale", "Major");
+        dsp_set_param(vt, "hm_key", "C");
+        rs_run(vt, 213.0, 0.2f, VT_SAMPLE_RATE, out);
+        f = rs_pitch(out + VT_SAMPLE_RATE / 2, 8192);
+        if (fabs(1200.0 * log2(f / 220.0)) > 15.0) printf("  no pad -> %.2f Hz\n", f);
+        CHECK(fabs(1200.0 * log2(f / 220.0)) < 15.0);
+        dsp_handle_midi(vt, e4, 3);                                /* a pad takes over from the scale */
+        rs_run(vt, 213.0, 0.2f, VT_SAMPLE_RATE, out);
+        f = rs_pitch(out + VT_SAMPLE_RATE / 2, 8192);
+        CHECK(fabs(1200.0 * log2(f / 329.63)) < 15.0);
+        dsp_handle_midi(vt, e4_off, 3);
+        dsp_cleanup(vt);
+    }
 }
 
 static const char *rs_square_b64(void)
