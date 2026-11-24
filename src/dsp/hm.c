@@ -221,14 +221,15 @@ static void build_wavetable(hm_t *h)
     const float shape = h->p[HM_SHAPE], stretch = h->p[HM_STRETCH];
     float peak = 1e-9f;
     for (int i = 0; i < h->wt_src_n; i++) peak = fmaxf(peak, fabsf(h->wt_src[i]));
-    /* Stretch: a phase-distortion knee, the phase reaching ky at kx and the rest of the cycle after.
-     * Up to 0.5 the cycle's midpoint moves to `stretch` (kx = s, ky = 0.5); above it the cycle is
-     * squeezed into the first 1 - s and nearly held after (ky = 1 - 2 (1 - s)^2), saturating at 0.9.
-     * Measured on Humanoid's saw within 0.35 dB over 24 harmonics from 0.1 to 1.0 (the plain skew,
-     * symmetric about 0.5, was 5-9 dB too dark at 0.9-1). */
+    /* Stretch: a phase-distortion knee over the table's OWN samples (before the zero padding), the phase reaching
+     * ky at kx = s: ky = 0.5 up to 0.5 (the midpoint moves to s), 1 - s above (the knee runs down the diagonal);
+     * saturating at 0.9. Measured on the saw (4096), SIN SQR (4096), SINE-ISH (600), Spectral (225), MINI M DETUNED
+     * SQUARE (184) and POLY-6 PW (92) from 0.2 to 0.9: within 0.25-0.6 dB over 16-24 harmonics. The earlier fit,
+     * (1 - s, 1 - 2 (1 - s)^2) over the padded cycle, matched only the saw (a ramp is its own mirror image) and was
+     * 3-10 dB off every other table above 0.5, 5 dB at 0.3 on a short one. */
     const float sc = fminf(fmaxf(stretch, 0.02f), 0.9f);
-    const float kx = sc <= 0.5f ? sc : 1.0f - sc;
-    const float ky = sc <= 0.5f ? 0.5f : 1.0f - 2.0f * (1.0f - sc) * (1.0f - sc);
+    const float kx = sc;
+    const float ky = sc <= 0.5f ? 0.5f : 1.0f - sc;
     /* A short table (wt_len, below) is built at its own padded length, so at Stretch 0.5 / Shape 0 its FFT is the
      * table's exactly; a full cycle is resampled to HM_WT_N (the phase distortion stays smooth up to 1 kHz harmonics) */
     const int n = h->wt_src_n;
@@ -236,13 +237,28 @@ static void build_wavetable(hm_t *h)
      * k = 128, both inside Humanoid's 256 harmonics); a longer one reads like any full cycle */
     const int N = h->wt_len > 1 && h->wt_len <= 256 && h->wt_len <= n ? h->wt_len : 0;
     const int m = N ? n : HM_WT_N;
+    /* the table's own part of the (padded, maybe resampled) cycle: the first len / P of it */
+    float frac = 1.0f;
+    if (h->wt_len > 1) {
+        int Pl = 256;
+        while (Pl < h->wt_len) Pl <<= 1;
+        frac = fminf(1.0f, (float)h->wt_len / (float)Pl);
+    }
+    int nr = (int)lrintf(frac * (float)n);
+    if (nr < 2) nr = 2;
+    if (nr > n) nr = n;
     for (int i = 0; i < m; i++) {
-        float ph = (float)i / (float)m, q;
-        q = ph < kx ? ky * ph / kx : ky + (1.0f - ky) * (ph - kx) / (1.0f - kx);
-        float pos = q * (float)n;
-        int a = (int)pos;
-        float t = pos - (float)a;
-        float x = h->wt_src[a % n] * (1.0f - t) + h->wt_src[(a + 1) % n] * t;
+        const float ph = (float)i / (float)m;
+        float x = 0.0f;
+        if (ph < frac) {
+            const float u = ph / frac;
+            const float q = u < kx ? ky * u / kx : ky + (1.0f - ky) * (u - kx) / (1.0f - kx);
+            const float pos = q * (float)nr;
+            int a = (int)pos;
+            const float t = pos - (float)a;
+            a %= nr;
+            x = h->wt_src[a] * (1.0f - t) + h->wt_src[a + 1 < nr ? a + 1 : 0] * t;
+        }
         x /= peak;
         /* Shape: a Chebyshev series whose coefficients move from the identity (T1 alone) to the
          * preset's Odd/Even values (measured: this, not a waveform crossfade, matches Shape 0.5) */

@@ -1329,7 +1329,7 @@ static void test_module_json_matches_params(void)
     /* Resynth's pages: the knobs they hold (the rest of its params are on the Remote UI only: web_ui.html) */
     {
         static const char *const rs_lv[6] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_notes" };
-        static const int rs_n[6] = { 8, 8, 8, 8, 7, 4 };            /* Play: 7 knobs (Mic Gate the 6th); Notes (Note mode's notes, Latch, No Pad): 4 */
+        static const int rs_n[6] = { 8, 7, 8, 8, 7, 5 };            /* Pitch 7; Play: 7 knobs (Mic Gate the 6th); Notes (Duo, Note mode's notes, Latch, No Pad): 5 */
         for (int l = 0; l < 6; l++) {
             const char *knobs = js_get(js_get(levels, rs_lv[l]), "knobs");
             CHECK(knobs && js_arr_len(knobs) == rs_n[l]);
@@ -4553,6 +4553,7 @@ int main(void)
     RUN(test_resynth_wavetable_pad);
     RUN(test_resynth_wavetable_short);
     RUN(test_resynth_wt_len);
+    RUN(test_resynth_stretch_law);
     RUN(test_resynth_pads);
     RUN(test_resynth_state);
     RUN(test_resynth_isolation);

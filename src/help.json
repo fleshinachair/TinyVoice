@@ -467,7 +467,7 @@
             "Dry/Wet.",
             "Pitch: mode, Key,",
             "Scale, Hold Scale,",
-            "range, Duo.",
+            "range.",
             "Synth: wave, Shape,",
             "Stretch, Warble,",
             "Widen, Smoothing.",
@@ -477,6 +477,8 @@
             "notes, gain, Demo.",
             "Cuts out when soft?",
             "Lower Mic Gate (Play)",
+            "Notes: Duo, Note 1",
+            "and 2, Latch, No Pad.",
             "Presets: first page.",
             "Bank: last page."
           ]

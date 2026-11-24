@@ -158,11 +158,11 @@ RS_BANK = ["rs_bank"]
 VOICEFX = ["vf_vowel", "vf_tract", "vf_peak", "vf_choir", "vf_breath", "vf_attack", "vf_release", "vf_mix"]
 # Resynth: the main controls on the Move, four more pages; everything else is on the Remote UI (web_ui.html).
 RS_MAIN  = ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet"]
-RS_PITCH = ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_tuning_duophonic"]
+RS_PITCH = ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0"]
 RS_SYNTH = ["hm_wave", "hm_wavetable_shape", "hm_wavetable_stretch", "hm_warble_depth", "hm_warble_rate", "hm_warble_mode", "hm_widen", "hm_smoothing"]
 RS_TONE  = ["hm_hpf_freq", "hm_lpf_freq", "hm_filter_freq", "hm_filter_gain", "hm_noisegate_threshold", "hm_deess", "hm_sharpen", "hm_output_gain"]
 RS_PLAY  = ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "hm_mic_gate", "demo"]
-RS_NOTES = ["hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"]      # Note mode's two notes, and the pads (MIDI mode)
+RS_NOTES = ["hm_tuning_duophonic", "hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"]      # Duo and Note mode's two notes, and the pads (MIDI mode)
 MENU_ONLY = {}
 
 CHAIN = PARAMS + READOUTS

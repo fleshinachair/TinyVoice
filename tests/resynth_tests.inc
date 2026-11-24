@@ -256,6 +256,47 @@ static const char *rs_square_b64(void)
     return b64;
 }
 
+/* Stretch (measured on six tables, 0.2..0.9, within 0.25-0.6 dB): a knee over the table's own N samples at
+ * (s, 0.5) up to 0.5 and (s, 1 - s) above, then the zero padding */
+static void test_resynth_stretch_law(void)
+{
+    hm_t *h = calloc(1, sizeof *h);
+    CHECK(h != NULL);
+    if (!h) return;
+    hm_init(h, (float)VT_SAMPLE_RATE);
+    static float tab[92];
+    for (int i = 0; i < 92; i++) tab[i] = i < 40 ? 0.8f - 0.004f * (float)i : -1.0f + 0.003f * (float)(i - 40);   /* peak 1 (tables are peak-normalised) */
+    const float ss[2] = { 0.3f, 0.8f };
+    for (int c = 0; c < 2; c++) {
+        const float s = ss[c], kx = s, ky = s <= 0.5f ? 0.5f : 1.0f - s;
+        hm_set(h, HM_STRETCH, s);
+        hm_set_wavetable(h, tab, 92);
+        rs_wt_build(h);
+        double st[92], a[24], mx = 0.0;
+        for (int i = 0; i < 92; i++) {
+            const double u = i / 92.0, q = u < kx ? ky * u / kx : ky + (1.0 - ky) * (u - kx) / (1.0 - kx);
+            const double pos = q * 92.0;
+            const int j = (int)pos % 92;
+            const double t = pos - (int)pos;
+            st[i] = tab[j] * (1.0 - t) + tab[(j + 1) % 92] * t;
+        }
+        for (int k = 1; k < 24; k++) {
+            double re = 0.0, im = 0.0;
+            for (int i = 0; i < 92; i++) { re += st[i] * cos(6.283185307 * k * i / 256.0); im -= st[i] * sin(6.283185307 * k * i / 256.0); }
+            a[k] = sqrt(re * re + im * im) / 92.0;
+        }
+        mx = 1.0;                                                       /* the block (harmonics 92..255) is 1 */
+        float worst = 0.0f;
+        for (int k = 1; k < 24; k++) {
+            const float want = (float)(20.0 * log10(a[k] / mx + 1e-12));
+            if (want > -40.0f) worst = fmaxf(worst, fabsf(h->wt_db[k] - want));
+        }
+        printf("  stretch %.1f on a 92-sample table: within %.3f dB of the law, harmonics 1..23\n", s, worst);
+        CHECK(worst < 0.05f);
+    }
+    free(h);
+}
+
 /* hm_wt's ":<len>" suffix: accepted, kept in the state, heard (the block of flat harmonics), refused when malformed */
 static void test_resynth_wt_len(void)
 {

@@ -64,8 +64,8 @@
                 },
                 "rs_pitch": {
                     "label": "Pitch",
-                    "knobs": ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_tuning_duophonic"],
-                    "params": ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_tuning_duophonic"]
+                    "knobs": ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0"],
+                    "params": ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0"]
                 },
                 "rs_synth": {
                     "label": "Synth",
@@ -84,8 +84,8 @@
                 },
                 "rs_notes": {
                     "label": "Notes",
-                    "knobs": ["hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"],
-                    "params": ["hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"]
+                    "knobs": ["hm_tuning_duophonic", "hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"],
+                    "params": ["hm_tuning_duophonic", "hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"]
                 },
                 "rs_bank": {
                     "label": "Bank",
