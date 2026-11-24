@@ -232,6 +232,12 @@ void dsp_set_transport(vt_t *vt, double beat);
 struct rsbank;
 int dsp_set_rs_bank(vt_t *vt, struct rsbank *bank);
 
+/* The Demo's recorded phrase (demo.h, demo_pcm_load), handed over once like the preset bank: the instance owns it from
+ * then on and frees it. A second handover is refused (-1). Until it arrives, and when the module has none, the Demo
+ * plays its synthetic phrase. */
+struct demo_pcm;
+int dsp_set_demo_pcm(vt_t *vt, struct demo_pcm *pcm);
+
 /* Introspection (tests, UI plumbing). */
 const vt_param_def *dsp_param_def(int id);          /* NULL if out of range */
 int   dsp_param_index(const char *key);             /* -1 if unknown */

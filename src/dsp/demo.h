@@ -13,6 +13,8 @@
 #ifndef TINYVOICE_DEMO_H
 #define TINYVOICE_DEMO_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -35,6 +37,15 @@ typedef struct {
 void  demo_init(demo_t *dm, float sample_rate);
 void  demo_reset(demo_t *dm);
 float demo_process(demo_t *dm);                 /* next sample, peak ~0.35 */
+
+/* A recorded phrase for the Demo, when the module folder has one (demo_voice.raw: signed 16-bit little-endian, mono,
+ * 44100 Hz, already at the demo level; see scripts/make_demo_voice.py and CREDITS.md). Loaded off the audio thread
+ * (allocates, reads a file); played by demo_pcm_next in place of the synthetic voice. */
+typedef struct demo_pcm { int16_t *pcm; int n; } demo_pcm_t;
+demo_pcm_t *demo_pcm_load(const char *path);    /* NULL: no such file, or it is not a usable clip (0.5 .. 30 s) */
+void  demo_pcm_free(demo_pcm_t *d);
+/* The next output sample at `*pos` (a position in source samples, advanced by `step`, wrapped; linear interpolation). */
+float demo_pcm_next(const demo_pcm_t *d, double *pos, double step);
 
 /* Chord progression for the polyphonic modes, one chord per bar:
  * Am, F, C, G (4 notes each). */

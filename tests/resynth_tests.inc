@@ -484,3 +484,55 @@ static void test_resynth_demo(void)
         dsp_cleanup(vt);
     }
 }
+
+/* The Demo's recorded phrase (demo.c demo_pcm_*): the real clip loads, plays looped and interpolated, and the
+ * Demo uses it in place of the synthetic voice; a missing or unusable file is simply no recording */
+#include "demo.h"
+static void test_demo_recording(void)
+{
+    CHECK(demo_pcm_load("tests/fixtures/no_such_file.raw") == NULL);
+    CHECK(demo_pcm_load("tests/fixtures/rs_presets/e.txt") == NULL);                    /* too short to be a clip */
+    demo_pcm_t *d = demo_pcm_load("src/demo/demo_voice.raw");
+    CHECK(d != NULL);
+    if (!d) return;
+    CHECK(d->n > 44100 * 6 && d->n < 44100 * 9);
+    double pk = 0.0, ma = 0.0;
+    int act = 0;
+    for (int i = 0; i < d->n; i++) { const double v = fabs(d->pcm[i] / 32768.0); if (v > pk) pk = v; }
+    for (int i = 0; i < d->n; i++) { const double v = fabs(d->pcm[i] / 32768.0); if (v > 0.05 * pk) { ma += v; act++; } }
+    CHECK(pk > 0.3 && pk < 0.96);
+    CHECK(act > 44100 * 4 && fabs(ma / act - 0.0902) < 0.01);                             /* at the demo's level */
+    double pos = 0.0;
+    float first = demo_pcm_next(d, &pos, 1.0);
+    CHECK(fabsf(first - d->pcm[0] / 32768.0f) < 1e-6f && fabs(pos - 1.0) < 1e-12);
+    pos = (double)d->n - 0.5;                                                              /* the loop point: interpolates into the start */
+    const float w = demo_pcm_next(d, &pos, 1.0);
+    CHECK(fabsf(w - 0.5f * (d->pcm[d->n - 1] + d->pcm[0]) / 32768.0f) < 1e-5f);
+    CHECK(pos > (double)d->n - 0.5 + 0.99 && pos < (double)d->n + 0.6);
+    pos = 1e9; (void)demo_pcm_next(d, &pos, 1.0);                                          /* any position is safe */
+    CHECK(pos >= 0.0);
+
+    /* through the module: Demo On plays it (not the synthetic phrase) and the output is sound */
+    static float a[VT_SAMPLE_RATE], b[VT_SAMPLE_RATE];
+    vt_t *with = dsp_init(VT_SAMPLE_RATE), *without = dsp_init(VT_SAMPLE_RATE);
+    CHECK(dsp_set_demo_pcm(with, d) == 0);
+    for (int k = 0; k < 2; k++) { vt_t *v = k ? without : with; dsp_set_param(v, "mode", "Snap"); dsp_set_param(v, "demo", "On"); }
+    float blk[256];
+    double ea = 0.0, diff = 0.0;
+    for (int n = 0; n < VT_SAMPLE_RATE; n += 128) {
+        for (int k = 0; k < 2; k++) {
+            for (int i = 0; i < 256; i++) blk[i] = 0.0f;
+            dsp_process_block_f(k ? without : with, blk, 128);
+            for (int i = 0; i < 128; i++) (k ? b : a)[n + i] = blk[2 * i];
+        }
+    }
+    for (int i = 0; i < VT_SAMPLE_RATE; i++) { ea += (double)a[i] * a[i]; diff += fabs(a[i] - b[i]); }
+    CHECK(ea > 1e-3 && diff > 1.0);
+    {
+        demo_pcm_t *again = demo_pcm_load("src/demo/demo_voice.raw");
+        CHECK(again && dsp_set_demo_pcm(with, again) == -1);                               /* one handover */
+        demo_pcm_free(again);
+    }
+    dsp_cleanup(with);                                                                     /* frees the clip */
+    dsp_cleanup(without);
+}

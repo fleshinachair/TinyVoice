@@ -5,6 +5,7 @@
 #include "audio_fx_api_v2.h"
 #include "dsp.h"
 #include "rsbank.h"
+#include "demo.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -19,6 +20,7 @@ typedef struct {
     pthread_t loader;
     int loader_on;
     char dir[512];          /* Imported bank: Schwung's preset folder for this module */
+    char voice[512];        /* the Demo's recorded phrase */
     char dflt[512];         /* Default bank: the presets shipped in the module folder */
 } vt_inst;
 
@@ -30,6 +32,8 @@ static void *bank_loader(void *arg)
     vt_inst *in = (vt_inst *)arg;
     rsbank_t *b = rsbank_load(in->dflt, in->dir);
     if (b && dsp_set_rs_bank(in->vt, b) != 0) rsbank_free(b);
+    demo_pcm_t *d = demo_pcm_load(in->voice);                /* the Demo's recorded phrase, if the module ships one */
+    if (d && dsp_set_demo_pcm(in->vt, d) != 0) demo_pcm_free(d);
     return NULL;
 }
 
@@ -53,6 +57,7 @@ static void *vt_create_instance(const char *module_dir, const char *config_json)
     if (config_json) (void)dsp_set_param(in->vt, "state", config_json);
     preset_dir(module_dir, in->dir, sizeof in->dir);
     snprintf(in->dflt, sizeof in->dflt, "%s/presets", module_dir ? module_dir : "");
+    snprintf(in->voice, sizeof in->voice, "%s/demo_voice.raw", module_dir ? module_dir : "");
     in->loader_on = pthread_create(&in->loader, NULL, bank_loader, in) == 0;
     return in;
 }

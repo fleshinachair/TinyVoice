@@ -230,6 +230,8 @@ struct vt {
     int   demo_rs_wt_valid, demo_rs_bank, demo_rs_idx;
     int   hold_skip;            /* inside a preset load with Hold Scale on: hm_key / hm_scale / hm_mask are left alone */
     int   hm_held[VT_MAX_VOICES], hm_nheld;   /* pads the engine holds (MIDI mode), oldest first */
+    _Atomic(demo_pcm_t *) demo_pcm;   /* the recorded Demo phrase, published once by the loader thread */
+    double demo_pos;            /* its playback position, source samples */
     _Atomic(rsbank_t *) rs_bank;  /* Resynth's presets, published once by the loader thread (dsp_set_rs_bank) */
     /* Ghost hands, as the screen sees them. While the Showcase Tour runs, get_param on Voice FX's knobs answers
      * `disp` (the tour's current values, snapshotted by the audio block: get_param and set_param run on the same
@@ -325,6 +327,7 @@ vt_t *dsp_init(int sample_rate)
     hm_init(&vt->hm, (float)vt->sample_rate);
     vt->hm_wave_set = -1;
     atomic_init(&vt->rs_bank, NULL);
+    atomic_init(&vt->demo_pcm, NULL);
     vt->label_mode = -1;
     vt->run_mode = -1;
     vt->midi_ch = -1;                       /* omni until the host names the slot's channel */
@@ -356,6 +359,7 @@ void dsp_cleanup(vt_t *vt)
 {
     if (!vt) return;
     rsbank_free(atomic_load_explicit(&vt->rs_bank, memory_order_acquire));
+    demo_pcm_free(atomic_load_explicit(&vt->demo_pcm, memory_order_acquire));
     VT_FREE(vt);
 }
 
@@ -364,6 +368,13 @@ int dsp_set_rs_bank(vt_t *vt, struct rsbank *bank)
     rsbank_t *none = NULL;
     if (!vt || !bank) return -1;
     return atomic_compare_exchange_strong_explicit(&vt->rs_bank, &none, bank, memory_order_release, memory_order_relaxed) ? 0 : -1;
+}
+
+int dsp_set_demo_pcm(vt_t *vt, struct demo_pcm *pcm)
+{
+    demo_pcm_t *none = NULL;
+    if (!vt || !pcm) return -1;
+    return atomic_compare_exchange_strong_explicit(&vt->demo_pcm, &none, pcm, memory_order_release, memory_order_relaxed) ? 0 : -1;
 }
 
 static const rsbank_t *rs_bank_of(vt_t *vt)
@@ -1279,6 +1290,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         vt->demo_time = 0.0;
         demo_reset(&vt->demo);
         groove_reset(&vt->groove);
+        vt->demo_pos = 0.0;
         vt->demo_rs_snap = 0;
         vt->demo_rs_step = -1;
         if ((int)vt->p[VT_P_ENGINE] == VT_ENGINE_RESYNTH) {          /* the player's own Resynth sound, to come back to */
@@ -1516,7 +1528,10 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         /* Input stage: the demo phrase replaces the mic; Freeze then records
          * or loops whichever it is. Both the engine and the dry path see it. */
         /* Demo: Voice FX is auditioned with the funk groove (no track routed in), every other mode with the sung phrase. */
-        if (vt->demo_active) in_l = in_r = vf ? groove_process(&vt->groove) : demo_process(&vt->demo);   /* every mode, Snap included: Key/Scale act on it */
+        if (vt->demo_active) {
+            const demo_pcm_t *dp = vf ? NULL : atomic_load_explicit(&vt->demo_pcm, memory_order_acquire);
+            in_l = in_r = vf ? groove_process(&vt->groove) : dp ? demo_pcm_next(dp, &vt->demo_pos, 44100.0 / (double)vt->sample_rate) : demo_process(&vt->demo);
+        }   /* every mode, Snap included: Key/Scale act on it */
         /* Mic pre-conditioning: a 1-pole high-pass at 120 Hz on everything
          * (engines, gates, dry path, Freeze takes), so pad taps and chassis
          * thumps on the built-in mic don't open the voice gate, ride the AGC,

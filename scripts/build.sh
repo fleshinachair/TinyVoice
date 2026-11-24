@@ -36,6 +36,8 @@ cp "$ROOT/src/help.json"    "$OUT/help.json"     # on-device help (the host's He
 cp "$ROOT/src/ui/web_ui.html" "$OUT/web_ui.html"   # Remote UI panel (move.local:7700/remote-ui): Resynth's every control
 rm -rf "$OUT/presets"; mkdir -p "$OUT/presets"
 cp "$ROOT"/src/presets/*.json "$OUT/presets/"        # Resynth's Default bank (our own presets; read by rsbank.c)
+cp "$ROOT/src/demo/demo_voice.raw" "$OUT/demo_voice.raw"   # the Demo's sung phrase (vocadito, CC BY 4.0: see CREDITS.md)
+cp "$ROOT/CREDITS.md" "$OUT/CREDITS.txt"
 
 # Sanity: both entry points must be exported. The chain host dlsym()s
 # move_audio_fx_on_midi to decide whether the FX receives any MIDI at all.

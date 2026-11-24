@@ -1,6 +1,8 @@
 #include "demo.h"
 
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define PI_F 3.14159265358979f
@@ -36,6 +38,48 @@ void demo_chord(int bar, int out[4])
 {
     int b = ((bar % DEMO_CHORDS) + DEMO_CHORDS) % DEMO_CHORDS;
     for (int i = 0; i < 4; i++) out[i] = k_chords[b][i];
+}
+
+demo_pcm_t *demo_pcm_load(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    demo_pcm_t *d = NULL;
+    if (fseek(f, 0, SEEK_END) == 0) {
+        const long bytes = ftell(f);
+        const long n = bytes / 2;
+        if (n >= 44100 / 2 && n <= 44100 * 30 && fseek(f, 0, SEEK_SET) == 0) {
+            d = (demo_pcm_t *)calloc(1, sizeof *d);
+            if (d) d->pcm = (int16_t *)malloc((size_t)n * 2);
+            if (d && d->pcm && fread(d->pcm, 2, (size_t)n, f) == (size_t)n) {
+                d->n = (int)n;
+                for (long i = 0; i < n; i++) {                    /* little-endian on any host */
+                    const unsigned char *b = (const unsigned char *)&d->pcm[i];
+                    d->pcm[i] = (int16_t)(uint16_t)(b[0] | (b[1] << 8));
+                }
+            } else { demo_pcm_free(d); d = NULL; }
+        }
+    }
+    fclose(f);
+    return d;
+}
+
+void demo_pcm_free(demo_pcm_t *d)
+{
+    if (!d) return;
+    free(d->pcm);
+    free(d);
+}
+
+float demo_pcm_next(const demo_pcm_t *d, double *pos, double step)
+{
+    if (!d || d->n < 2) return 0.0f;
+    double p = *pos;
+    if (p >= (double)d->n || p < 0.0) p = fmod(p < 0.0 ? 0.0 : p, (double)d->n);
+    const int i = (int)p, j = i + 1 < d->n ? i + 1 : 0;
+    const float t = (float)(p - (double)i);
+    *pos = p + step;
+    return ((float)d->pcm[i] * (1.0f - t) + (float)d->pcm[j] * t) * (1.0f / 32768.0f);
 }
 
 void demo_init(demo_t *dm, float sr)

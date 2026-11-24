@@ -4558,6 +4558,7 @@ int main(void)
     RUN(test_resynth_bank);
     RUN(test_resynth_hold_scale);
     RUN(test_resynth_demo);
+    RUN(test_demo_recording);
     RUN(test_midi_agnostic_modes);
     RUN(test_latency_budget);
     RUN(test_headroom);
