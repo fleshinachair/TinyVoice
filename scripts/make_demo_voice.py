@@ -1,6 +1,6 @@
 """Cut the Demo's sung phrase from a vocadito recording (CC BY 4.0, see CREDITS.md).
 
-    calibration/.venv/Scripts/python.exe -I scripts/make_demo_voice.py [wav] [start_s] [length_s]
+    <TinyVoice-lab>/calibration/.venv/Scripts/python.exe -I scripts/make_demo_voice.py [wav] [start_s] [length_s]
 
 default: vocadito_25.wav, 6.8 s in, 7 s long  ->  src/demo/demo_voice.raw
 
@@ -17,7 +17,7 @@ from scipy.io import wavfile
 from scipy.signal import resample_poly
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WAV = sys.argv[1] if len(sys.argv) > 1 else ROOT + "/calibration/vocals/vocadito_25.wav"
+WAV = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TINYVOICE_LAB", "C:/Github/TinyVoice-lab") + "/calibration/vocals/vocadito_25.wav"
 START = float(sys.argv[2]) if len(sys.argv) > 2 else 6.8
 LENGTH = float(sys.argv[3]) if len(sys.argv) > 3 else 7.0
 OUT = ROOT + "/src/demo/demo_voice.raw"

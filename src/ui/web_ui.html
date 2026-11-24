@@ -246,6 +246,7 @@ function dial(parent, key, hero) {
   var dflt = isEnum ? (m.default | 0) : m.default;
   var box = el("div", "dial" + (hero ? " hero" : ""), parent);
   box.tabIndex = 0;
+  box.setAttribute("data-key", key);
   box.title = m.name + " — drag or scroll (Shift: fine), double-click for the default";
   box.setAttribute("role", "slider");
   box.setAttribute("aria-label", m.name);
@@ -383,8 +384,10 @@ function drawWave() {
   var s = scope(c);
   var wave = VAL.hm_wave | 0, st = VAL.hm_wavetable_stretch !== undefined ? VAL.hm_wavetable_stretch : 0.5, sh = VAL.hm_wavetable_shape || 0;
   var ys = [], peak = 1e-9;
+  /* Stretch: the engine's knee (hm.c build_wavetable) */
+  var sc = Math.min(Math.max(st, 0.02), 0.9), kx = sc <= 0.5 ? sc : 1 - sc, ky = sc <= 0.5 ? 0.5 : 1 - 2 * (1 - sc) * (1 - sc);
   for (var i = 0; i < 400; i++) {
-    var ph = i / 400, q = ph < st ? 0.5 * ph / st : 0.5 + 0.5 * (ph - st) / (1 - st), x;
+    var ph = i / 400, q = ph < kx ? ky * ph / kx : ky + (1 - ky) * (ph - kx) / (1 - kx), x;
     if (wave === 4 && wtCycle) { var p = q * wtCycle.length, a = Math.floor(p), t = p - a; x = wtCycle[a % wtCycle.length] * (1 - t) + wtCycle[(a + 1) % wtCycle.length] * t; }
     else x = builtin(wave, q);
     if (sh > 0) { var y = 0; for (var k = 0; k < 7; k++) y += ((k === 0 ? 1 - sh : 0) + sh * (VAL["hm_chebyshev_" + k] || 0)) * cheb(k + 1, Math.max(-1, Math.min(1, x))); x = y; }
@@ -397,16 +400,17 @@ function filterDb(f) {
   var d = 0, lf = Math.log2(Math.max(f, 1));
   [["hm_hpf_freq", "hm_hpf_res", 0], ["hm_lpf_freq", "hm_lpf_res", 1]].forEach(function (s) {
     var fc = midiHz(VAL[s[0]] !== undefined ? VAL[s[0]] : (s[2] ? 138 : 10));
-    if (!s[2] && fc < 16) return;
-    if (s[2] && fc > 0.48 * 44100) return;
-    var res = VAL[s[1]] || 0, x = s[2] ? Math.log2(fc) - lf : lf - Math.log2(fc);
-    var neg = res < 0 ? -res / 80 : 0, xs = 1.3 * neg, slope = 300 - 225 * neg;
-    if (x < xs) d -= Math.min(100, slope * (xs - x));
-    if (res > 0) { var u = x - 0.3; d += 0.88 * res * Math.exp(-u * u / 0.405); }
+    var res = VAL[s[1]] || 0;
+    if (res === 0 && ((!s[2] && fc < 16) || (s[2] && fc > 0.48 * 44100))) return;
+    var x = s[2] ? Math.log2(fc) - lf : lf - Math.log2(fc);
+    var cut = x < 0 ? 1000 * -x : 0;
+    if (res < 0 && x < 1.4) cut += 0.85 * -res * (1.4 - x);
+    d -= Math.min(100, cut);
+    if (res > 0) { var u = x - 0.15; d += res * Math.exp(-u * u / 0.5); }
   });
   var mg = VAL.hm_filter_gain || 0;
   if (Math.abs(mg) > 0.01) {
-    var sg = 0.387 * Math.pow(Math.max(4, Math.min(80, VAL.hm_filter_width || 34)) / 12, 0.64);
+    var sg = 0.01645 * Math.max(4, Math.min(80, VAL.hm_filter_width || 34));
     var u2 = lf - Math.log2(midiHz(VAL.hm_filter_freq || 98));
     d += mg * Math.exp(-u2 * u2 / (2 * sg * sg));
   }
@@ -455,6 +459,10 @@ function after(key) {
     e.classList.toggle("dim", !(VAL.hm_transform > 0.005));
     e.title = VAL.hm_transform > 0.005 ? "" : "The wave only sounds through Transform (Synthesize): raise Transform to hear these";
   });
+  if (key === "hm_autolevel") {
+    var og = document.querySelector('.dial[data-key="hm_output_gain"]'), on = (VAL.hm_autolevel | 0) === 1;
+    if (og) { og.classList.toggle("dim", on); og.title = on ? "Auto Level is on: Out Gain is part of what it levels (switch Auto Level off to trim by hand)" : "Out Gain: drag or scroll (Shift: fine), double-click for the default"; }
+  }
   if (key === "engine") showEngine();
   if (key === "mode") modeChanged();
   if (key === "vf_vowel" || key === "vf_tract" || key === "vf_peak") drawVowel();
@@ -502,7 +510,7 @@ function buildResynth() {
   group(p, "", ["hm_autolevel", "hm_dry_wet", "hm_input_gain", "hm_output_gain"], true);
   group(p, "AUDITION", ["demo"]);
   el("div", "foot", p, "Dials: drag up/down or scroll (Shift for fine), double-click for the default. Save a sound on the Move (My Presets); it then shows in the preset strip above and on the Move's Presets page.");
-  drawWave(); drawFilter(); drawKeys();
+  drawWave(); drawFilter(); drawKeys(); after("hm_autolevel");
 }
 
 /* ---------- Vocoder: Voice, Pitch, Space / Gate / Freeze. The five mode knobs are named per mode, as on the Move. */
@@ -685,7 +693,7 @@ function importBaby(text, name) {
     send("hm_wt", b64); send("hm_wave", "Preset");
     wtCycle = b64ToCycle(b64); CTL.hm_wave && CTL.hm_wave.set(4);
   }
-  drawWave(); drawFilter(); drawKeys();
+  drawWave(); drawFilter(); drawKeys(); after("hm_autolevel");
   toast("Loaded " + name.replace(/\.baby$/i, "") + " (save it on the Move: My Presets)");
 }
 function readFiles(files) {

@@ -1,5 +1,5 @@
 /* Resynth (src/dsp/hm.c), the third personality. Included by test_main.c after voice_tests.inc.
- * The sound itself is calibrated against Humanoid offline (calibration/): these check the module. */
+ * The sound itself is calibrated against Humanoid offline (in TinyVoice-lab, outside this repo): these check the module. */
 
 #include <time.h>
 

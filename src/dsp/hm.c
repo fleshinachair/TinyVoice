@@ -440,9 +440,10 @@ static float filter_db(const hm_t *h, float f)
     const float lf2 = log2f(fmaxf(f, 1.0f));
     for (int side = 0; side < 2; side++) {
         const float fc = midi_hz(side ? h->p[HM_LPF] : h->p[HM_HPF]);
-        if (side == 0 && fc < 16.0f) continue;
-        if (side == 1 && fc > 0.48f * h->sr) continue;
         const float res = side ? h->p[HM_LPF_RES] : h->p[HM_HPF_RES];
+        /* a filter parked at its end stop does nothing, unless its resonance is set: Humanoid's negative-resonance
+         * roll-off is heard from an LPF at maximum (Vocal Enhancer, LPF Res -39.5: its top 4-7 dB under ours) */
+        if (res == 0.0f && ((side == 0 && fc < 16.0f) || (side == 1 && fc > 0.48f * h->sr))) continue;
         const float x = side ? log2f(fc) - lf2 : lf2 - log2f(fc);    /* octaves into the passband */
         /* Measured on Humanoid (a saw at 82 Hz, Transform 1): the edge is a brick wall (-80 dB 0.08 octave
          * past it); a negative resonance is a roll-off from 1.4 octaves inside the passband, 0.85 |res| dB
@@ -854,9 +855,10 @@ void hm_tick(hm_t *h, float x, float *outl, float *outr)
     const float dry = h->dry_ring[r & (HM_RING - 1)];
     float l = y, rr = y;
     hmfx_tick(&h->fx, &l, &rr);
-    /* the output stage (makeup and Output gain) takes the dry too: Dry/Wet 0 measured +2 dB */
-    float ol = (1.0f - h->k_dw) * dry + h->k_dw * l, orr = (1.0f - h->k_dw) * dry + h->k_dw * rr;
-    ol *= h->k_og; orr *= h->k_og;
+    /* the makeup takes the dry too (Dry/Wet 0 measured +2 dB); Out Gain only the wet (Dry/Wet 0.5, Out -12: the dry
+     * unchanged, the wet 12 dB down; it cut Vocal Enhancer's dry with its wet, 6 dB under Humanoid) */
+    const float dg = (1.0f - h->k_dw) * HM_MAKEUP, wg = h->k_dw * h->k_og;
+    float ol = dg * dry + wg * l, orr = dg * dry + wg * rr;
     float ceil = HM_OUT_CEIL;
     if (h->autolevel) {
         /* Leveller: the mix is held at HM_LEVEL_TARGET (RMS) whatever the preset or the input level. The reference is a
