@@ -156,6 +156,7 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     [VT_P_HM_HOLD]   = ENUM_DEF("hm_scale_hold", k_onoff_opts, 1),     /* On: a preset keeps Key / Scale / Notes */
     [VT_P_HM_LEVEL]  = ENUM_DEF("hm_autolevel", k_onoff_opts, 1),      /* On: the output leveller */
     [VT_P_HM_IDLE]   = ENUM_DEF("hm_midi_idle", k_hm_idle_opts, 0),    /* MIDI mode, no pad: Tune to the scale / Silent (Humanoid) */
+    [VT_P_HM_VGATE]  = FLOAT_DEF("hm_mic_gate", -72.0f, -24.0f, -42.0f), /* the voice gate in Resynth, dBFS RMS of the raw input */
     [VT_P_HM_WAVE]   = ENUM_DEF("hm_wave",  k_hm_wave_opts,  0),       /* Saw */
     /* performance toggles: never saved in "state" */
     [VT_P_FREEZE]   = TRANSIENT_ENUM_DEF("freeze", k_freeze_opts),
@@ -699,12 +700,12 @@ static int tour_moves(int id)
 static const char *const k_rs_demo[RS_DEMO_N] = { "Tune - Hard Snap", "Voco - Saw Choir", "Harm - Fifth Above", "Synth - Bell Tone", "Fx - Dark Choir" };
 
 /* Load preset `i` of bank `bn` over Resynth's defaults (the Presets page, and the Demo tour). Hold Scale keeps
- * Key, Scale and Notes; Auto Level and Hold Scale themselves are the player's and stay. */
+ * Key, Scale and Notes; Auto Level, Hold Scale, No Pad and Mic Gate are the player's and stay. */
 static void rs_load(vt_t *vt, const rsbank_t *bk, int bn, int i)
 {
     const int hold = (int)vt->p[VT_P_HM_HOLD] == 1;
     for (int k = VT_P_HM_FIRST; k <= VT_P_HM_WAVE; k++) {            /* nothing of the last preset carries over */
-        if (k_params[k].transient || k == VT_P_HM_HOLD || k == VT_P_HM_LEVEL || k == VT_P_HM_IDLE) continue;
+        if (k_params[k].transient || k == VT_P_HM_HOLD || k == VT_P_HM_LEVEL || k == VT_P_HM_IDLE || k == VT_P_HM_VGATE) continue;
         if (hold && (k == VT_P_HM_KEY || k == VT_P_HM_SCALE || k == VT_P_HM_MASK)) continue;
         vt->p[k] = k_params[k].def;
     }
@@ -1520,8 +1521,9 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         fx_set_beauty(&vt->fx, beauty);
     }
     const int head = vt_mode_headroom(mode);
-    /* the voice gate's threshold (RMS): Auto's, or the Gate knob */
-    const float vg_thr = auto_on ? SG_THR : powf(10.0f, gate_manual_db / 20.0f);
+    /* the voice gate's threshold (RMS): Resynth's Mic Gate, Auto's, or the Gate knob. Resynth always runs Auto (its
+     * presets expect a DAW-level voice) but a quiet singer under -42 dBFS was cut with no knob to fix it. */
+    const float vg_thr = rs ? powf(10.0f, vt->p[VT_P_HM_VGATE] / 20.0f) : auto_on ? SG_THR : powf(10.0f, gate_manual_db / 20.0f);
 
     for (int i = 0; i < frames; i++) {
         float in_l = lr[2 * i], in_r = lr[2 * i + 1];

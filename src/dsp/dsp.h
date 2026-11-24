@@ -86,6 +86,7 @@ typedef enum {
     VT_P_HM_HOLD,       /* enum  Off, On: Hold Scale. On = loading a preset leaves Key, Scale and Notes as they are */
     VT_P_HM_LEVEL,      /* enum  Off, On: Auto Level, the output leveller (every preset at one loudness) */
     VT_P_HM_IDLE,       /* enum  Tune, Silent: MIDI mode with no pad held (Tune = keep correcting to the scale) */
+    VT_P_HM_VGATE,      /* -72..-24 dB: Mic Gate, the voice gate's threshold on the raw input in Resynth (-42 = the vocoder's Auto) */
     VT_P_HM_WAVE,       /* enum  Saw, Square, Triangle, Sine, Preset (Preset = the cycle in hm_wt) */
     /* Performance toggles (knobs on MORE), not saved in "state" */
     VT_P_FREEZE,       /* enum  Off, On: loop the last 4 s of input into the engine */

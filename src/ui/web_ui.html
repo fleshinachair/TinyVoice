@@ -508,7 +508,7 @@ function buildResynth() {
   group(p, "GLITCH  ·  FREEZE", ["hm_freeze", "hm_freeze_sync", "hm_freeze_synclength", "hm_freeze_length"], true);
 
   p = panel(grid, "p-out", "OUTPUT");
-  group(p, "", ["hm_autolevel", "hm_dry_wet", "hm_input_gain", "hm_output_gain"], true);
+  group(p, "", ["hm_autolevel", "hm_dry_wet", "hm_input_gain", "hm_mic_gate", "hm_output_gain"], true);
   group(p, "AUDITION", ["demo"]);
   el("div", "foot", p, "Dials: drag up/down or scroll (Shift for fine), double-click for the default. Save a sound on the Move (My Presets); it then shows in the preset strip above and on the Move's Presets page.");
   drawWave(); drawFilter(); drawKeys(); after("hm_autolevel");

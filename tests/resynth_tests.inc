@@ -591,3 +591,30 @@ static void test_demo_recording(void)
     dsp_cleanup(with);                                                                     /* frees the clip */
     dsp_cleanup(without);
 }
+
+/* Mic Gate: Resynth's voice gate on the raw input. A voice at -50 dBFS RMS is under the default -42 (cut ~40 dB
+ * by the expander); with Mic Gate at -60 it plays. A preset load leaves Mic Gate alone (the player's setting). */
+static void test_resynth_mic_gate(void)
+{
+    static float y[VT_SAMPLE_RATE];
+    double rms[2];
+    for (int g = 0; g < 2; g++) {
+        vt_t *vt = dsp_init(VT_SAMPLE_RATE);
+        dsp_set_param(vt, "engine", "Resynth");
+        if (g) CHECK(dsp_set_param(vt, "hm_mic_gate", "-60") == 0);
+        rs_run(vt, 196.0, 0.015f, VT_SAMPLE_RATE, y);              /* tone(): RMS 0.21 a, so -50 dBFS */
+        double e = 0.0;
+        for (int i = VT_SAMPLE_RATE / 2; i < VT_SAMPLE_RATE; i++) e += (double)y[i] * y[i];
+        rms[g] = 10.0 * log10(e / (VT_SAMPLE_RATE / 2) + 1e-30);
+        if (g) {
+            char v[32];
+            CHECK(dsp_get_param(vt, "hm_mic_gate", v, sizeof v) > 0 && fabs(atof(v) + 60.0) < 0.01);
+            static char st[16384];
+            CHECK(dsp_get_param(vt, "state", st, sizeof st) > 0 && strstr(st, "\"hm_mic_gate\"") != NULL);
+        }
+        dsp_cleanup(vt);
+    }
+    printf("  mic gate: -50 dBFS voice out %.1f dB at -42, %.1f dB at -60\n", rms[0], rms[1]);
+    CHECK(rms[1] > -45.0);
+    CHECK(rms[1] - rms[0] > 20.0);
+}

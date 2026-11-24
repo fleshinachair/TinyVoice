@@ -99,6 +99,7 @@ HM_EXTRA = [
     enum("hm_scale_hold", "Hold Scale", ["Off", "On"], 1),                      # On: a preset keeps your Key / Scale / Notes (set and forget)
     enum("hm_autolevel", "Auto Level", ["Off", "On"], 1),                       # On: the output leveller holds every preset at one loudness
     enum("hm_midi_idle", "No Pad", ["Tune", "Silent"], 0),                      # MIDI mode with no pad held: keep tuning to the scale, or go silent (Humanoid)
+    flt("hm_mic_gate", "Mic Gate", -72, -24, 1, -42, "dB"),                    # the voice gate on the raw input (Resynth runs Auto): lower for a quiet voice
     enum("hm_wave", "Wave", ["Saw", "Square", "Triangle", "Sine", "Preset"], 0),  # Preset = the wavetable a preset carried (hm_wt)
 ]
 PARAMS += HM + HM_EXTRA + [
@@ -160,7 +161,7 @@ RS_MAIN  = ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "
 RS_PITCH = ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_tuning_duophonic"]
 RS_SYNTH = ["hm_wave", "hm_wavetable_shape", "hm_wavetable_stretch", "hm_warble_depth", "hm_warble_rate", "hm_warble_mode", "hm_widen", "hm_smoothing"]
 RS_TONE  = ["hm_hpf_freq", "hm_lpf_freq", "hm_filter_freq", "hm_filter_gain", "hm_noisegate_threshold", "hm_deess", "hm_sharpen", "hm_output_gain"]
-RS_PLAY  = ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "demo"]
+RS_PLAY  = ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "hm_mic_gate", "demo"]
 RS_NOTES = ["hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"]      # Note mode's two notes, and the pads (MIDI mode)
 MENU_ONLY = {}
 

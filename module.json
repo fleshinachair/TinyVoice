@@ -79,8 +79,8 @@
                 },
                 "rs_play": {
                     "label": "Play",
-                    "knobs": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "demo"],
-                    "params": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "demo"]
+                    "knobs": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "hm_mic_gate", "demo"],
+                    "params": ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "hm_mic_gate", "demo"]
                 },
                 "rs_notes": {
                     "label": "Notes",
@@ -195,6 +195,7 @@
             {"key": "hm_scale_hold", "name": "Hold Scale", "type": "enum", "options": ["Off", "On"], "default": 1},
             {"key": "hm_autolevel", "name": "Auto Level", "type": "enum", "options": ["Off", "On"], "default": 1},
             {"key": "hm_midi_idle", "name": "No Pad", "type": "enum", "options": ["Tune", "Silent"], "default": 0},
+            {"key": "hm_mic_gate", "name": "Mic Gate", "type": "float", "min": -72, "max": -24, "step": 1, "unit": "dB", "default": -42},
             {"key": "hm_wave", "name": "Wave", "type": "enum", "options": ["Saw", "Square", "Triangle", "Sine", "Preset"], "default": 0},
             {"key": "freeze", "name": "Freeze", "type": "enum", "options": ["Off", "Rec", "Loop"], "default": 0, "viz": {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": "a", "extra_keys": ["scope"]}},
             {"key": "demo", "name": "Demo", "type": "enum", "options": ["Off", "On"], "default": 0},
