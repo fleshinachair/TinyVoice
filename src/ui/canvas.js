@@ -302,8 +302,10 @@
         const W = ctx.width, H = ctx.height;
         const tw = (s) => (typeof ctx.textWidth === "function" ? ctx.textWidth(s) : s.length * 6);
         const ty = Math.max(0, Math.min(H - TEXT_H, Math.floor((H - TEXT_H - 3) / 2)));
+        const engine = optName(values.engine, ["Vocoder", "Synth Voice", "Resynth"], null);
         const mode = optName(values.mode, MODES, null);
-        if (mode && LATCH_MODES.indexOf(mode) < 0) {
+        const na = engine === "Resynth" ? RS_ACTS.latch((k) => values[k]) === false : !!mode && LATCH_MODES.indexOf(mode) < 0;
+        if (na) {
             const txt = "---", x = Math.max(0, Math.floor((W - tw(txt)) / 2));
             ctx.print(x, ty, txt, 1);
             if (typeof ctx.setPixel === "function")
@@ -360,6 +362,155 @@
                     if ((xx + y) & 1) ctx.setPixel(xx, y, 0);
     }
     const gatedWidget = (key) => ({ draw: (ctx, payload) => drawGated(ctx, payload, key), nominal: { w: 32, h: 15 } });
+
+    /* Resynth's knobs that do nothing in the current settings (custom:tinyvoice_rsna; one group per knob, the
+     * cell's key in payload.group.keys). Where a knob acts it shows its value exactly as the stock knob would (fmtValue is the host's
+     * shared/param_format.mjs, for the units used here); where it doesn't, a dimmed "N/A". Unlike the vocoder's,
+     * the DSP still takes turns of an N/A knob (the value shows in the header while turned): imports and
+     * restores write keys one by one in any order. RS_ACTS is the one table of rules; web_ui.html dims its
+     * controls with the same rules (rsActs there; tests/canvas_test.mjs checks both). Until the keys a rule reads
+     * have been read, the value shows. */
+    const RS_META = {
+        hm_transform:         { type: "float", step: 0.01 },
+        hm_pitch_shift:       { type: "float", step: 1, unit: "st" },
+        hm_octaving:          { type: "float", step: 0.01 },
+        hm_wave:              { type: "enum", options: ["Saw", "Square", "Triangle", "Sine", "Preset"] },
+        hm_wavetable_shape:   { type: "float", step: 0.01 },
+        hm_wavetable_stretch: { type: "float", step: 0.01 },
+        hm_key:               { type: "enum", options: ROOTS },
+        hm_scale:             { type: "enum", options: ["Major", "Minor", "Chromatic", "Custom"] },
+        hm_tuning_duophonic:  { type: "enum", options: ["Off", "On"] },
+        hm_pitch_mono:        { type: "note" },
+        hm_pitch_duo:         { type: "note" },
+        hm_midi_idle:         { type: "enum", options: ["Tune", "Silent"] },
+        latch:                { type: "enum", options: ["Off", "On"] },
+        hm_warble_rate:       { type: "float", step: 0.01 },
+        hm_warble_mode:       { type: "enum", options: ["FM", "LFO"] },
+        hm_filter_freq:       { type: "float", step: 0.5 },
+        hm_output_gain:       { type: "float", step: 0.1, unit: "dB" },
+        hm_freeze_synclength: { type: "enum", options: ["1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1/1"] },
+    };
+    function precisionForStep(step) {
+        const s = Math.abs(Number(step));
+        return !isFinite(s) || s <= 0 ? 2 : s >= 1 ? 0 : s >= 0.1 ? 1 : s >= 0.01 ? 2 : s >= 0.001 ? 3 : 4;
+    }
+    function fmtValue(raw, meta) {
+        if (meta.type === "enum") return optName(raw, meta.options, String(raw));
+        const n = Number(raw);
+        if (!isFinite(n)) return String(raw);
+        if (meta.type === "note") { const m = Math.round(n); return NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); }
+        if (meta.type === "int" && !meta.unit) return String(Math.round(n));
+        if (meta.unit === "dB") return n.toFixed(precisionForStep(meta.step)) + " dB";
+        if (meta.unit === "Hz") return Math.abs(n) >= 1000 ? (n / 1000).toFixed(2) + " kHz" : n.toFixed(precisionForStep(meta.step)) + " Hz";
+        if (meta.unit === "ms") return n.toFixed(precisionForStep(meta.step)) + " ms";
+        if (meta.unit === "st") { const r = Math.round(n); return (r > 0 ? "+" : "") + r + " st"; }
+        return n.toFixed(precisionForStep(meta.step)) + (meta.unit ? " " + meta.unit : "");
+    }
+    const NOTE_NAMES = ROOTS;
+    /* RS_ACTS begin: the same text in src/ui/canvas.js and src/ui/web_ui.html (tests/canvas_test.mjs checks it).
+     * Which Resynth knobs act in the current settings. get(key) is the raw value as read (an option name, an
+     * index or a number; undefined until read); a rule answers false (N/A), true (acts) or null (not known yet). */
+    const RS_ACTS = (function () {
+        const MODE = ["Scale", "Note", "MIDI"], OFFON = ["Off", "On"], IDLE = ["Tune", "Silent"];
+        const read = (v) => v === undefined || v === null || v === "";
+        const num = (g, k) => { const v = g(k), n = Number(v); return read(v) || !isFinite(n) ? null : n; };
+        const opt = (g, k, opts) => {
+            const v = g(k);
+            if (read(v)) return null;
+            const s = String(v);
+            for (const o of opts) if (o.toLowerCase() === s.toLowerCase()) return o;
+            const n = Number(s);
+            return isFinite(n) && n >= 0 && n < opts.length ? opts[Math.round(n)] : null;
+        };
+        const and = (...xs) => xs.some((x) => x === false) ? false : xs.some((x) => x === null) ? null : true;
+        const gt = (n, t) => n === null ? null : n > t;
+        const is = (x, v) => x === null ? null : x === v;
+        const mode = (g) => opt(g, "hm_tuning_mode", MODE);
+        const pathB = (g) => gt(num(g, "hm_synth_mix"), 0.005);                      /* Shift, Octave, Transform: path B */
+        const transform = (g) => and(pathB(g), gt(num(g, "hm_transform"), 0.005));   /* the wave acts only through it */
+        const scale = (g) => {      /* Scale mode; MIDI mode with no pad held when No Pad is Tune; Bypass: only a shifted line snaps */
+            const m = mode(g);
+            if (m === null) return null;
+            if (m === "Note") return false;
+            if (m === "MIDI") return is(opt(g, "hm_midi_idle", IDLE), "Tune");
+            const byp = opt(g, "hm_quantize_enabled", OFFON);
+            if (byp === null) return null;
+            if (byp === "Off") return true;
+            const sh = num(g, "hm_pitch_shift");
+            return and(sh === null ? null : Math.abs(sh) > 0.01, pathB(g));
+        };
+        const note = (g) => is(mode(g), "Note"), midi = (g) => is(mode(g), "MIDI");
+        const warble = (g) => gt(num(g, "hm_warble_depth"), 0.0);
+        return {
+            hm_transform: pathB, hm_pitch_shift: pathB, hm_octaving: pathB,
+            hm_wave: transform, hm_wavetable_shape: transform, hm_wavetable_stretch: transform,
+            hm_chebyshev: (g) => and(transform(g), gt(num(g, "hm_wavetable_shape"), 0.0)),   /* Odd / Even: through Shape */
+            hm_key: scale, hm_scale: scale, hm_mask: scale,
+            hm_quantize_enabled: (g) => { const m = mode(g); return m === null ? null : m === "Scale" || (m === "MIDI" ? is(opt(g, "hm_midi_idle", IDLE), "Tune") : false); },
+            hm_tuning_duophonic: note, hm_pitch_mono: note,
+            hm_pitch_duo: (g) => and(note(g), is(opt(g, "hm_tuning_duophonic", OFFON), "On")),
+            hm_midi_idle: midi, latch: midi,
+            hm_warble_rate: warble,
+            hm_warble_mode: (g) => { const r = num(g, "hm_warble_rate"); return and(warble(g), r === null ? null : r >= 0); },
+            hm_filter_freq: (g) => { const n = num(g, "hm_filter_gain"); return n === null ? null : Math.abs(n) > 0.01; },
+            hm_filter_width: (g) => { const n = num(g, "hm_filter_gain"); return n === null ? null : Math.abs(n) > 0.01; },
+            hm_output_gain: (g) => is(opt(g, "hm_autolevel", OFFON), "Off"),
+            hm_freeze_synclength: (g) => is(opt(g, "hm_freeze_sync", OFFON), "On"),
+            hm_freeze_length: (g) => is(opt(g, "hm_freeze_sync", OFFON), "Off"),
+            hm_noisegate_attack: (g) => gt(num(g, "hm_noisegate_threshold"), -79.5),
+            hm_noisegate_hold: (g) => gt(num(g, "hm_noisegate_threshold"), -79.5),
+            hm_noisegate_release: (g) => gt(num(g, "hm_noisegate_threshold"), -79.5),
+            hm_deess_sensitivity: (g) => gt(num(g, "hm_deess"), 0.05),
+            hm_deess_attack: (g) => gt(num(g, "hm_deess"), 0.05),
+            hm_widen_cutoff: (g) => gt(num(g, "hm_widen"), 0.0),
+            hm_widen_rate: (g) => gt(num(g, "hm_widen"), 0.0),
+            hm_sharpen_bias: (g) => gt(num(g, "hm_sharpen"), 0.0),
+        };
+    })();
+    /* RS_ACTS end */
+    /* the keys each rule the Move draws reads (the widgets' extra_keys: scripts/gen_module_json.py's RS_DEPS) */
+    const RS_DEPS = {
+        hm_transform: ["hm_synth_mix"], hm_pitch_shift: ["hm_synth_mix"], hm_octaving: ["hm_synth_mix"],
+        hm_wave: ["hm_synth_mix", "hm_transform"], hm_wavetable_shape: ["hm_synth_mix", "hm_transform"], hm_wavetable_stretch: ["hm_synth_mix", "hm_transform"],
+        hm_key: ["hm_tuning_mode", "hm_midi_idle", "hm_quantize_enabled", "hm_pitch_shift", "hm_synth_mix"],
+        hm_scale: ["hm_tuning_mode", "hm_midi_idle", "hm_quantize_enabled", "hm_pitch_shift", "hm_synth_mix"],
+        hm_tuning_duophonic: ["hm_tuning_mode"], hm_pitch_mono: ["hm_tuning_mode"], hm_pitch_duo: ["hm_tuning_mode", "hm_tuning_duophonic"],
+        hm_midi_idle: ["hm_tuning_mode"],
+        hm_warble_rate: ["hm_warble_depth"], hm_warble_mode: ["hm_warble_depth", "hm_warble_rate"],
+        hm_filter_freq: ["hm_filter_gain"], hm_output_gain: ["hm_autolevel"], hm_freeze_synclength: ["hm_freeze_sync"],
+    };
+    function drawText(ctx, cands, dim) {
+        const W = ctx.width, H = ctx.height;
+        const tw = (s) => (typeof ctx.textWidth === "function" ? ctx.textWidth(s) : s.length * 6);
+        const ty = Math.max(0, Math.min(H - TEXT_H, Math.floor((H - TEXT_H - 3) / 2)));
+        let txt = cands[cands.length - 1];
+        for (const c of cands) if (tw(c) <= W - 2) { txt = c; break; }
+        while (tw(txt) > W - 2 && txt.length > 1) txt = txt.slice(0, -1);
+        const x = Math.max(0, Math.floor((W - tw(txt)) / 2));
+        ctx.print(x, ty, txt, 1);
+        if (dim && typeof ctx.setPixel === "function")
+            for (let y = ty; y < Math.min(H, ty + TEXT_H); y++)
+                for (let xx = x; xx < Math.min(W, x + tw(txt)); xx++)
+                    if ((xx + y) & 1) ctx.setPixel(xx, y, 0);
+    }
+    function drawRs(ctx, payload) {
+        const values = (payload && payload.values) || {};
+        const g = payload && payload.group;                       /* the host passes { keys: [the cell's key] } */
+        const key = typeof g === "string" ? g : (g && Array.isArray(g.keys) ? g.keys[0] : undefined);
+        const own = RS_META[key], rule = RS_ACTS[key];
+        if (!own) return;
+        /* the host's own metadata when it hands it over (metaIndex.getOrGuess), so the text is the stock knob's */
+        let meta = own;
+        try {
+            const mi = payload.metaIndex, hm = mi && typeof mi.getOrGuess === "function" ? mi.getOrGuess(key) : null;
+            if (hm && own.type !== "note" && (hm.type === "enum" ? Array.isArray(hm.options) : true)) meta = hm;
+        } catch (e) { meta = own; }
+        const acts = rule ? rule((k) => values[k]) : true;
+        if (acts === false) { drawText(ctx, ["N/A"], true); return; }
+        const full = values[key] === undefined ? "" : fmtValue(values[key], meta);
+        const sp = full.lastIndexOf(" ");                              /* "-6.0 dB" -> "-6.0dB" -> "-6.0" where the cell is narrow */
+        drawText(ctx, sp > 0 ? [full, full.slice(0, sp) + full.slice(sp + 1), full.slice(0, sp)] : [full], false);
+    }
     const drawBeauty = (ctx, payload) => drawGated(ctx, payload, "beauty");
 
     globalThis.canvas_overlay = {
@@ -372,8 +523,9 @@
             "custom:tinyvoice_scope": { draw, nominal: { w: 96, h: 15 } },
             "custom:tinyvoice_freeze": { draw: drawFreeze, nominal: { w: 64, h: 15 } },
             "custom:tinyvoice_latch": { draw: drawLatch, nominal: { w: 32, h: 15 } },
+            "custom:tinyvoice_rsna": { draw: drawRs, nominal: { w: 32, h: 15 } },
         },
     };
     /* test seam (tests/canvas_test.mjs) */
-    globalThis.TINYVOICE_SCOPE_FOR_TEST = { draw, drawFreeze, drawLatch, drawBeauty, drawGated, GATED, parse, loopPhase, recFill, noteName, st };
+    globalThis.TINYVOICE_SCOPE_FOR_TEST = { draw, drawFreeze, drawLatch, drawBeauty, drawGated, GATED, parse, loopPhase, recFill, noteName, st, drawRs, RS_ACTS, RS_DEPS, RS_META, fmtValue };
 })();

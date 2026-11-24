@@ -314,5 +314,101 @@ check(gtOk, "gated knobs: every mode x value x width shows the value (acts) or a
 check(Object.entries(EXPECT).every(([k2, ex]) => JSON.stringify(T.GATED[k2].acts) === JSON.stringify(ex.acts)),
       "gated knobs: canvas.js acts lists equal the expected table");
 
+// ---- Resynth: knobs that do nothing in the current settings (custom:tinyvoice_rsna, RS_ACTS)
+{
+    const kind = ov.widgetKinds["custom:tinyvoice_rsna"];
+    check(kind && typeof kind.draw === "function", "registers custom:tinyvoice_rsna");
+    const R = T.RS_ACTS;
+    const acts = (k, v) => R[k]((key) => v[key]);
+    // the rules, read off hm.c / hmfx.c / dsp.c
+    const base = { hm_synth_mix: 1, hm_transform: 1, hm_tuning_mode: "Scale", hm_midi_idle: "Tune", hm_quantize_enabled: "Off",
+                   hm_pitch_shift: 0, hm_tuning_duophonic: "Off", hm_warble_depth: 0, hm_warble_rate: 0.5, hm_filter_gain: 0,
+                   hm_autolevel: "On", hm_freeze_sync: "Off", hm_wavetable_shape: 0, hm_noisegate_threshold: -80, hm_deess: 0,
+                   hm_widen: 0, hm_sharpen: 80 };
+    const w = (o) => Object.assign({}, base, o);
+    const cases = [
+        ["hm_transform", {}, true], ["hm_transform", { hm_synth_mix: 0 }, false],
+        ["hm_pitch_shift", { hm_synth_mix: 0 }, false], ["hm_octaving", { hm_synth_mix: 0.4 }, true],
+        ["hm_wave", {}, true], ["hm_wave", { hm_transform: 0 }, false], ["hm_wavetable_shape", { hm_synth_mix: 0 }, false],
+        ["hm_wavetable_stretch", { hm_transform: "0" }, false], ["hm_chebyshev", { hm_wavetable_shape: 0.5 }, true], ["hm_chebyshev", {}, false],
+        ["hm_key", {}, true], ["hm_key", { hm_tuning_mode: "Note" }, false], ["hm_scale", { hm_tuning_mode: "MIDI" }, true],
+        ["hm_scale", { hm_tuning_mode: "MIDI", hm_midi_idle: "Silent" }, false], ["hm_key", { hm_quantize_enabled: "On" }, false],
+        ["hm_key", { hm_quantize_enabled: "On", hm_pitch_shift: 7 }, true], ["hm_key", { hm_quantize_enabled: "On", hm_pitch_shift: 7, hm_synth_mix: 0 }, false],
+        ["hm_key", { hm_tuning_mode: 1 }, false], ["hm_key", { hm_tuning_mode: "2", hm_midi_idle: 1 }, false],
+        ["hm_tuning_duophonic", {}, false], ["hm_tuning_duophonic", { hm_tuning_mode: "Note" }, true],
+        ["hm_pitch_mono", { hm_tuning_mode: "Note" }, true], ["hm_pitch_duo", { hm_tuning_mode: "Note" }, false],
+        ["hm_pitch_duo", { hm_tuning_mode: "Note", hm_tuning_duophonic: "On" }, true],
+        ["hm_midi_idle", {}, false], ["hm_midi_idle", { hm_tuning_mode: "MIDI" }, true], ["latch", { hm_tuning_mode: "MIDI" }, true], ["latch", {}, false],
+        ["hm_warble_rate", {}, false], ["hm_warble_rate", { hm_warble_depth: 0.3 }, true],
+        ["hm_warble_mode", { hm_warble_depth: 0.3 }, true], ["hm_warble_mode", { hm_warble_depth: 0.3, hm_warble_rate: -0.5 }, false],
+        ["hm_filter_freq", {}, false], ["hm_filter_freq", { hm_filter_gain: -6 }, true],
+        ["hm_output_gain", {}, false], ["hm_output_gain", { hm_autolevel: "Off" }, true], ["hm_output_gain", { hm_autolevel: 0 }, true],
+        ["hm_freeze_synclength", {}, false], ["hm_freeze_synclength", { hm_freeze_sync: "On" }, true], ["hm_freeze_length", {}, true],
+        ["hm_noisegate_attack", {}, false], ["hm_noisegate_release", { hm_noisegate_threshold: -40 }, true],
+        ["hm_deess_attack", { hm_deess: 6 }, true], ["hm_widen_rate", {}, false], ["hm_sharpen_bias", {}, true], ["hm_sharpen_bias", { hm_sharpen: 0 }, false],
+    ];
+    let bad = 0;
+    for (const [k, o, want] of cases) if (acts(k, w(o)) !== want) { bad++; console.log("    rule", k, JSON.stringify(o), "want", want); }
+    check(bad === 0, "rsna: every rule as read off the engine (" + cases.length + " cases)");
+    check(acts("hm_wave", {}) === null && acts("hm_key", { hm_tuning_mode: "Scale" }) === null && acts("hm_output_gain", {}) === null,
+          "rsna: unread keys leave the rule undecided");
+
+    // drawn: the value as the stock knob shows it, or a dimmed N/A
+    const runR = (key, values, Wl = 32, metaIndex) => { const k = ltCtx(Wl); kind.draw(k, { values, nowMs: 0, group: { kind: "custom:tinyvoice_rsna", keys: [key] }, metaIndex }); return k; };
+    let k = runR("hm_wavetable_shape", w({ hm_wavetable_shape: 0.25 }));
+    check(k.runs.length === 1 && k.runs[0].t === "0.25" && k.cleared === 0, "rsna: an acting knob shows its value (0.25), not dimmed");
+    k = runR("hm_wavetable_shape", w({ hm_wavetable_shape: 0.25, hm_transform: 0 }));
+    check(k.runs.length === 1 && k.runs[0].t === "N/A" && k.cleared > 0, "rsna: Shape at Transform 0 is a dimmed N/A");
+    check(runR("hm_output_gain", w({ hm_output_gain: -6, hm_autolevel: "Off" }), 64).runs[0].t === "-6.0 dB", "rsna: dB as the host formats it");
+    check(runR("hm_output_gain", w({ hm_output_gain: -6, hm_autolevel: "Off" }), 40).runs[0].t === "-6.0dB" &&
+          runR("hm_output_gain", w({ hm_output_gain: -6, hm_autolevel: "Off" }), 32).runs[0].t === "-6.0", "rsna: a narrow cell drops the space, then the unit");
+    check(runR("hm_pitch_shift", w({ hm_pitch_shift: 7 }), 64).runs[0].t === "+7 st", "rsna: semitones as the host formats them");
+    check(runR("hm_wave", w({ hm_wave: "Square" }), 64).runs[0].t === "Square" && runR("hm_wave", w({ hm_wave: 3 })).runs[0].t === "Sine", "rsna: enums by name or index");
+    check(runR("hm_pitch_mono", w({ hm_pitch_mono: 60, hm_tuning_mode: "Note" })).runs[0].t === "C4", "rsna: Note 1 as a note name");
+    check(runR("hm_filter_freq", w({ hm_filter_freq: 98.29, hm_filter_gain: 3 })).runs[0].t === "98.3", "rsna: step 0.5 gives one decimal");
+    check(runR("hm_freeze_synclength", w({ hm_freeze_synclength: "1/8", hm_freeze_sync: "On" })).runs[0].t === "1/8", "rsna: Glitch division");
+    check(runR("hm_wave", { hm_wave: "Saw" }).runs[0].t === "Saw", "rsna: before the rule's keys are read, the value shows");
+    const mi = { getOrGuess: (key) => ({ key, type: "float", step: 0.1, unit: "dB" }) };
+    check(runR("hm_transform", w({ hm_transform: 0.5 }), 64, mi).runs[0].t === "0.5 dB", "rsna: the host's metaIndex is used for the text when given");
+    let threw = false;
+    try {
+        kind.draw(ltCtx(32), undefined); runR("nope", {}); runR("hm_wave", { hm_wave: null, hm_transform: "x" }); runR("hm_key", w({ hm_tuning_mode: "??" }));
+        kind.draw({ width: 32, height: 15, print() {}, fillRect() {} }, { values: w({ hm_transform: 0 }), group: { keys: ["hm_wave"] } });
+        runR("hm_wave", w({}), 32, { getOrGuess() { throw new Error("x"); } });
+    } catch (e) { threw = true; console.log("  threw:", e); }
+    check(!threw, "rsna: junk input never throws");
+    let fit = true;
+    for (const Wl of [20, 24, 32, 40]) for (const key of Object.keys(T.RS_META)) {
+        const kk = runR(key, w({ [key]: 0 }), Wl);
+        fit = fit && kk.outOfBounds === 0 && kk.runs.length === 1;
+    }
+    check(fit, "rsna: every knob at every cell width stays in the frame");
+
+    // Latch: in Resynth it acts in MIDI mode, whatever the vocoder's Mode is
+    check(runLt({ engine: "Resynth", mode: "Snap", hm_tuning_mode: "MIDI", latch: "On" }).runs[0].t === "On", "latch: Resynth MIDI mode shows the value");
+    check(runLt({ engine: "Resynth", mode: "Robot", hm_tuning_mode: "Scale", latch: "On" }).runs[0].t === "---", "latch: Resynth Scale mode is ---");
+
+    // module.json: every gated knob carries the widget with the keys its rule reads; the formats match
+    const mj = JSON.parse(readFileSync(join(root, "module.json"), "utf8"));
+    const cp = {}; for (const p of mj.capabilities.chain_params) cp[p.key] = p;
+    let vizOk = true;
+    for (const [key, deps] of Object.entries(T.RS_DEPS)) {
+        const v = cp[key] && cp[key].viz;
+        if (!v || v.kind !== "custom:tinyvoice_rsna" || JSON.stringify(v.extra_keys) !== JSON.stringify(deps)) { vizOk = false; console.log("    viz", key, JSON.stringify(v)); }
+        const seen = new Set(); R[key]((x) => { seen.add(x); return base[x] !== undefined ? base[x] : 1; });
+        for (const x of seen) if (deps.indexOf(x) < 0) { vizOk = false; console.log("    rule", key, "reads", x, "not in extra_keys"); }
+        const m = T.RS_META[key], c2 = cp[key];
+        if (m.type === "enum" && JSON.stringify(m.options) !== JSON.stringify(c2.options)) { vizOk = false; console.log("    options", key); }
+        if (m.type === "float" && (m.step !== c2.step || (m.unit || null) !== (c2.unit || null))) { vizOk = false; console.log("    format", key); }
+    }
+    check(vizOk, "rsna: module.json's viz / extra_keys / formats match RS_DEPS, the rules and RS_META");
+    check(cp.latch.viz && ["engine", "hm_tuning_mode"].every((x) => cp.latch.viz.extra_keys.indexOf(x) >= 0), "latch: reads engine and hm_tuning_mode");
+
+    // the Remote UI dims with the very same rules
+    const html = readFileSync(join(root, "src/ui/web_ui.html"), "utf8"), cj = readFileSync(join(root, "src/ui/canvas.js"), "utf8");
+    const blk = (t) => { const a2 = t.indexOf("    /* RS_ACTS begin"), b2 = t.indexOf("    /* RS_ACTS end */"); return a2 >= 0 && b2 > a2 ? t.slice(a2, b2) : null; };
+    check(blk(cj) !== null && blk(cj) === blk(html), "rsna: web_ui.html's RS_ACTS block is canvas.js's, character for character");
+}
+
 console.log(`canvas.js: ${checks} checks, ${failures} failed`);
 process.exit(failures ? 1 : 0);

@@ -1144,7 +1144,8 @@ static void test_module_json_matches_params(void)
             const char *o = js_elem(cp, i);
             if (o && js_get(o, "viz")) declared++;
         }
-        CHECK(declared == 11);                                   /* the scope's 3, Freeze banner's 2, Latch's 1, Key/Scale/Retune/Glide/Beauty 5 */
+        CHECK(declared == 11 + 17);                              /* the scope's 3, Freeze banner's 2, Latch's 1, Key/Scale/Retune/Glide/Beauty 5;
+                                                                    Resynth's N/A knobs 17 (custom:tinyvoice_rsna: tests/canvas_test.mjs) */
         /* Nothing disappears: no param is conditionally hidden. Gate holds
          * Auto as its lowest setting, then -60..0 dB. */
         for (int i = 0; i < js_arr_len(cp); i++) CHECK(js_get(js_elem(cp, i), "visible_if") == NULL);
@@ -1329,7 +1330,7 @@ static void test_module_json_matches_params(void)
     /* Resynth's pages: the knobs they hold (the rest of its params are on the Remote UI only: web_ui.html) */
     {
         static const char *const rs_lv[6] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_notes" };
-        static const int rs_n[6] = { 8, 7, 8, 8, 7, 5 };            /* Pitch 7; Play: 7 knobs (Mic Gate the 6th); Notes (Duo, Note mode's notes, Latch, No Pad): 5 */
+        static const int rs_n[6] = { 8, 8, 8, 8, 7, 5 };            /* Play: 7 knobs (Mic Gate the 6th); Notes (Duo, Note mode's notes, Latch, No Pad): 5 */
         for (int l = 0; l < 6; l++) {
             const char *knobs = js_get(js_get(levels, rs_lv[l]), "knobs");
             CHECK(knobs && js_arr_len(knobs) == rs_n[l]);
@@ -1347,7 +1348,8 @@ static void test_module_json_matches_params(void)
     }
     for (int i = 0; i < VT_P_COUNT; i++) {
         const int hm = i >= VT_P_HM_FIRST && i <= VT_P_HM_WAVE;
-        int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET || i == VT_P_RS_PRESET) ? 0 : (i == VT_P_DEMO ? 3 : i == VT_P_LATCH ? 2 : 1);   /* Demo: the vocoder's More page, Voice FX's Audition and Resynth's Play */   /* `engine` is the host's Mode page, `vf_preset` its preset browser: not knobs */
+        int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET || i == VT_P_RS_PRESET) ? 0 : (i == VT_P_DEMO ? 3 : i == VT_P_LATCH ? 2 : 1);
+        if (i == dsp_param_index("hm_transform")) want_pages = 2;     /* Resynth's Main and Synth pages */   /* Demo: the vocoder's More page, Voice FX's Audition and Resynth's Play */   /* `engine` is the host's Mode page, `vf_preset` its preset browser: not knobs */
         if (hm && listed_on[i] == 0) want_pages = 0;                 /* a Resynth param on the Remote UI only */
         if (listed_on[i] != want_pages) printf("  param %s listed on %d pages\n", dsp_param_def(i)->key, listed_on[i]);
         CHECK(listed_on[i] == want_pages);

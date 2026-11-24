@@ -133,7 +133,7 @@ for role, k in zip(["a", "b"], ["freeze", "freeze_len"]):
 
 # Latch (MORE knob 6) draws its own value: On / Off in the modes it acts in
 # (Robot, Chords, Prism, Nightcall, Harmony), a dimmed "---" in the others.
-next(x for x in PARAMS if x["key"] == "latch")["viz"] = {"kind": "custom:tinyvoice_latch", "group": "latch", "role": "a", "extra_keys": ["mode"]}
+next(x for x in PARAMS if x["key"] == "latch")["viz"] = {"kind": "custom:tinyvoice_latch", "group": "latch", "role": "a", "extra_keys": ["mode", "engine", "hm_tuning_mode"]}   # Resynth: MIDI mode
 
 # Knobs that do nothing in some modes draw their own value (a dimmed "N/A"
 # where they are inert): Key, Scale, Retune, Glide, Beauty (all on PITCH). Same
@@ -141,6 +141,23 @@ next(x for x in PARAMS if x["key"] == "latch")["viz"] = {"kind": "custom:tinyvoi
 # src/ui/canvas.js.
 for k in ["key", "scale", "retune", "glide", "beauty"]:
     next(x for x in PARAMS if x["key"] == k)["viz"] = {"kind": "custom:tinyvoice_" + k, "group": k, "role": "a", "extra_keys": ["mode"]}
+
+# Resynth's knobs that do nothing in some settings draw their own value, or a dimmed "N/A" (custom:tinyvoice_rsna,
+# the group names the knob; the rules are RS_ACTS in src/ui/canvas.js, extra_keys the keys each one reads: RS_DEPS
+# there, checked by tests/canvas_test.mjs). The DSP still takes turns of them.
+RS_DEPS = {
+    "hm_transform": ["hm_synth_mix"], "hm_pitch_shift": ["hm_synth_mix"], "hm_octaving": ["hm_synth_mix"],
+    "hm_wave": ["hm_synth_mix", "hm_transform"], "hm_wavetable_shape": ["hm_synth_mix", "hm_transform"],
+    "hm_wavetable_stretch": ["hm_synth_mix", "hm_transform"],
+    "hm_key": ["hm_tuning_mode", "hm_midi_idle", "hm_quantize_enabled", "hm_pitch_shift", "hm_synth_mix"],
+    "hm_scale": ["hm_tuning_mode", "hm_midi_idle", "hm_quantize_enabled", "hm_pitch_shift", "hm_synth_mix"],
+    "hm_tuning_duophonic": ["hm_tuning_mode"], "hm_pitch_mono": ["hm_tuning_mode"], "hm_pitch_duo": ["hm_tuning_mode", "hm_tuning_duophonic"],
+    "hm_midi_idle": ["hm_tuning_mode"],
+    "hm_warble_rate": ["hm_warble_depth"], "hm_warble_mode": ["hm_warble_depth", "hm_warble_rate"],
+    "hm_filter_freq": ["hm_filter_gain"], "hm_output_gain": ["hm_autolevel"], "hm_freeze_synclength": ["hm_freeze_sync"],
+}
+for k, deps in RS_DEPS.items():
+    next(x for x in PARAMS if x["key"] == k)["viz"] = {"kind": "custom:tinyvoice_rsna", "group": k, "role": "a", "extra_keys": deps}
 
 # Pages. VOICE is the home page (and the root's knobs): Mode, the five
 # contextual knobs, Mix, Level. PITCH: the tuning knobs and the scope on 5-7.
@@ -158,8 +175,9 @@ RS_BANK = ["rs_bank"]
 VOICEFX = ["vf_vowel", "vf_tract", "vf_peak", "vf_choir", "vf_breath", "vf_attack", "vf_release", "vf_mix"]
 # Resynth: the main controls on the Move, four more pages; everything else is on the Remote UI (web_ui.html).
 RS_MAIN  = ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet"]
-RS_PITCH = ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0"]
-RS_SYNTH = ["hm_wave", "hm_wavetable_shape", "hm_wavetable_stretch", "hm_warble_depth", "hm_warble_rate", "hm_warble_mode", "hm_widen", "hm_smoothing"]
+RS_PITCH = ["hm_tuning_mode", "hm_key", "hm_scale", "hm_scale_hold", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_smoothing"]
+# Transform is on Main (the headline knob) and again here, next to the wave it moves toward (Wave, Shape, Stretch act only through it)
+RS_SYNTH = ["hm_transform", "hm_wave", "hm_wavetable_shape", "hm_wavetable_stretch", "hm_warble_depth", "hm_warble_rate", "hm_warble_mode", "hm_widen"]
 RS_TONE  = ["hm_hpf_freq", "hm_lpf_freq", "hm_filter_freq", "hm_filter_gain", "hm_noisegate_threshold", "hm_deess", "hm_sharpen", "hm_output_gain"]
 RS_PLAY  = ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "hm_mic_gate", "demo"]
 RS_NOTES = ["hm_tuning_duophonic", "hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"]      # Duo and Note mode's two notes, and the pads (MIDI mode)

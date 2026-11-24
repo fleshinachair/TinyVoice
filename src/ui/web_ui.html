@@ -429,7 +429,6 @@ function drawFilter() {
 }
 /* the 12-note mask keyboard */
 var keyBtns = [];
-var DIMMED = [];           /* the wave controls: they act only through Transform */
 function maskNow() { return (VAL.hm_scale === 3) ? (VAL.hm_mask | 0) : maskOf(VAL.hm_key | 0, VAL.hm_scale | 0); }
 function drawKeys() { var mask = maskNow(); keyBtns.forEach(function (b, i) { b.classList.toggle("on", !!((mask >> i) & 1)); }); }
 function maskOf(key, sc) {
@@ -451,19 +450,87 @@ function piano(parent) {
     keyBtns[i] = b;
   });
 }
+    /* RS_ACTS begin: the same text in src/ui/canvas.js and src/ui/web_ui.html (tests/canvas_test.mjs checks it).
+     * Which Resynth knobs act in the current settings. get(key) is the raw value as read (an option name, an
+     * index or a number; undefined until read); a rule answers false (N/A), true (acts) or null (not known yet). */
+    const RS_ACTS = (function () {
+        const MODE = ["Scale", "Note", "MIDI"], OFFON = ["Off", "On"], IDLE = ["Tune", "Silent"];
+        const read = (v) => v === undefined || v === null || v === "";
+        const num = (g, k) => { const v = g(k), n = Number(v); return read(v) || !isFinite(n) ? null : n; };
+        const opt = (g, k, opts) => {
+            const v = g(k);
+            if (read(v)) return null;
+            const s = String(v);
+            for (const o of opts) if (o.toLowerCase() === s.toLowerCase()) return o;
+            const n = Number(s);
+            return isFinite(n) && n >= 0 && n < opts.length ? opts[Math.round(n)] : null;
+        };
+        const and = (...xs) => xs.some((x) => x === false) ? false : xs.some((x) => x === null) ? null : true;
+        const gt = (n, t) => n === null ? null : n > t;
+        const is = (x, v) => x === null ? null : x === v;
+        const mode = (g) => opt(g, "hm_tuning_mode", MODE);
+        const pathB = (g) => gt(num(g, "hm_synth_mix"), 0.005);                      /* Shift, Octave, Transform: path B */
+        const transform = (g) => and(pathB(g), gt(num(g, "hm_transform"), 0.005));   /* the wave acts only through it */
+        const scale = (g) => {      /* Scale mode; MIDI mode with no pad held when No Pad is Tune; Bypass: only a shifted line snaps */
+            const m = mode(g);
+            if (m === null) return null;
+            if (m === "Note") return false;
+            if (m === "MIDI") return is(opt(g, "hm_midi_idle", IDLE), "Tune");
+            const byp = opt(g, "hm_quantize_enabled", OFFON);
+            if (byp === null) return null;
+            if (byp === "Off") return true;
+            const sh = num(g, "hm_pitch_shift");
+            return and(sh === null ? null : Math.abs(sh) > 0.01, pathB(g));
+        };
+        const note = (g) => is(mode(g), "Note"), midi = (g) => is(mode(g), "MIDI");
+        const warble = (g) => gt(num(g, "hm_warble_depth"), 0.0);
+        return {
+            hm_transform: pathB, hm_pitch_shift: pathB, hm_octaving: pathB,
+            hm_wave: transform, hm_wavetable_shape: transform, hm_wavetable_stretch: transform,
+            hm_chebyshev: (g) => and(transform(g), gt(num(g, "hm_wavetable_shape"), 0.0)),   /* Odd / Even: through Shape */
+            hm_key: scale, hm_scale: scale, hm_mask: scale,
+            hm_quantize_enabled: (g) => { const m = mode(g); return m === null ? null : m === "Scale" || (m === "MIDI" ? is(opt(g, "hm_midi_idle", IDLE), "Tune") : false); },
+            hm_tuning_duophonic: note, hm_pitch_mono: note,
+            hm_pitch_duo: (g) => and(note(g), is(opt(g, "hm_tuning_duophonic", OFFON), "On")),
+            hm_midi_idle: midi, latch: midi,
+            hm_warble_rate: warble,
+            hm_warble_mode: (g) => { const r = num(g, "hm_warble_rate"); return and(warble(g), r === null ? null : r >= 0); },
+            hm_filter_freq: (g) => { const n = num(g, "hm_filter_gain"); return n === null ? null : Math.abs(n) > 0.01; },
+            hm_filter_width: (g) => { const n = num(g, "hm_filter_gain"); return n === null ? null : Math.abs(n) > 0.01; },
+            hm_output_gain: (g) => is(opt(g, "hm_autolevel", OFFON), "Off"),
+            hm_freeze_synclength: (g) => is(opt(g, "hm_freeze_sync", OFFON), "On"),
+            hm_freeze_length: (g) => is(opt(g, "hm_freeze_sync", OFFON), "Off"),
+            hm_noisegate_attack: (g) => gt(num(g, "hm_noisegate_threshold"), -79.5),
+            hm_noisegate_hold: (g) => gt(num(g, "hm_noisegate_threshold"), -79.5),
+            hm_noisegate_release: (g) => gt(num(g, "hm_noisegate_threshold"), -79.5),
+            hm_deess_sensitivity: (g) => gt(num(g, "hm_deess"), 0.05),
+            hm_deess_attack: (g) => gt(num(g, "hm_deess"), 0.05),
+            hm_widen_cutoff: (g) => gt(num(g, "hm_widen"), 0.0),
+            hm_widen_rate: (g) => gt(num(g, "hm_widen"), 0.0),
+            hm_sharpen_bias: (g) => gt(num(g, "hm_sharpen"), 0.0),
+        };
+    })();
+    /* RS_ACTS end */
+/* Dim every Resynth control that does nothing in the current settings (the rules above; the Move draws "N/A" on the
+ * same ones). Dimmed controls still turn. */
+function applyNA() {
+  var get = function (k) { return VAL[k]; };
+  Object.keys(RS_ACTS).forEach(function (rk) {
+    var off = RS_ACTS[rk](get) === false;
+    var keys = rk === "hm_chebyshev" ? [0, 1, 2, 3, 4, 5, 6].map(function (i) { return "hm_chebyshev_" + i; }) : [rk];
+    keys.forEach(function (k) {
+      if (k === "hm_mask") { keyBtns.forEach(function (b) { b.classList.toggle("dim", off); }); return; }
+      var c = CTL[k];
+      (c && c.boxes || []).forEach(function (bx) { if (bx && bx.closest && bx.closest("#gridR")) { bx.classList.toggle("dim", off); bx.title = off ? "Does nothing with the current settings (it still turns)" : ""; } });
+      if (k === "hm_wave") { var w = document.getElementById("wtc"); if (w) w.classList.toggle("dim", off); }
+    });
+  });
+}
 function after(key) {
   if (/wave|wavetable|chebyshev/.test(key)) drawWave();
   if (/hpf|lpf|filter_/.test(key)) drawFilter();
   if (key === "hm_mask" || key === "hm_scale" || key === "hm_key") drawKeys();
-  if (key === "hm_transform") DIMMED.forEach(function (e) {
-    if (!e) return;
-    e.classList.toggle("dim", !(VAL.hm_transform > 0.005));
-    e.title = VAL.hm_transform > 0.005 ? "" : "The wave only sounds through Transform (Synthesize): raise Transform to hear these";
-  });
-  if (key === "hm_autolevel") {
-    var og = document.querySelector('.dial[data-key="hm_output_gain"]'), on = (VAL.hm_autolevel | 0) === 1;
-    if (og) { og.classList.toggle("dim", on); og.title = on ? "Auto Level is on: Out Gain is part of what it levels (switch Auto Level off to trim by hand)" : "Out Gain: drag or scroll (Shift: fine), double-click for the default"; }
-  }
+  if (/^hm_|^latch$/.test(key)) applyNA();
   if (key === "engine") showEngine();
   if (key === "mode") modeChanged();
   if (key === "vf_vowel" || key === "vf_tract" || key === "vf_peak") drawVowel();
@@ -485,9 +552,8 @@ function buildResynth() {
   group(p, "", ["hm_wave"]);
   el("canvas", "", p).id = "wtc";
   group(p, "", ["hm_transform", "hm_synth_mix", "hm_pitch_shift", "hm_octaving"], true);
-  DIMMED.push(document.getElementById("wtc"));
-  DIMMED.push(group(p, "WAVEFORM", ["hm_wavetable_stretch", "hm_wavetable_shape"]));
-  DIMMED.push(group(p, "SHAPE  ·  ODD / EVEN", ["hm_chebyshev_0", "hm_chebyshev_1", "hm_chebyshev_2", "hm_chebyshev_3", "hm_chebyshev_4", "hm_chebyshev_5", "hm_chebyshev_6"]));
+  group(p, "WAVEFORM", ["hm_wavetable_stretch", "hm_wavetable_shape"]);
+  group(p, "SHAPE  ·  ODD / EVEN", ["hm_chebyshev_0", "hm_chebyshev_1", "hm_chebyshev_2", "hm_chebyshev_3", "hm_chebyshev_4", "hm_chebyshev_5", "hm_chebyshev_6"]);
 
   p = panel(grid, "p-filter", "FILTER");
   el("canvas", "", p).id = "flc";
@@ -511,7 +577,7 @@ function buildResynth() {
   group(p, "", ["hm_autolevel", "hm_dry_wet", "hm_input_gain", "hm_mic_gate", "hm_output_gain"], true);
   group(p, "AUDITION", ["demo"]);
   el("div", "foot", p, "Dials: drag up/down or scroll (Shift for fine), double-click for the default. Save a sound on the Move (My Presets); it then shows in the preset strip above and on the Move's Presets page.");
-  drawWave(); drawFilter(); drawKeys(); after("hm_autolevel");
+  drawWave(); drawFilter(); drawKeys(); applyNA();
 }
 
 /* ---------- Vocoder: Voice, Pitch, Space / Gate / Freeze. The five mode knobs are named per mode, as on the Move. */
@@ -698,7 +764,7 @@ function importBaby(text, name) {
     send("hm_wt", b64); send("hm_wave", "Preset");
     wtCycle = b64ToCycle(b64); CTL.hm_wave && CTL.hm_wave.set(4);
   }
-  drawWave(); drawFilter(); drawKeys(); after("hm_autolevel");
+  drawWave(); drawFilter(); drawKeys(); applyNA();
   toast("Loaded " + name.replace(/\.baby$/i, "") + " (save it on the Move: My Presets)");
 }
 function readFiles(files) {
