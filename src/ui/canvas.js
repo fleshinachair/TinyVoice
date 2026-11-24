@@ -513,7 +513,64 @@
     }
     const drawBeauty = (ctx, payload) => drawGated(ctx, payload, "beauty");
 
+    /* ---- Resynth's Presets page, drawn by us (the host's "preset_browser" canvas page) so a long name wraps.
+     * The host still owns the browsing (the wheel scrolls, click enters, the knobs stay on the level) and hands
+     * the state over as payload.preset = { name, index, count, entered }; its stock page shows one line in a big
+     * face, which cut "Tokyo Speirs - Inst (Scale) - Radio Feedback" to its first 13 letters. Here: the name
+     * word-wrapped over up to three lines, centred, "12 of 61" under it. */
+    const PRESET_LINES = 3, LINE_H = 9;
+    function wrapName(name, W, tw, maxLines) {
+        const words = String(name).split(/\s+/).filter((w) => w.length);
+        const lines = [];
+        let cur = "", cut = false;
+        const push = (l) => { if (lines.length < maxLines) lines.push(l); else cut = true; };
+        for (let w of words) {
+            while (tw(w) > W && w.length > 1) {                       /* a word wider than the line: split it */
+                let n = w.length - 1;
+                while (n > 1 && tw(w.slice(0, n)) > W) n--;
+                if (cur) { push(cur); cur = ""; }
+                push(w.slice(0, n));
+                w = w.slice(n);
+            }
+            const t = cur ? cur + " " + w : w;
+            if (tw(t) <= W) cur = t;
+            else { push(cur); cur = w; }
+        }
+        if (cur) push(cur);
+        if (cut && lines.length) {                                    /* more than fits: end the last line with ".." */
+            let l = lines[lines.length - 1];
+            while (l.length > 1 && tw(l + "..") > W) l = l.slice(0, -1);
+            lines[lines.length - 1] = l.replace(/\s+$/, "") + "..";
+        }
+        return lines;
+    }
+    function drawPresetPage(ctx, payload) {
+        const W = ctx.width | 0, H = ctx.height | 0;
+        if (!(W > 8 && H > TEXT_H)) return;
+        const tw = (s) => (typeof ctx.textWidth === "function" ? ctx.textWidth(s) : s.length * 6);
+        const pr = (payload && payload.preset) || {};
+        const name = typeof pr.name === "string" && pr.name.length ? pr.name : "--";
+        const count = Number(pr.count), index = Number(pr.index);
+        const pos = Number.isFinite(count) && count > 0 && Number.isFinite(index) ? `${Math.max(0, index | 0) + 1} of ${count | 0}` : "";
+        const posH = pos ? LINE_H + 2 : 0;                            /* two rows of air above the position */
+        const room = Math.max(1, Math.min(PRESET_LINES, Math.floor((H - posH + LINE_H - TEXT_H) / LINE_H)));
+        /* the wrap is cached on the page's state (per slot) by name and width: the page redraws every tick */
+        const st = payload && payload.state && typeof payload.state === "object" ? payload.state : {};
+        const ck = W + "|" + room + "|" + name;
+        let lines = st.rsWrapKey === ck ? st.rsWrapLines : null;
+        if (!lines) { lines = wrapName(name, W - 4, tw, room); st.rsWrapKey = ck; st.rsWrapLines = lines; }
+        const blockH = (lines.length - 1) * LINE_H + TEXT_H + posH;
+        let y = Math.max(0, Math.floor((H - blockH) / 2));
+        for (const l of lines) {
+            ctx.print(Math.max(0, Math.floor((W - tw(l)) / 2)), y, l, 1);
+            y += LINE_H;
+        }
+        y += 2;
+        if (pos && y + TEXT_H <= H) ctx.print(Math.max(0, Math.floor((W - tw(pos)) / 2)), y, pos, 1);
+    }
+
     globalThis.canvas_overlay = {
+        drawPage: drawPresetPage,
         widgetKinds: {
             "custom:tinyvoice_key": gatedWidget("key"),
             "custom:tinyvoice_scale": gatedWidget("scale"),
@@ -527,5 +584,5 @@
         },
     };
     /* test seam (tests/canvas_test.mjs) */
-    globalThis.TINYVOICE_SCOPE_FOR_TEST = { draw, drawFreeze, drawLatch, drawBeauty, drawGated, GATED, parse, loopPhase, recFill, noteName, st, drawRs, RS_ACTS, RS_DEPS, RS_META, fmtValue };
+    globalThis.TINYVOICE_SCOPE_FOR_TEST = { draw, drawFreeze, drawLatch, drawBeauty, drawGated, GATED, parse, loopPhase, recFill, noteName, st, drawRs, RS_ACTS, RS_DEPS, RS_META, fmtValue, drawPresetPage, wrapName };
 })();

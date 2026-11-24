@@ -410,5 +410,64 @@ check(Object.entries(EXPECT).every(([k2, ex]) => JSON.stringify(T.GATED[k2].acts
     check(blk(cj) !== null && blk(cj) === blk(html), "rsna: web_ui.html's RS_ACTS block is canvas.js's, character for character");
 }
 
+
+// ---- Resynth's Presets page (drawPage on the overlay: the host's preset_browser canvas page), the name wrapped
+{
+    const ovp = globalThis.canvas_overlay;
+    check(typeof ovp.drawPage === "function", "presets page: the overlay exposes drawPage");
+    // the host's frame for it: 120 x 45 (MENU_FRAME_W, rows 9 .. RULE_Y - 1); print is the 7-row font, 6 px a letter here
+    const pgCtx = (Wp = 120, Hp = 45) => {
+        const runs = []; let oob = 0;
+        return { width: Wp, height: Hp, runs, get outOfBounds() { return oob; },
+                 fillRect(x, y, w, h) { if (x < 0 || y < 0 || x + w > Wp || y + h > Hp) oob++; },
+                 setPixel(x, y) { if (x < 0 || y < 0 || x >= Wp || y >= Hp) oob++; },
+                 print(x, y, t) { const w = String(t).length * 6; runs.push({ x, y, t: String(t) }); if (x < 0 || x + w > Wp || y < 0 || y + 7 > Hp) oob++; },
+                 textWidth(t) { return String(t).length * 6; } };
+    };
+    const runP = (preset, Wp, Hp, state) => { const k = pgCtx(Wp, Hp); ovp.drawPage(k, { preset, values: {}, state: state || {}, width: Wp, height: Hp, nowMs: 0 }); return k; };
+    let k = runP({ name: "Tokyo Speirs - Inst (Scale) - Radio Feedback", index: 11, count: 101, entered: false });
+    const nameRuns = k.runs.slice(0, -1);
+    check(k.runs[k.runs.length - 1].t === "12 of 101", "presets page: the position under the name, counted from 1");
+    check(nameRuns.length === 3 && nameRuns.map((r) => r.t).join(" ") === "Tokyo Speirs - Inst (Scale) - Radio Feedback",
+          "presets page: a 44-letter name over three lines, every word kept (" + nameRuns.map((r) => r.t).join(" | ") + ")");
+    check(k.outOfBounds === 0 && k.runs.every((r, i) => i === 0 || r.y > k.runs[i - 1].y + 7), "presets page: inside the frame, lines don't overlap");
+    k = runP({ name: "Fifth Above", index: 0, count: 30 });
+    check(k.runs.length === 2 && k.runs[0].t === "Fifth Above" && k.runs[0].x === Math.floor((120 - 66) / 2), "presets page: a short name is one centred line");
+    // every imported name length up to 60 letters, at the frame and a narrower one: inside, and nothing lost while it fits
+    let okAll = true;
+    const words = ["Tuner", "-", "A", "Dream", "To", "Remember", "(Distort", "Me!)", "Bassliner", "Supercalifragilistic"];
+    for (const Wp of [120, 96]) for (let n = 1; n <= 12; n++) {
+        const name = Array.from({ length: n }, (_, i) => words[(i * 7) % words.length]).join(" ");
+        const kk = runP({ name, index: 3, count: 9 }, Wp);
+        const lines = kk.runs.slice(0, -1).map((r) => r.t);
+        const fits = lines.length <= 3 && lines.every((l) => l.length * 6 <= Wp - 4);
+        const whole = lines.join(" ").replace(/\s+/g, "") === name.replace(/\s+/g, "");
+        const cut = lines.length === 3 && lines[2].endsWith("..");
+        if (kk.outOfBounds || !fits || !(whole || cut)) { okAll = false; console.log("    wrap", Wp, JSON.stringify(name), JSON.stringify(lines)); }
+    }
+    check(okAll, "presets page: any length wraps inside the frame, whole or ending in '..'");
+    const longWord = runP({ name: "Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", index: 0, count: 1 });
+    check(longWord.outOfBounds === 0 && longWord.runs.length >= 3, "presets page: a word wider than the line is split, not clipped");
+    check(runP({ name: "(loading)" }).runs.length === 1 && runP({ name: "(loading)" }).runs[0].t === "(loading)", "presets page: before the bank is in, the name alone");
+    const stp = {};
+    runP({ name: "Opera Singer", index: 1, count: 5 }, 120, 45, stp);
+    check(stp.rsWrapKey && stp.rsWrapLines && stp.rsWrapLines[0] === "Opera Singer", "presets page: the wrap is cached on the page's state");
+    check(runP({ name: "Robot Choir", index: 1, count: 5 }, 120, 45, stp).runs[0].t === "Robot Choir", "presets page: a new name replaces the cached wrap");
+    let threwP = false;
+    try {
+        ovp.drawPage(pgCtx(), undefined); ovp.drawPage(pgCtx(), {}); runP(null); runP({ name: 42, index: "x", count: NaN });
+        runP({ name: "", index: -3, count: 2 }); runP({ name: "A B C", index: 0, count: 1 }, 0, 0); runP({ name: "A B C", index: 0, count: 1 }, 30, 10);
+        ovp.drawPage({ width: 120, height: 45, print() {}, fillRect() {} }, { preset: { name: "No textWidth here at all", index: 0, count: 1 } });
+    } catch (e) { threwP = true; console.log("  threw:", e); }
+    check(!threwP, "presets page: junk input never throws");
+    check(runP({ name: "A B C", index: 0, count: 1 }, 30, 10).outOfBounds === 0, "presets page: a tiny frame stays inside");
+    // module.json: one canvas page, the resynth level's preset browser, listed on that level
+    const mjp = JSON.parse(readFileSync(join(root, "module.json"), "utf8"));
+    const pgs = mjp.capabilities.chain_params.filter((p) => p.type === "canvas");
+    check(pgs.length === 1 && pgs[0].key === "rs_presets_page" && pgs[0].as_page === true && pgs[0].preset_browser === true &&
+          pgs[0].canvas_script === "canvas.js" && !pgs[0].enterable &&
+          mjp.capabilities.ui_hierarchy.levels.resynth.params.includes("rs_presets_page") && mjp.capabilities.ui_hierarchy.levels.resynth.list_param === "rs_preset",
+          "presets page: module.json declares it as the resynth level's preset browser");
+}
 console.log(`canvas.js: ${checks} checks, ${failures} failed`);
 process.exit(failures ? 1 : 0);

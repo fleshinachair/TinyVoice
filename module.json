@@ -60,7 +60,7 @@
                     "count_param": "rs_preset_count",
                     "name_param": "rs_preset_name",
                     "knobs": ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet"],
-                    "params": ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet", {"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"}, {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"}, {"level": "rs_notes", "label": "Notes"}, {"level": "rs_bank", "label": "Bank"}]
+                    "params": ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet", "rs_presets_page", {"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"}, {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"}, {"level": "rs_notes", "label": "Notes"}, {"level": "rs_bank", "label": "Bank"}]
                 },
                 "rs_pitch": {
                     "label": "Pitch",
@@ -201,7 +201,8 @@
             {"key": "demo", "name": "Demo", "type": "enum", "options": ["Off", "On"], "default": 0},
             {"key": "pitch", "name": "Pitch", "type": "float", "min": 0, "max": 2000, "step": 0.1, "unit": "Hz", "default": 0, "access": "read", "viz": {"kind": "custom:tinyvoice_scope", "group": "scope", "role": "a", "extra_keys": ["scope"]}},
             {"key": "target", "name": "Target", "type": "float", "min": 0, "max": 2000, "step": 0.1, "unit": "Hz", "default": 0, "access": "read", "viz": {"kind": "custom:tinyvoice_scope", "group": "scope", "role": "b", "extra_keys": ["scope"]}},
-            {"key": "cents", "name": "Cents", "type": "float", "min": -50, "max": 50, "step": 1, "unit": "ct", "default": 0, "access": "read", "viz": {"kind": "custom:tinyvoice_scope", "group": "scope", "role": "c", "extra_keys": ["scope"]}}
+            {"key": "cents", "name": "Cents", "type": "float", "min": -50, "max": 50, "step": 1, "unit": "ct", "default": 0, "access": "read", "viz": {"kind": "custom:tinyvoice_scope", "group": "scope", "role": "c", "extra_keys": ["scope"]}},
+            {"key": "rs_presets_page", "name": "Presets", "type": "canvas", "as_page": true, "preset_browser": true, "canvas_script": "canvas.js"}
         ]
     }
 }

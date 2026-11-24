@@ -1081,7 +1081,21 @@ static void test_module_json_matches_params(void)
 
     /* chain_params: same keys, same order, same types, ranges, options and defaults as the C table */
     const char *cp = js_get(caps, "chain_params");
-    CHECK(cp && js_arr_len(cp) == VT_P_COUNT + 3);                /* the params, then 3 readouts */
+    CHECK(cp && js_arr_len(cp) == VT_P_COUNT + 4);                /* the params, then 3 readouts, then Resynth's drawn Presets page */
+    {   /* the page: a canvas page that IS the resynth level's preset browser (canvas.js drawPage); not a param */
+        const char *o = js_elem(cp, VT_P_COUNT + 3);
+        CHECK(o && js_str(js_get(o, "key"), s, sizeof s) && strcmp(s, "rs_presets_page") == 0);
+        CHECK(o && js_str(js_get(o, "type"), s, sizeof s) && strcmp(s, "canvas") == 0);
+        CHECK(o && js_get(o, "as_page") && strncmp(js_get(o, "as_page"), "true", 4) == 0);
+        CHECK(o && js_get(o, "preset_browser") && strncmp(js_get(o, "preset_browser"), "true", 4) == 0);
+        CHECK(o && js_get(o, "enterable") == NULL);                  /* the host refuses a door on a preset browser */
+        CHECK(o && js_str(js_get(o, "canvas_script"), s, sizeof s) && strcmp(s, "canvas.js") == 0);
+        CHECK(dsp_param_index("rs_presets_page") < 0);
+        const char *rp = js_get(js_get(js_get(js_get(caps, "ui_hierarchy"), "levels"), "resynth"), "params");
+        int on = 0;
+        for (int q = 0; rp && q < js_arr_len(rp); q++) if (js_str(js_elem(rp, q), t, sizeof t) && strcmp(t, "rs_presets_page") == 0) on++;
+        CHECK(on == 1);                                              /* listed on the level whose browser it draws */
+    }
     for (int i = 0; i < VT_P_COUNT; i++) {
         const vt_param_def *d = dsp_param_def(i);
         const char *o = js_elem(cp, i);
@@ -2247,7 +2261,7 @@ static void test_served_metadata(void)
     static char served[32768];
     int n = dsp_get_param(vt, "chain_params", served, sizeof served);
     CHECK(n > 0 && served[0] == '[');
-    CHECK(js_arr_len(served) == js_arr_len(file_cp) && js_arr_len(served) == VT_P_COUNT + 3);
+    CHECK(js_arr_len(served) == js_arr_len(file_cp) && js_arr_len(served) == VT_P_COUNT + 4);
     CHECK(strchr(served, '@') == NULL);                              /* every name placeholder filled */
     char a[64], b[64];
     int viz = 0;
@@ -2704,7 +2718,7 @@ static void test_macro_labels(void)
         snprintf(idx, sizeof idx, "%d", m);
         dsp_set_param(vt, "mode", idx);
         CHECK(dsp_get_param(vt, "chain_params", cp, sizeof cp) > 0);
-        CHECK(js_arr_len(cp) == VT_P_COUNT + 3 && strchr(cp, '@') == NULL);
+        CHECK(js_arr_len(cp) == VT_P_COUNT + 4 && strchr(cp, '@') == NULL);
         const int ids[VT_MACROS] = { VT_P_CHAR1, VT_P_CHAR2, VT_P_MOD, VT_P_CHAR4, VT_P_CHAR5 };
         for (int k = 0; k < VT_MACROS; k++) {
             const char *want = dsp_macro_name(m, k);

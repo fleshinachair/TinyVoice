@@ -183,7 +183,14 @@ RS_PLAY  = ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength
 RS_NOTES = ["hm_tuning_duophonic", "hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"]      # Duo and Note mode's two notes, and the pads (MIDI mode)
 MENU_ONLY = {}
 
-CHAIN = PARAMS + READOUTS
+# Resynth's Presets page, drawn by canvas.js (drawPage) instead of the host's stock browser, so a long imported name
+# wraps over up to three lines (the stock page shows one line in a big face and cut most of them). `preset_browser`
+# makes it THE level's preset page: the host still browses (wheel, click, knobs on the level) and hands the name,
+# index and count to the drawing. Not a param: never set or saved, the DSP doesn't know the key.
+PAGES = [{"key": "rs_presets_page", "name": "Presets", "type": "canvas", "as_page": True, "preset_browser": True,
+          "canvas_script": "canvas.js"}]
+
+CHAIN = PARAMS + READOUTS + PAGES
 
 def entry(k):
     return k
@@ -246,7 +253,7 @@ a('                    "list_param": "rs_preset",')
 a('                    "count_param": "rs_preset_count",')
 a('                    "name_param": "rs_preset_name",')
 a('                    "knobs": %s,' % line(RS_MAIN))
-a('                    "params": %s' % line(RS_MAIN + [{"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"},
+a('                    "params": %s' % line(RS_MAIN + ["rs_presets_page", {"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"},
                                                       {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"},
                                                       {"level": "rs_notes", "label": "Notes"}, {"level": "rs_bank", "label": "Bank"}]))
 a('                },')
@@ -293,4 +300,4 @@ with open(hdr, "w") as f:
     assert all(len(x) < 4000 for x in parts) and "".join(parts) == cp
     f.write("static const char *const VT_CHAIN_PARAMS_PARTS[] = {\n" + (",\n".join("    " + c_string(x) for x in parts)) + "\n};\n\n")
     f.write("static const char VT_UI_HIERARCHY_JSON[] = " + c_string(uh) + ";\n\n#endif\n")
-print("wrote", len(PARAMS), "params +", len(READOUTS), "readouts;", hdr, "with", len(cp), "+", len(uh), "bytes of JSON")
+print("wrote", len(PARAMS), "params +", len(READOUTS), "readouts +", len(PAGES), "page;", hdr, "with", len(cp), "+", len(uh), "bytes of JSON")
