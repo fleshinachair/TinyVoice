@@ -5,3 +5,8 @@ build/
 
 # Schwung headers are fetched by scripts/fetch_host_headers.sh (build.sh does it on demand)
 src/host/
+
+# Baby Audio Humanoid: installer, manual and presets are third-party; never commit them
+Humanoid*.zip
+Humanoid*.pdf
+*.baby

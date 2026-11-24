@@ -13,6 +13,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "hm_params.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,6 +27,10 @@ extern "C" {
 #define VT_GATE_MIN_DB   (-60)   /* Gate: option 0 is Auto, option i (1..21) is -60 + 3 (i - 1) dB */
 #define VT_GATE_STEP_DB  3
 #define VT_GATE_OPTS     22
+
+/* The number of Resynth params (the X-macro list in hm_params.h, counted). */
+#define VT_HM_X_ONE(...) + 1
+#define VT_HM_COUNT (0 HM_PARAM_LIST(VT_HM_X_ONE))
 
 /* Parameter ids. Order matches module.json chain_params (which then adds three
  * read-only readouts). The order is not the page layout: that is VOICE, PITCH,
@@ -68,6 +73,14 @@ typedef enum {
     VT_P_VF_MIX,        /* 0..1  Mix/Drive: wet/dry up to 0.7, then all wet with the drive climbing */
     VT_P_VF_PRESET,     /* index into the Voice FX bank (presets.c); writing it loads that preset into the
                          * eight knobs above. Transient: a saved state holds the knob values, not the preset. */
+    /* The Resynth personality (src/dsp/hm.c): one param per Humanoid control, key "hm_" + its preset id,
+     * in hm_param order (src/dsp/hm_params.h), then the Move-side tuning and wave choice. */
+    VT_P_HM_FIRST,
+    VT_P_HM_LAST = VT_P_HM_FIRST + VT_HM_COUNT - 1,
+    VT_P_HM_KEY,        /* enum  C..B: the root the Scale is built on */
+    VT_P_HM_SCALE,      /* enum  Major, Minor, Chromatic, Custom (Custom = hm_mask, a preset's own notes) */
+    VT_P_HM_MASK,       /* 0..4095 the 12-note mask (bit pc), used when Scale is Custom */
+    VT_P_HM_WAVE,       /* enum  Saw, Square, Triangle, Sine, Preset (Preset = the cycle in hm_wt) */
     /* Performance toggles (knobs on MORE), not saved in "state" */
     VT_P_FREEZE,       /* enum  Off, On: loop the last 4 s of input into the engine */
     VT_P_DEMO,          /* enum  Off, On: built-in sung phrase, modes advance every 4 bars */
@@ -108,12 +121,14 @@ typedef enum {
  * Mode knob's 13 (the Mode knob is the Vocoder personality's; VT_MODE_COUNT
  * stays 13 for every table indexed by it). */
 #define VT_MODE_VOICEFX VT_MODE_COUNT
-typedef enum { VT_ENGINE_VOCODER = 0, VT_ENGINE_VOICEFX } vt_engine;
+#define VT_MODE_RESYNTH (VT_MODE_COUNT + 1)    /* the third personality's engine (hm.c) */
+typedef enum { VT_ENGINE_VOCODER = 0, VT_ENGINE_VOICEFX, VT_ENGINE_RESYNTH } vt_engine;
 
 /* Modes whose output stage keeps its peaks under TINYVOICE_OUTPUT_HEADROOM. */
 static inline int vt_mode_headroom(int mode)
 {
-    return mode == VT_MODE_NIGHTCALL || (mode >= VT_MODE_SCREAM && mode <= VT_MODE_WALKIE) || mode == VT_MODE_VOICEFX;
+    return mode == VT_MODE_NIGHTCALL || (mode >= VT_MODE_SCREAM && mode <= VT_MODE_WALKIE) || mode == VT_MODE_VOICEFX ||
+           mode == VT_MODE_RESYNTH;
 }
 /* The ceiling those modes keep into the master buffer: -6.1 dBFS (10^(-6.1/20)).
  * Applied after Spread and before Level, so at Level 0 dB no

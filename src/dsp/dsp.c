@@ -18,6 +18,7 @@
 #include "groove.h"
 #include "tour.h"
 #include "presets.h"
+#include "hm.h"
 #include "vt_floor.h"
 #include "module_meta.h"   /* generated: chain_params / ui_hierarchy JSON */
 
@@ -82,7 +83,19 @@ static const char *const k_gate_opts[VT_GATE_OPTS] = {
     "-30 dB", "-27 dB", "-24 dB", "-21 dB", "-18 dB", "-15 dB", "-12 dB", "-9 dB", "-6 dB", "-3 dB", "0 dB",
 };
 static const char *const k_onoff_opts[] = {"Off", "On"};
-static const char *const k_engine_opts[] = {"Vocoder", "VoiceFX"};
+static const char *const k_engine_opts[] = {"Vocoder", "VoiceFX", "Resynth"};
+/* Resynth's enum option lists, named after their hm_params.h macro (the table below pastes the name) */
+static const char *const k_hm_HM_OPTS_OFFON[] = {HM_OPTS_OFFON};
+static const char *const k_hm_HM_OPTS_LAT[]   = {HM_OPTS_LAT};
+static const char *const k_hm_HM_OPTS_SYNC[]  = {HM_OPTS_SYNC};
+static const char *const k_hm_HM_OPTS_WMODE[] = {HM_OPTS_WMODE};
+static const char *const k_hm_HM_OPTS_PMODE[] = {HM_OPTS_PMODE};
+static const char *const k_hm_scale_opts[] = {"Major", "Minor", "Chromatic", "Custom"};
+static const char *const k_hm_wave_opts[]  = {"Saw", "Square", "Triangle", "Sine", "Preset"};
+#define HM_SCALE_CUSTOM 3
+#define HM_WAVE_PRESET 4
+#define VT_HM_WT_N 512                     /* hm_wt: one cycle, 512 int16 samples, base64 (684 x 2 chars) */
+#define VT_HM_WT_STR (4 * ((2 * VT_HM_WT_N + 2) / 3) + 1)
 static const char *const k_freeze_opts[] = {"Off", "Rec", "Loop"};   /* = FREEZE_OFF / _REC / _LOOP */
 static const char *const k_freeze_len_opts[] = {"Free", "1 Bar", "2 Bars", "4 Bars"};
 static const int k_freeze_bars[] = { 0, 1, 2, 4 };
@@ -93,6 +106,11 @@ static const char *const k_scale_opts[] = {"Chromatic", "Major", "Minor", "Penta
 #define TOGGLE_DEF(key) {key, VT_PTYPE_ENUM, 0, 1, 0, k_onoff_opts, 2, 1}
 #define TRANSIENT_ENUM_DEF(key, opts) {key, VT_PTYPE_ENUM, 0, (float)(sizeof(opts) / sizeof(opts[0]) - 1), 0, opts, (int)(sizeof(opts) / sizeof(opts[0])), 1}
 #define FLOAT_DEF(key, lo, hi, def) {key, VT_PTYPE_FLOAT, lo, hi, def, NULL, 0, 0}
+/* Resynth's block, from the X-macro list (key "hm_" + the Humanoid preset id) */
+#define HM_DEF_F(pid, def, lo, hi, opts) {"hm_" pid, VT_PTYPE_FLOAT, (float)(lo), (float)(hi), (float)(def), NULL, 0, 0}
+#define HM_DEF_E(pid, def, lo, hi, opts) {"hm_" pid, VT_PTYPE_ENUM, 0, (float)(sizeof(opts) / sizeof(opts[0]) - 1), (float)(def), opts, (int)(sizeof(opts) / sizeof(opts[0])), 0}
+#define HM_DEF_T(pid, def, lo, hi, opts) {"hm_" pid, VT_PTYPE_ENUM, 0, (float)(sizeof(opts) / sizeof(opts[0]) - 1), (float)(def), opts, (int)(sizeof(opts) / sizeof(opts[0])), 1}
+#define VT_X_HM(id, pid, label, kind, def, lo, hi, step, unit, ...) [VT_P_HM_FIRST + id] = HM_DEF_##kind(pid, def, lo, hi, k_hm_ ## __VA_ARGS__),
 
 /* Must stay in sync with vt_param_id and module.json (see tests). */
 static const vt_param_def k_params[VT_P_COUNT] = {
@@ -125,6 +143,11 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     [VT_P_VF_RELEASE] = FLOAT_DEF("vf_release", 0.0f, 1.0f,   0.3f),
     [VT_P_VF_MIX]    = FLOAT_DEF("vf_mix",     0.0f,  1.0f,   0.75f),
     [VT_P_VF_PRESET] = {"vf_preset", VT_PTYPE_FLOAT, 0, 5, 5, NULL, 0, 1},    /* 0..5 = the bank; transient; 5 = Vowel Morph Solo */
+    HM_PARAM_LIST(VT_X_HM)
+    [VT_P_HM_KEY]    = ENUM_DEF("hm_key",   k_root_opts,     0),
+    [VT_P_HM_SCALE]  = ENUM_DEF("hm_scale", k_hm_scale_opts, 0),       /* Major */
+    [VT_P_HM_MASK]   = FLOAT_DEF("hm_mask",  0.0f, 4095.0f, 2741.0f),  /* C major */
+    [VT_P_HM_WAVE]   = ENUM_DEF("hm_wave",  k_hm_wave_opts,  0),       /* Saw */
     /* performance toggles: never saved in "state" */
     [VT_P_FREEZE]   = TRANSIENT_ENUM_DEF("freeze", k_freeze_opts),
     [VT_P_DEMO]      = TOGGLE_DEF("demo"),
@@ -184,6 +207,14 @@ struct vt {
     demo_t demo;                /* built-in sung phrase */
     vfx_t vfx;                  /* Voice FX: the formant engine of the second personality */
     groove_t groove;            /* Voice FX's audition source: what Demo plays there instead of the sung phrase */
+    hm_t hm;                    /* Resynth: the third personality (harmonic analysis / resynthesis) */
+    float hm_wt[VT_HM_WT_N];    /* the cycle a preset carried (hm_wt), used when Wave is Preset */
+    int   hm_wt_valid;
+    char  hm_wt_str[VT_HM_WT_STR];   /* as received, for "state" */
+    int   hm_wave_set;          /* the wave the engine holds (-1 = none yet) */
+    int   hm_wt_gen;            /* bumped when hm_wt changes */
+    int   hm_wt_gen_set;
+    int   hm_held[VT_MAX_VOICES], hm_nheld;   /* pads the engine holds (MIDI mode), oldest first */
     /* Ghost hands, as the screen sees them. While the Showcase Tour runs, get_param on Voice FX's knobs answers
      * `disp` (the tour's current values, snapshotted by the audio block: get_param and set_param run on the same
      * callback thread, so a read never races the write) and the host's UI, which re-reads every visible knob a few
@@ -275,6 +306,8 @@ vt_t *dsp_init(int sample_rate)
     demo_init(&vt->demo, (float)vt->sample_rate);
     vfx_init(&vt->vfx, (float)vt->sample_rate);
     groove_init(&vt->groove, (float)vt->sample_rate);
+    hm_init(&vt->hm, (float)vt->sample_rate);
+    vt->hm_wave_set = -1;
     vt->label_mode = -1;
     vt->run_mode = -1;
     vt->midi_ch = -1;                       /* omni until the host names the slot's channel */
@@ -316,6 +349,104 @@ static float clampf(float v, float lo, float hi)
 }
 
 static int apply_state(vt_t *vt, const char *json);
+
+/* ---------------------------------------------------------------- Resynth wavetable (hm_wt) */
+
+static int b64_val(char c)
+{
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+' || c == '-') return 62;
+    if (c == '/' || c == '_') return 63;
+    return -1;
+}
+
+/* hm_wt: base64 of VT_HM_WT_N little-endian int16 samples (one cycle). "" clears it. */
+static int set_hm_wt(vt_t *vt, const char *s, size_t n)
+{
+    unsigned char raw[2 * VT_HM_WT_N];
+    size_t got = 0;
+    unsigned acc = 0;
+    int bits = 0;
+    if (n == 0) { vt->hm_wt_valid = 0; vt->hm_wt_str[0] = '\0'; vt->hm_wt_gen++; return 0; }
+    if (n >= VT_HM_WT_STR) return -1;
+    for (size_t i = 0; i < n; i++) {
+        if (s[i] == '=') break;
+        int v = b64_val(s[i]);
+        if (v < 0) return -1;
+        acc = (acc << 6) | (unsigned)v;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            if (got < sizeof raw) raw[got++] = (unsigned char)((acc >> bits) & 0xFF);
+        }
+    }
+    if (got != sizeof raw) return -1;
+    for (int i = 0; i < VT_HM_WT_N; i++) {
+        int16_t v = (int16_t)(uint16_t)(raw[2 * i] | (raw[2 * i + 1] << 8));
+        vt->hm_wt[i] = (float)v / 32767.0f;
+    }
+    memcpy(vt->hm_wt_str, s, n);
+    vt->hm_wt_str[n] = '\0';
+    vt->hm_wt_valid = 1;
+    vt->hm_wt_gen++;
+    return 0;
+}
+
+/* the 12-note mask the Resynth tuner uses: Key + Scale, or the preset's own (Custom) */
+static unsigned hm_mask_of(const vt_t *vt)
+{
+    const int sc = (int)vt->p[VT_P_HM_SCALE], key = (int)vt->p[VT_P_HM_KEY];
+    if (sc == HM_SCALE_CUSTOM) return (unsigned)lrintf(vt->p[VT_P_HM_MASK]) & 0xFFFu;
+    const unsigned base = sc == 0 ? 0xAB5u : sc == 1 ? 0x5ADu : 0xFFFu;   /* major, natural minor, chromatic */
+    return ((base << key) | (base >> (12 - key))) & 0xFFFu;
+}
+
+/* Push Resynth's parameters, wave, scale, tempo and pads into the engine (once per block). */
+static void hm_sync(vt_t *vt)
+{
+    hm_t *h = &vt->hm;
+    for (int i = 0; i < VT_HM_COUNT; i++) h->p[i] = vt->p[VT_P_HM_FIRST + i];
+    hm_set_mask(h, hm_mask_of(vt));
+    hm_set_bpm(h, vt->bpm);
+    const int wave = (int)vt->p[VT_P_HM_WAVE];
+    if (wave != vt->hm_wave_set || (wave == HM_WAVE_PRESET && vt->hm_wt_gen != vt->hm_wt_gen_set)) {
+        float cyc[VT_HM_WT_N];
+        for (int i = 0; i < VT_HM_WT_N; i++) {
+            const float ph = (float)i / (float)VT_HM_WT_N;
+            switch (wave) {
+            case 1:  cyc[i] = ph < 0.5f ? 1.0f : -1.0f; break;                                        /* square */
+            case 2:  cyc[i] = ph < 0.5f ? -1.0f + 4.0f * ph : 3.0f - 4.0f * ph; break;               /* triangle */
+            case 3:  cyc[i] = sinf(6.2831853f * ph); break;                                           /* sine */
+            case HM_WAVE_PRESET: cyc[i] = vt->hm_wt_valid ? vt->hm_wt[i] : -1.0f + 2.0f * ph; break;
+            default: cyc[i] = -1.0f + 2.0f * ph; break;                                               /* saw (Humanoid's INIT) */
+            }
+        }
+        hm_set_wavetable(h, cyc, VT_HM_WT_N);
+        vt->hm_wave_set = wave;
+        vt->hm_wt_gen_set = vt->hm_wt_gen;
+    }
+    /* pads, oldest first, so the engine's newest two are the newest held (MIDI mode) */
+    int held[VT_MAX_VOICES], n = 0;
+    for (uint32_t age = 0;;) {
+        int pick = -1;
+        for (int i = 0; i < VT_MAX_VOICES; i++)
+            if (vt->voices[i].note >= 0 && vt->voices[i].age > age && (pick < 0 || vt->voices[i].age < vt->voices[pick].age)) pick = i;
+        if (pick < 0) break;
+        held[n++] = vt->voices[pick].note;
+        age = vt->voices[pick].age;
+    }
+    int same = n == vt->hm_nheld;
+    for (int i = 0; same && i < n; i++) same = held[i] == vt->hm_held[i];
+    if (!same) {
+        hm_all_notes_off(h);
+        for (int i = 0; i < n; i++) hm_note_on(h, held[i]);
+        memcpy(vt->hm_held, held, sizeof held);
+        vt->hm_nheld = n;
+    }
+    hm_begin(h);
+}
 
 /* Case-insensitive equality: Schwung's Mode page hands back a mode's name in the
  * spelling it matched (level names are lower case), which must still select it. */
@@ -519,6 +650,7 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
 {
     if (!vt || !key || !val) return -1;
     if (strcmp(key, "state") == 0) return apply_state(vt, val);
+    if (strcmp(key, "hm_wt") == 0) return set_hm_wt(vt, val, strlen(val));
     if (strcmp(key, "auto") == 0) {
         /* The old Auto switch (sets saved before Gate took it in, tests):
          * On = Gate Auto, Off = back to the last manual level. */
@@ -655,7 +787,11 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
                 }
             }
         }
+        if (vt->hm_wt_valid && n >= 0 && n < buf_len)                /* a preset's wavetable */
+            n += snprintf(buf + n, (size_t)(buf_len - n), ",\"hm_wt\":\"%s\"", vt->hm_wt_str);
         if (n >= 0 && n < buf_len) n += snprintf(buf + n, (size_t)(buf_len - n), "}");
+    } else if (strcmp(key, "hm_wt") == 0) {
+        n = snprintf(buf, (size_t)buf_len, "%s", vt->hm_wt_str);
     } else if (strcmp(key, "diag") == 0) {
         /* For checking a real mic on the device: input RMS (10 ms, max over
          * ~1 s), voice gate open share, Robot's own gate / AGC / leveller,
@@ -793,6 +929,7 @@ static int apply_members(vt_t *vt, const char *json)
             const char *vs = p + 1;
             p = skip_string(p);
             size_t vn = (size_t)(p - vs) - 1;
+            if (strcmp(key, "hm_wt") == 0) { set_hm_wt(vt, vs, vn); continue; }   /* the one long value */
             if (vn >= sizeof val) vn = sizeof val - 1;
             memcpy(val, vs, vn); val[vn] = '\0';
             if (strcmp(key, "auto") == 0) snprintf(legacy_auto, sizeof legacy_auto, "%s", val);
@@ -1072,7 +1209,8 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
     /* A mode change (knob, state or Demo) renames char1/char2/mod: pulse
      * is_loading so the UI re-reads them. Not in the first second, when a set
      * is being restored (the host's restore waits while is_loading says "1"). */
-    const int want_mode = (int)vt->p[VT_P_ENGINE] == VT_ENGINE_VOICEFX ? VT_MODE_VOICEFX : (int)vt->p[VT_P_MODE];
+    const int eng = (int)vt->p[VT_P_ENGINE];
+    const int want_mode = eng == VT_ENGINE_VOICEFX ? VT_MODE_VOICEFX : eng == VT_ENGINE_RESYNTH ? VT_MODE_RESYNTH : (int)vt->p[VT_P_MODE];
     if (want_mode != vt->label_mode) {
         if (vt->label_mode >= 0 && vt->warm_samples >= vt->sample_rate)
             vt->loading_blocks = (int)(LABEL_PULSE_SEC * sr / (float)frames);
@@ -1092,6 +1230,9 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
      * own Choir for the stereo chorus: nothing on the pages it hides can leave
      * it in a state its one page cannot show. */
     const int vf = mode == VT_MODE_VOICEFX;
+    /* Resynth runs Humanoid's own front end (Input gain, Gate), Dry/Wet, Widen and Output: TinyVoice's
+     * Auto, Tone, Spread, Mix and Level stay out of it (its pages do not show them). */
+    const int rs = mode == VT_MODE_RESYNTH;
     /* Voice FX's effective knobs. They are the stored ones, except under the Showcase Tour (Demo On in Voice FX:
      * Demo is the tour), when the ghost hands move Tract, Peak, Choir and Mix/Drv and pick the vowel along the
      * phrase's bars. Only these effective values change: nothing is ever written to vt->p, so what you set
@@ -1111,9 +1252,9 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         vt->disp_on = 0;
     }
     groove_set_bpm(&vt->groove, vt->bpm);                           /* the audition loop follows the host tempo */
-    const float mix  = vf ? clampf(vfp[7] / VFX_MIX_KNEE, 0.0f, 1.0f) : vt->p[VT_P_MIX];   /* Voice FX: wet/dry up to the knee, drive above */
+    const float mix  = vf ? clampf(vfp[7] / VFX_MIX_KNEE, 0.0f, 1.0f) : rs ? 1.0f : vt->p[VT_P_MIX];   /* Voice FX: wet/dry up to the knee, drive above */
     const float dry_g = mix >= 0.999f ? 0.0f : 1.0f - mix;          /* 100% wet: no dry at all */
-    const float gain = vf ? 1.0f : powf(10.0f, vt->p[VT_P_GAIN] / 20.0f);
+    const float gain = (vf || rs) ? 1.0f : powf(10.0f, vt->p[VT_P_GAIN] / 20.0f);
     const float sw_goal = mode == want_mode ? 1.0f : 0.0f;
     const int freeze_want = (int)vt->p[VT_P_FREEZE];   /* FREEZE_OFF / _REC / _LOOP */
     {   /* Freeze Len: bars at the host tempo (4 beats a bar), 0 = free punch-out */
@@ -1127,7 +1268,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         }
         freeze_set_clock(&vt->freeze, to_db);
     }
-    const int auto_on = (int)vt->p[VT_P_GATE] == 0 || vf;           /* Gate = Auto (always, in Voice FX) */
+    const int auto_on = ((int)vt->p[VT_P_GATE] == 0 || vf) && !rs;  /* Gate = Auto (always, in Voice FX; never in Resynth) */
     const float gate_manual_db = gate_db_of((int)vt->p[VT_P_GATE] ? (int)vt->p[VT_P_GATE] : vt->gate_mem);
     const int root = (int)vt->p[VT_P_KEY];        /* 0 = C */
     const float c1 = vt->p[VT_P_CHAR1], c2 = vt->p[VT_P_CHAR2], md = vt->p[VT_P_MOD];
@@ -1137,13 +1278,13 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
     const float gate_db = auto_on ? -60.0f : gate_manual_db;
 
     /* Tone: 2 x 1-pole lowpass, 400 Hz (0) .. 20 kHz (1); fully open = bypassed. */
-    const int tone_on = vt->p[VT_P_TONE] < 0.999f && !vf;
+    const int tone_on = vt->p[VT_P_TONE] < 0.999f && !vf && !rs;
     const float tone_a = 1.0f - expf(-2.0f * 3.14159265f * 400.0f * powf(50.0f, vt->p[VT_P_TONE]) / sr);
 
     /* Spread: two modulated taps (quadrature LFO) widen the wet signal. In
      * Robot, Spread pans the vocoder's odd/even bands instead. */
     const float spread = vt->p[VT_P_SPREAD];
-    const float ch_amt = has_bands(mode) ? 0.0f : (vf ? vfp[3] : spread) * 0.7f;
+    const float ch_amt = (has_bands(mode) || rs) ? 0.0f : (vf ? vfp[3] : spread) * 0.7f;
     const float ch_base = CHORUS_BASE_MS * 0.001f * sr, ch_depth = CHORUS_DEPTH_MS * 0.001f * sr;
     const float ch_inc = CHORUS_RATE_HZ / sr;
     const float k_ch = 1.0f - expf(-1.0f / (0.010f * sr));      /* 10 ms: the amount never steps */
@@ -1198,6 +1339,8 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         daft_set_stereo(&vt->nc, spread, 0.0f);
         daft_set_talker(&vt->nc, 1, 0.12f + 0.16f * c4, 0.10f + 0.20f * md, 0.35f * c2, 12.0f * c5);
         assign_carriers(vt, &vt->nc, held, vel);
+    } else if (rs) {
+        hm_sync(vt);
     } else if (vf) {
         if (tour_on) vfx_vowel_pair(&vt->vfx, tour.v0, tour.v1, tour.vt);
         else vfx_vowel_knob(&vt->vfx);
@@ -1234,7 +1377,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
             imogen_set_character(&vt->imogen, 2.0f * c1, md);
         }
     }
-    if (!has_bands(mode) && !is_vox(mode) && !vf && mode != VT_MODE_CHORDS) {
+    if (!has_bands(mode) && !is_vox(mode) && !vf && !rs && mode != VT_MODE_CHORDS) {
         fx_set(&vt->fx, &vt->cher, mode, c1, c2, md, spread, vt->p[VT_P_GLIDE], auto_on, root, scale, held);
         fx_set_extra(&vt->fx, c4, c5);
         fx_set_beauty(&vt->fx, beauty);
@@ -1314,6 +1457,10 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
             cher_listen(&vt->cher, mono);
             vt->dry_d *= 0.998f;                             /* vocoder is ~zero latency */
             if (vt->dry_d < 1e-6f) vt->dry_d = 0.0f;
+        } else if (rs) {
+            hm_tick(&vt->hm, mono, &wet_l, &wet_r);
+            cher_listen(&vt->cher, mono);                    /* a switch back to a pitch mode finds the live voice */
+            dry_follow(vt, 0.0f);                            /* Resynth mixes its own dry (Dry/Wet) */
         } else if (vf) {
             vfx_process(&vt->vfx, mono, &wet_l, &wet_r);
             cher_listen(&vt->cher, mono);                    /* a switch back to a pitch mode finds the live voice */
@@ -1392,6 +1539,9 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
 
     if (has_bands(mode)) {
         for (int b = 0; b < VT_NUM_BANDS; b++) vt->viz_bands[b] = daft_band_level(mode == VT_MODE_NIGHTCALL ? &vt->nc : &vt->daft, b);
+    } else if (rs) {
+        vt->viz_f0 = hm_f0(&vt->hm);
+        vt->viz_target = vt->viz_cents = 0.0f;
     } else if (is_vox(mode) && mode != VT_MODE_HARMONY) {
         vt->viz_f0 = vt->viz_target = vt->viz_cents = 0.0f;           /* nothing is tracked */
     } else {

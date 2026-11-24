@@ -118,7 +118,7 @@ static void test_voice_roster(void)
         dsp_set_param(a, "mode", k_new_modes[k]);
         dsp_set_param(a, "char4", "0.81");
         dsp_set_param(a, "char5", "0.19");
-        char st[1024], v1[32], v2[32];
+        static char st[8192]; char v1[32], v2[32];
         CHECK(dsp_get_param(a, "state", st, sizeof st) > 0 && dsp_set_param(b, "state", st) == 0);
         CHECK(dsp_get_param(b, "mode", v1, sizeof v1) > 0 && strcmp(v1, k_new_modes[k]) == 0);
         CHECK(dsp_get_param(a, "char4", v1, sizeof v1) > 0 && dsp_get_param(b, "char4", v2, sizeof v2) > 0 && strcmp(v1, v2) == 0);
@@ -1695,7 +1695,7 @@ static void test_voicefx_tour(void)
             memset(blk, 0, sizeof blk);
             dsp_process_block_f(vt, blk, 128);
         }
-        static char st[1536];
+        static char st[8192];
         CHECK(dsp_get_param(vt, "state", st, sizeof st) > 0 && strstr(st, "\"vf_vowel\":0.91") && strstr(st, "\"vf_peak\":0.77") && strstr(st, "\"vf_mix\":0.52"));   /* what would be saved is yours, with the tour still running */
         dsp_set_param(vt, "demo", "Off");                                              /* ... and the knobs are yours the instant it stops (the screen shows the tour's values while it runs) */
         for (int k = 0; k < 8; k++) {
@@ -1797,7 +1797,7 @@ static void test_voicefx_ghost_hands(void)
         vt_t *vt = dsp_init(VT_SAMPLE_RATE);
         dsp_set_param(vt, "engine", "VoiceFX");
         for (int k = 0; k < 8; k++) dsp_set_param(vt, keys[k], mine[k]);
-        static char st0[1536], st[1536];
+        static char st0[8192], st[8192];
         CHECK(dsp_get_param(vt, "state", st0, sizeof st0) > 0);
         /* before Demo the screen shows the user's own values */
         for (int k = 0; k < 8; k++) CHECK(dsp_get_param(vt, keys[k], b, sizeof b) > 0 && fabs(atof(b) - atof(mine[k])) < 1e-6);
@@ -2423,7 +2423,7 @@ static void test_mode_knobs(void)
         dsp_set_param(a, "mode", "Scream");
         dsp_set_param(a, "char2", "0.12"); dsp_set_param(a, "char4", "0.77");
         dsp_set_param(a, "mode", "Harmony");                                  /* the running mode, with defaults */
-        static char st[3072], st2[3072];
+        static char st[8192], st2[8192];
         CHECK(dsp_get_param(a, "state", st, sizeof st) > 0);
         CHECK(strstr(st, "\"HardTune.char1\":0.91") && strstr(st, "\"HardTune.mod\":0.33") && strstr(st, "\"Scream.char2\":0.12") && strstr(st, "\"Scream.char4\":0.77"));
         CHECK(strstr(st, "\"Snap.") == NULL && strstr(st, "\"Harmony.") == NULL);   /* defaults are not written; the running mode is char1 .. */
@@ -2544,7 +2544,7 @@ static void test_voicefx_presets(void)
         CHECK(dsp_set_param(vt, "vf_preset", "99") == 0 && dsp_get_param(vt, "vf_preset", b, sizeof b) > 0 && atoi(b) == 5);   /* clamps to the last */
         CHECK(dsp_set_param(vt, "vf_preset", "-4") == 0 && dsp_get_param(vt, "vf_preset", b, sizeof b) > 0 && atoi(b) == 0);
         /* a saved state carries the knobs, not the preset index (a restore must not re-apply a preset over them) */
-        static char st[1536];
+        static char st[8192];
         CHECK(dsp_get_param(vt, "state", st, sizeof st) > 0 && strstr(st, "vf_preset") == NULL && strstr(st, "\"vf_vowel\"") != NULL);
         dsp_cleanup(vt);
     }

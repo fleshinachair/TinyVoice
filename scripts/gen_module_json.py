@@ -21,7 +21,7 @@ k_macro_names table. module.json keeps the generic names.
 Order of PARAMS must match vt_param_id / k_params in src/dsp/dsp.c; the
 consistency test in tests/test_main.c checks every field against the C table.
 """
-import copy, json, sys
+import copy, json, os, re, sys
 
 # No "Follow": Schwung does not pass Move's project key to modules, so the key is set here.
 KEYS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -61,8 +61,9 @@ PARAMS = [
     enum("latch", "Latch", ["Off", "On"], 0),               # pad chord holds after release (Robot, Chords, Prism, Nightcall, Harmony)
     flt("char4", "Char 4", 0, 1, 0.01, 0.5, "%"),           # macros 4 and 5: per mode a new control, or an alias of an old param
     flt("char5", "Char 5", 0, 1, 0.01, 0.5, "%"),
-    # the second personality: the Mode selector page writes `engine`; the vf_* params are the Voice FX page
-    enum("engine", "Engine", ["Vocoder", "VoiceFX"], 0),
+    # the personalities: the Mode selector page writes `engine`; the vf_* params are the Voice FX page,
+    # the hm_* params (after vf_preset) the Resynth engine's
+    enum("engine", "Engine", ["Vocoder", "VoiceFX", "Resynth"], 0),
     flt("vf_vowel", "Vowel", 0, 1, 0.01, 0.0, "%"),         # A E I O U sweep
     flt("vf_tract", "Tract", 0, 1, 0.01, 0.5, "%"),         # formant scale / gender
     flt("vf_peak", "Peak", 0, 1, 0.01, 0.5, "%"),           # formant Q
@@ -72,6 +73,30 @@ PARAMS = [
     flt("vf_release", "Release", 0, 1, 0.01, 0.3, "%"),     # tail
     flt("vf_mix", "Mix/Drv", 0, 1, 0.01, 0.75, "%"),        # wet/dry up to 70 %, then all wet with the drive climbing
     flt("vf_preset", "Preset", 0, 5, 1, 5),                 # the Voice FX bank (presets.c); the host's preset browser writes it
+] + []   # the Resynth block is appended below (it is read from src/dsp/hm_params.h)
+
+# ---- Resynth (src/dsp/hm.c): one parameter per Humanoid control, key "hm_" + the .baby preset id,
+# in hm_param order, read from the X-macro list both C files use; then the Move-side extras.
+HERE = os.path.dirname(os.path.abspath(__file__))
+_hp = open(os.path.join(HERE, "..", "src", "dsp", "hm_params.h"), encoding="utf-8").read()
+_opts = {m.group(1): [o.strip().strip('"') for o in m.group(2).split(",")]
+         for m in re.finditer(r'#define (HM_OPTS_\w+)\s+(.*)', _hp)}
+HM = []
+for m in re.finditer(r'X\((HM_\w+),\s*"(\w+)",\s*"([^"]*)",\s*([FET]),\s*([-\d.]+),\s*([-\d.]+),\s*([-\d.]+),\s*([-\d.]+),\s*"([^"]*)",\s*(\w*)\)', _hp):
+    _id, pid, label, kind, d, lo, hi, step, unit, opt = m.groups()
+    num = lambda v: int(float(v)) if float(v) == int(float(v)) else float(v)
+    if kind in "ET":
+        HM.append(enum("hm_" + pid, label, _opts[opt], int(float(d))))
+    else:
+        HM.append(flt("hm_" + pid, label, num(lo), num(hi), num(step), num(d), unit or None))
+assert len(HM) == _hp.count("    X(HM_") and len(HM) > 60, len(HM)
+HM_EXTRA = [
+    enum("hm_key", "Key", KEYS, 0),
+    enum("hm_scale", "Scale", ["Major", "Minor", "Chromatic", "Custom"], 0),   # Custom = the preset's own note mask (hm_mask)
+    flt("hm_mask", "Notes", 0, 4095, 1, 2741),                                  # tuning_auto_notes, bit pc (2741 = C major)
+    enum("hm_wave", "Wave", ["Saw", "Square", "Triangle", "Sine", "Preset"], 0),  # Preset = the wavetable a preset carried (hm_wt)
+]
+PARAMS += HM + HM_EXTRA + [
     # performance toggles (knobs on MORE; not saved in "state")
     enum("freeze", "Freeze", ["Off", "Rec", "Loop"], 0),       # punch-in looper (src/dsp/freeze.h)
     enum("demo", "Demo", ["Off", "On"], 0),
@@ -124,6 +149,12 @@ MORE  = ["spread", "tone", "freeze", "freeze_len", "gate", "latch", "beauty", "d
 # Voice FX: its whole UI. No Mode, Key, Scale, Gate, Level or Latch: the engine runs with the automatic front end.
 AUDITION = ["demo"]
 VOICEFX = ["vf_vowel", "vf_tract", "vf_peak", "vf_choir", "vf_breath", "vf_attack", "vf_release", "vf_mix"]
+# Resynth: the main controls on the Move, four more pages; everything else is on the Remote UI (web_ui.html).
+RS_MAIN  = ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet"]
+RS_PITCH = ["hm_tuning_mode", "hm_key", "hm_scale", "hm_tuner_attack", "hm_min_f0", "hm_max_f0", "hm_lookahead", "hm_tuning_duophonic"]
+RS_SYNTH = ["hm_wave", "hm_wavetable_shape", "hm_wavetable_stretch", "hm_warble_depth", "hm_warble_rate", "hm_warble_mode", "hm_widen", "hm_smoothing"]
+RS_TONE  = ["hm_hpf_freq", "hm_lpf_freq", "hm_filter_freq", "hm_filter_gain", "hm_noisegate_threshold", "hm_deess", "hm_sharpen", "hm_output_gain"]
+RS_PLAY  = ["hm_freeze", "hm_freeze_length", "hm_freeze_sync", "hm_freeze_synclength", "hm_pitch_mono", "hm_pitch_duo", "hm_input_gain", "demo"]
 MENU_ONLY = {}
 
 CHAIN = PARAMS + READOUTS
@@ -137,7 +168,7 @@ out = []
 a = out.append
 a("{")
 for k, v in [("id", "tinyvoice"), ("name", "TinyVoice"), ("abbrev", "TVO"), ("version", "1.0.1"),
-             ("description", "Two engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double) and Voice FX, a one-page talking formant filter with presets"),
+             ("description", "Three engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Voice FX (a one-page talking formant filter with presets) and Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports Humanoid presets)"),
              ("author", "Mat Taylor"), ("dsp", "tinyvoice.so"), ("api_version", 2), ("component_type", "audio_fx")]:
     a("    %s: %s," % (json.dumps(k), json.dumps(v)))
 a('    "capabilities": {')
@@ -148,7 +179,7 @@ a('        "midi_in": true,')
 a('        "ui_hierarchy": {')
 # `modes` + `mode_param`: the host adds its own Mode page (writes `engine`), and the
 # active mode's level is the walk root. Level names are the modes, lower case.
-a('            "modes": ["vocoder", "voicefx"],')
+a('            "modes": ["vocoder", "voicefx", "resynth"],')
 a('            "mode_param": "engine",')
 a('            "levels": {')
 a('                "vocoder": {')
@@ -180,7 +211,20 @@ a('                "audition": {')
 a('                    "label": "Audition",')
 a('                    "knobs": %s,' % line(AUDITION))
 a('                    "params": %s' % line(AUDITION))
-a('                }')
+a('                },')
+a('                "resynth": {')
+a('                    "name": "Resynth",')
+a('                    "knobs": %s,' % line(RS_MAIN))
+a('                    "params": %s' % line(RS_MAIN + [{"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"},
+                                                      {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"}]))
+a('                },')
+for name, label, keys, last in [("rs_pitch", "Pitch", RS_PITCH, False), ("rs_synth", "Synth", RS_SYNTH, False),
+                                ("rs_tone", "Tone", RS_TONE, False), ("rs_play", "Play", RS_PLAY, True)]:
+    a('                "%s": {' % name)
+    a('                    "label": "%s",' % label)
+    a('                    "knobs": %s,' % line(keys))
+    a('                    "params": %s' % line(keys))
+    a('                }%s' % ("" if last else ","))
 a('            }')
 a('        },')
 a('        "chain_params": [')

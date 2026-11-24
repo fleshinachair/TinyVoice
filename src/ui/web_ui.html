@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TinyVoice Resynth</title>
+<style>
+/* TinyVoice Resynth: the Remote UI panel (move.local:7700/remote-ui).
+ * Every Resynth control, laid out by the panels of the plugin it is modelled on: Pitch,
+ * Synthesize, Filter, Utility, Effects, Output. Controls are built from the module's own
+ * chain_params (range, options); values show in real units (Hz, notes, dB) where the
+ * engine's mapping is known. Import .baby loads a Humanoid preset file straight to the Move. */
+:root{
+  --bg:#0c0d10; --panel:#14161b; --line:#23262e; --txt:#dfe3ea; --dim:#9098a6; --faint:#6b7280;
+  --acc:#7cc7ff; --acc2:#2c5f86; --warn:#ffb86b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--txt);font:12px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1400px;margin:0 auto;padding:12px 16px 32px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:10px}
+.brand{font-weight:700;letter-spacing:.3em;font-size:12px}
+.brand i{font-style:normal;color:var(--acc)}
+.hint{color:var(--faint);font-size:11px}
+.sp{flex:1}
+button,select{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:4px;padding:5px 9px;font:inherit;cursor:pointer}
+button:hover,select:hover{border-color:var(--acc2)}
+button.on{background:var(--acc2);border-color:var(--acc)}
+.grid{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:1100px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:700px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.panel h2{margin:0 0 8px;font-size:10px;letter-spacing:.25em;color:var(--dim);font-weight:600}
+.panel h3{margin:10px 0 4px;font-size:10px;letter-spacing:.15em;color:var(--faint);font-weight:600}
+.ctl{display:grid;grid-template-columns:86px 1fr 64px;align-items:center;gap:8px;margin:3px 0}
+.ctl label{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctl .v{text-align:right;font-variant-numeric:tabular-nums;color:var(--txt)}
+.ctl.big label{color:var(--txt);font-weight:600}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.seg{display:flex;gap:2px;flex-wrap:wrap}
+.seg button{padding:3px 8px}
+canvas{width:100%;height:90px;background:#0a0b0e;border:1px solid var(--line);border-radius:4px;display:block;margin:4px 0 6px}
+.keys{display:grid;grid-template-columns:repeat(12,1fr);gap:2px;margin:4px 0 6px}
+.keys button{padding:6px 0;font-size:10px}
+.keys button.blk{background:#0a0b0e}
+.keys button.on{background:var(--acc2)}
+#drop{border:1px dashed var(--line);border-radius:6px;padding:6px 10px;color:var(--faint)}
+#drop.over{border-color:var(--acc);color:var(--acc)}
+#toast{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:var(--acc2);color:#fff;padding:7px 14px;border-radius:5px;opacity:0;transition:opacity .3s;pointer-events:none}
+#toast.show{opacity:1}
+.err{color:var(--warn);padding:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="brand">TINYVOICE <i>RESYNTH</i></div>
+  <span class="hint" id="hint">connecting…</span>
+  <div class="sp"></div>
+  <button id="engineBtn" title="Switch TinyVoice to the Resynth engine">Engine: …</button>
+  <label id="drop" title="Drop a .baby preset here, or click to choose one">Import .baby <input type="file" id="file" accept=".baby" multiple hidden></label>
+</header>
+<div class="grid" id="grid"></div>
+</div>
+<div id="toast"></div>
+
+<script src="/static/schwung-remote-api.js"></script>
+<script>
+(function () {
+"use strict";
+var R = window.schwungRemote;
+var COMP = (R && R.component) || "synth";
+var KP = COMP + ":";
+var META = {};          /* key -> chain_params entry */
+var CTL = {};           /* key -> {set(value)} */
+var VAL = {};           /* key -> last value (number; enums: index) */
+var NOTE = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+function el(tag, cls, parent, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function toast(msg) {
+  var t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(function () { t.classList.remove("show"); }, 2500);
+}
+function send(key, v) { if (R) R.setParam(KP + key, String(v)); }
+
+/* ---------- value text in real units */
+function midiHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+function noteName(m) { m = Math.round(m); return NOTE[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); }
+function fmtHz(h) { return h >= 1000 ? (h / 1000).toFixed(h >= 10000 ? 1 : 2) + " kHz" : Math.round(h) + " Hz"; }
+var FMT = {
+  hm_hpf_freq: function (v) { return v <= 10.5 ? "off" : fmtHz(midiHz(v)); },
+  hm_lpf_freq: function (v) { return v >= 137.5 ? "off" : fmtHz(midiHz(v)); },
+  hm_filter_freq: function (v) { return fmtHz(midiHz(v)); },
+  hm_pitch_mono: noteName, hm_pitch_duo: noteName, hm_min_f0: noteName, hm_max_f0: noteName,
+  hm_pitch_shift: function (v) { return (v > 0 ? "+" : "") + Math.round(v) + " st"; },
+  hm_octaving: function (v) { return v < -0.005 ? "down " + Math.round(-v * 100) + "%" : v > 0.005 ? "up " + Math.round(v * 100) + "%" : "off"; },
+  hm_formant_shift: function (v) { return (v > 0 ? "+" : "") + (v * 12).toFixed(1) + " st"; },
+  hm_warble_rate: function (v) { return v < 0 ? "sync" : (10.1 * v).toFixed(1) + " Hz"; },
+  hm_noisegate_threshold: function (v) { return v <= -79.5 ? "off" : v.toFixed(0) + " dB"; },
+  hm_mask: function (v) { return String(Math.round(v)); }
+};
+function fmt(key, v) {
+  var m = META[key];
+  if (!m) return String(v);
+  if (m.type === "enum") return m.options[v] || String(v);
+  if (FMT[key]) return FMT[key](v);
+  if (m.unit === "s") return v < 1 ? Math.round(v * 1000) + " ms" : v.toFixed(2) + " s";
+  if (m.unit) return (Math.abs(v) < 10 && m.step < 1 ? v.toFixed(1) : Math.round(v)) + " " + m.unit;
+  if (m.min === 0 && m.max === 1) return Math.round(v * 100) + "%";
+  return (Math.abs(v) < 10 ? v.toFixed(2) : v.toFixed(0));
+}
+function parseVal(key, s) {
+  var m = META[key];
+  if (!m) return parseFloat(s);
+  if (m.type === "enum") {
+    var i = m.options.indexOf(s);
+    if (i < 0) for (var j = 0; j < m.options.length; j++) if (m.options[j].toLowerCase() === String(s).toLowerCase()) i = j;
+    if (i < 0) i = parseInt(s, 10);
+    return isNaN(i) ? 0 : i;
+  }
+  return parseFloat(s);
+}
+
+/* ---------- controls */
+function ctl(parent, key, big) {
+  var m = META[key];
+  if (!m) return;
+  var row = el("div", "ctl" + (big ? " big" : ""), parent);
+  var lab = el("label", "", row, m.name); lab.title = key;
+  var vt;
+  if (m.type === "enum") {
+    var seg = el("div", "seg", row), btns = [];
+    row.style.gridTemplateColumns = "86px 1fr";
+    m.options.forEach(function (o, i) {
+      var b = el("button", "", seg, o);
+      b.onclick = function () { send(key, o); upd(i); };
+      btns.push(b);
+    });
+    var upd = function (i) { VAL[key] = i; btns.forEach(function (b, j) { b.classList.toggle("on", j === i); }); after(key); };
+    CTL[key] = { set: upd };
+  } else {
+    var r = el("input", "", row);
+    r.type = "range"; r.min = m.min; r.max = m.max; r.step = m.step || 0.01;
+    vt = el("span", "v", row);
+    var show = function (v) { VAL[key] = v; vt.textContent = fmt(key, v); after(key); };
+    r.oninput = function () { var v = parseFloat(r.value); show(v); send(key, v); };
+    r.ondblclick = function () { r.value = m.default; r.oninput(); };
+    CTL[key] = { set: function (v) { r.value = v; show(v); } };
+  }
+  if (m.default !== undefined) CTL[key].set(m.type === "enum" ? m.default : m.default);
+}
+function group(parent, title, keys, bigFirst) {
+  if (title) el("h3", "", parent, title);
+  keys.forEach(function (k, i) { ctl(parent, k, bigFirst && i === 0); });
+}
+
+/* ---------- drawings */
+var wtCycle = null;
+function b64ToCycle(s) {
+  try {
+    var bin = atob(s), n = bin.length >> 1, out = new Float32Array(n);
+    for (var i = 0; i < n; i++) { var v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); if (v > 32767) v -= 65536; out[i] = v / 32767; }
+    return out;
+  } catch (e) { return null; }
+}
+function builtin(w, ph) {
+  if (w === 1) return ph < 0.5 ? 1 : -1;
+  if (w === 2) return ph < 0.5 ? -1 + 4 * ph : 3 - 4 * ph;
+  if (w === 3) return Math.sin(2 * Math.PI * ph);
+  return -1 + 2 * ph;
+}
+function cheb(n, x) { var t0 = 1, t1 = x; if (n === 0) return 1; for (var i = 1; i < n; i++) { var t2 = 2 * x * t1 - t0; t0 = t1; t1 = t2; } return t1; }
+function drawWave() {
+  var c = document.getElementById("wtc"); if (!c) return;
+  var W = c.width = c.clientWidth * 2, H = c.height = c.clientHeight * 2, g = c.getContext("2d");
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = "#23262e"; g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
+  var wave = VAL.hm_wave | 0, st = VAL.hm_wavetable_stretch !== undefined ? VAL.hm_wavetable_stretch : 0.5, sh = VAL.hm_wavetable_shape || 0;
+  var pts = [], peak = 1e-9;
+  for (var i = 0; i < 400; i++) {
+    var ph = i / 400, q = ph < st ? 0.5 * ph / st : 0.5 + 0.5 * (ph - st) / (1 - st), x;
+    if (wave === 4 && wtCycle) { var p = q * wtCycle.length, a = Math.floor(p), t = p - a; x = wtCycle[a % wtCycle.length] * (1 - t) + wtCycle[(a + 1) % wtCycle.length] * t; }
+    else x = builtin(wave, q);
+    if (sh > 0) { var y = 0; for (var k = 0; k < 7; k++) y += ((k === 0 ? 1 - sh : 0) + sh * (VAL["hm_chebyshev_" + k] || 0)) * cheb(k + 1, Math.max(-1, Math.min(1, x))); x = y; }
+    pts.push(x); peak = Math.max(peak, Math.abs(x));
+  }
+  g.strokeStyle = "#7cc7ff"; g.lineWidth = 3; g.beginPath();
+  pts.forEach(function (v, i) { var X = i / 399 * W, Y = H / 2 - v / peak * H * 0.42; i ? g.lineTo(X, Y) : g.moveTo(X, Y); });
+  g.stroke();
+}
+/* the engine's spectral filter (hm.c filter_db), for the curve */
+function filterDb(f) {
+  var d = 0, lf = Math.log2(Math.max(f, 1));
+  [["hm_hpf_freq", "hm_hpf_res", 0], ["hm_lpf_freq", "hm_lpf_res", 1]].forEach(function (s) {
+    var fc = midiHz(VAL[s[0]] !== undefined ? VAL[s[0]] : (s[2] ? 138 : 10));
+    if (!s[2] && fc < 16) return;
+    if (s[2] && fc > 0.48 * 44100) return;
+    var res = VAL[s[1]] || 0, x = s[2] ? Math.log2(fc) - lf : lf - Math.log2(fc);
+    var neg = res < 0 ? -res / 80 : 0, xs = 1.3 * neg, slope = 300 - 225 * neg;
+    if (x < xs) d -= Math.min(100, slope * (xs - x));
+    if (res > 0) { var u = x - 0.3; d += 0.88 * res * Math.exp(-u * u / 0.405); }
+  });
+  var mg = VAL.hm_filter_gain || 0;
+  if (Math.abs(mg) > 0.01) {
+    var sg = 0.387 * Math.pow(Math.max(4, Math.min(80, VAL.hm_filter_width || 34)) / 12, 0.64);
+    var u2 = lf - Math.log2(midiHz(VAL.hm_filter_freq || 98));
+    d += mg * Math.exp(-u2 * u2 / (2 * sg * sg));
+  }
+  return d;
+}
+function drawFilter() {
+  var c = document.getElementById("flc"); if (!c) return;
+  var W = c.width = c.clientWidth * 2, H = c.height = c.clientHeight * 2, g = c.getContext("2d");
+  g.clearRect(0, 0, W, H);
+  var y = function (db) { return H * 0.4 - db / 30 * H * 0.4; };
+  g.strokeStyle = "#23262e"; g.beginPath(); g.moveTo(0, y(0)); g.lineTo(W, y(0)); g.stroke();
+  [100, 1000, 10000].forEach(function (f) { var X = Math.log(f / 20) / Math.log(1000) * W; g.beginPath(); g.moveTo(X, 0); g.lineTo(X, H); g.stroke(); });
+  g.strokeStyle = "#7cc7ff"; g.lineWidth = 3; g.beginPath();
+  for (var i = 0; i <= 300; i++) { var f = 20 * Math.pow(1000, i / 300), Y = Math.max(0, Math.min(H, y(filterDb(f)))); i ? g.lineTo(i / 300 * W, Y) : g.moveTo(0, Y); }
+  g.stroke();
+}
+/* the 12-note mask keyboard */
+var keyBtns = [];
+function drawKeys() {
+  var mask = (VAL.hm_scale === 3) ? (VAL.hm_mask | 0) : maskOf(VAL.hm_key | 0, VAL.hm_scale | 0);
+  keyBtns.forEach(function (b, i) { b.classList.toggle("on", !!((mask >> i) & 1)); });
+}
+function maskOf(key, sc) {
+  var base = sc === 0 ? 0xAB5 : sc === 1 ? 0x5AD : 0xFFF;
+  return ((base << key) | (base >> (12 - key))) & 0xFFF;
+}
+function after(key) {
+  if (/wave|wavetable|chebyshev/.test(key)) drawWave();
+  if (/hpf|lpf|filter_/.test(key)) drawFilter();
+  if (key === "hm_mask" || key === "hm_scale" || key === "hm_key") drawKeys();
+  if (key === "engine") {
+    var b = document.getElementById("engineBtn"), m = META.engine;
+    var name = m ? m.options[VAL.engine | 0] : "?";
+    b.textContent = "Engine: " + name; b.classList.toggle("on", name === "Resynth");
+  }
+}
+
+/* ---------- layout */
+function build() {
+  var grid = document.getElementById("grid");
+  var p;
+  p = el("div", "panel", grid); el("h2", "", p, "PITCH");
+  group(p, "", ["hm_tuning_mode", "hm_quantize_enabled"]);
+  el("h3", "", p, "SCALE");
+  group(p, "", ["hm_key", "hm_scale"]);
+  var keys = el("div", "keys", p);
+  NOTE.forEach(function (n, i) {
+    var b = el("button", /#/.test(n) ? "blk" : "", keys, n);
+    b.onclick = function () {
+      var mask = (VAL.hm_scale === 3) ? (VAL.hm_mask | 0) : maskOf(VAL.hm_key | 0, VAL.hm_scale | 0);
+      mask ^= 1 << i;
+      send("hm_mask", mask); send("hm_scale", "Custom");
+      CTL.hm_mask && CTL.hm_mask.set(mask); CTL.hm_scale && CTL.hm_scale.set(3);
+    };
+    keyBtns.push(b);
+  });
+  group(p, "QUANTIZE", ["hm_quantize", "hm_tuner_attack", "hm_tuner_hold", "hm_tuner_polarity"], true);
+  group(p, "NOTE MODE", ["hm_pitch_mono", "hm_pitch_duo", "hm_tuning_duophonic"]);
+  group(p, "ROBOTIFY", ["hm_robotify", "hm_robotify_res", "hm_robotify_harm", "hm_robotify_flatten", "hm_robotify_emphasis"], true);
+  group(p, "FORMANT", ["hm_formant_shift", "hm_formant_width"], true);
+
+  p = el("div", "panel", grid); el("h2", "", p, "SYNTHESIZE");
+  group(p, "", ["hm_wave"]);
+  el("canvas", "", p).id = "wtc";
+  group(p, "", ["hm_transform", "hm_synth_mix", "hm_pitch_shift", "hm_octaving"], true);
+  group(p, "WAVEFORM", ["hm_wavetable_stretch", "hm_wavetable_shape"]);
+  group(p, "SHAPE (ODD / EVEN)", ["hm_chebyshev_0", "hm_chebyshev_1", "hm_chebyshev_2", "hm_chebyshev_3", "hm_chebyshev_4", "hm_chebyshev_5", "hm_chebyshev_6"]);
+
+  p = el("div", "panel", grid); el("h2", "", p, "FILTER");
+  el("canvas", "", p).id = "flc";
+  group(p, "HIGH-PASS", ["hm_hpf_freq", "hm_hpf_res"]);
+  group(p, "MID BAND", ["hm_filter_freq", "hm_filter_gain", "hm_filter_width"]);
+  group(p, "LOW-PASS", ["hm_lpf_freq", "hm_lpf_res"]);
+
+  p = el("div", "panel", grid); el("h2", "", p, "UTILITY");
+  group(p, "RANGE", ["hm_min_f0", "hm_max_f0", "hm_lookahead"]);
+  group(p, "DE-ESS", ["hm_deess", "hm_deess_sensitivity", "hm_deess_attack"], true);
+  group(p, "GATE", ["hm_noisegate_threshold", "hm_noisegate_attack", "hm_noisegate_hold", "hm_noisegate_release"], true);
+  group(p, "SMOOTHING", ["hm_smoothing", "hm_smoothing_pitch", "hm_smoothing_timbre"], true);
+  group(p, "SHARPEN", ["hm_sharpen", "hm_sharpen_bias"], true);
+
+  p = el("div", "panel", grid); el("h2", "", p, "EFFECTS");
+  group(p, "WIDEN", ["hm_widen", "hm_widen_cutoff", "hm_widen_rate"], true);
+  group(p, "WARBLE", ["hm_warble_depth", "hm_warble_rate", "hm_warble_mode"], true);
+  group(p, "GLITCH (FREEZE)", ["hm_freeze", "hm_freeze_length", "hm_freeze_sync", "hm_freeze_synclength"], true);
+
+  p = el("div", "panel", grid); el("h2", "", p, "OUTPUT");
+  group(p, "", ["hm_input_gain", "hm_output_gain", "hm_dry_wet"], false);
+  group(p, "AUDITION", ["demo"]);
+  el("div", "hint", p, "Double-click a slider for its default. Presets: save on the Move (My Presets), or import a .baby above.");
+  drawWave(); drawFilter(); drawKeys();
+}
+
+/* ---------- Import .baby: parse in the browser, send to the Move */
+function importBaby(text, name) {
+  var doc = new DOMParser().parseFromString(text, "application/xml");
+  if (!doc.querySelector("Humanoid")) { toast(name + ": not a Humanoid preset"); return; }
+  send("engine", "Resynth");
+  doc.querySelectorAll("Humanoid > PARAM").forEach(function (p) {
+    var id = p.getAttribute("id"), v = p.getAttribute("value"), key = "hm_" + id, m = META[key];
+    if (!m || v === null || id === "freeze") return;
+    var f = parseFloat(v);
+    if (isNaN(f)) return;
+    if (m.type === "enum") { f = Math.max(0, Math.min(m.options.length - 1, Math.round(f))); send(key, f); CTL[key] && CTL[key].set(f); }
+    else { f = Math.max(m.min, Math.min(m.max, f)); send(key, f); CTL[key] && CTL[key].set(f); }
+  });
+  var tt = doc.querySelector("tuning_tree");
+  if (tt) {
+    var mode = parseInt(tt.getAttribute("tuning_mode") || "0", 10), duo = parseInt(tt.getAttribute("tuning_duophonic") || "0", 10);
+    send("hm_tuning_mode", mode); CTL.hm_tuning_mode && CTL.hm_tuning_mode.set(mode);
+    send("hm_tuning_duophonic", duo); CTL.hm_tuning_duophonic && CTL.hm_tuning_duophonic.set(duo);
+    var an = tt.querySelector("tuning_auto_notes");
+    if (an) {
+      var mask = 0;
+      for (var i = 0; i < 12; i++) if (an.getAttribute("_" + i) === "1") mask |= 1 << i;
+      send("hm_mask", mask); send("hm_scale", "Custom");
+      CTL.hm_mask && CTL.hm_mask.set(mask); CTL.hm_scale && CTL.hm_scale.set(3);
+    }
+  }
+  var wt = doc.querySelector("wavetable_tree");
+  if (wt && wt.getAttribute("wavetable_base64")) {
+    var bin = atob(wt.getAttribute("wavetable_base64")), n = bin.length >> 2;
+    var dv = new DataView(new ArrayBuffer(n * 4));
+    for (var j = 0; j < n * 4; j++) dv.setUint8(j, bin.charCodeAt(j));
+    var src = new Float32Array(n), peak = 1e-9;
+    for (j = 0; j < n; j++) { src[j] = dv.getFloat32(4 * j, true); peak = Math.max(peak, Math.abs(src[j])); }
+    var out = "", N = 512;
+    for (j = 0; j < N; j++) {
+      var pos = j * n / N, a = Math.floor(pos), t = pos - a;
+      var v = (src[a % n] * (1 - t) + src[(a + 1) % n] * t) / peak;
+      var s = Math.round(Math.max(-1, Math.min(1, v)) * 32767); if (s < 0) s += 65536;
+      out += String.fromCharCode(s & 255, s >> 8);
+    }
+    var b64 = btoa(out);
+    send("hm_wt", b64); send("hm_wave", "Preset");
+    wtCycle = b64ToCycle(b64); CTL.hm_wave && CTL.hm_wave.set(4);
+  }
+  drawWave(); drawFilter(); drawKeys();
+  toast("Loaded " + name.replace(/\.baby$/i, "") + " (save it on the Move: My Presets)");
+}
+function readFiles(files) {
+  [].forEach.call(files, function (f) {
+    var r = new FileReader();
+    r.onload = function () { importBaby(String(r.result), f.name); };
+    r.readAsText(f);
+  });
+}
+
+/* ---------- start */
+function incoming(key, v) {
+  if (key === "hm_wt") { wtCycle = v ? b64ToCycle(v) : null; drawWave(); return; }
+  if (!CTL[key]) return;
+  CTL[key].set(parseVal(key, v));
+}
+function start(cp) {
+  cp.forEach(function (c) { if (c && c.key) META[c.key] = c; });
+  build();
+  ["engine"].forEach(function (k) { if (META[k]) VAL[k] = META[k].default; });
+  after("engine");
+  document.getElementById("hint").textContent = Object.keys(META).filter(function (k) { return /^hm_/.test(k); }).length + " Resynth controls · live both ways";
+  R.onParamChange(function (p) {
+    for (var key in p) {
+      if (key.indexOf(KP) !== 0) continue;
+      var k = key.substring(KP.length);
+      if (k === "engine") { VAL.engine = parseVal("engine", p[key]); after("engine"); }
+      else incoming(k, p[key]);
+    }
+  });
+  Object.keys(META).concat(["hm_wt"]).forEach(function (k) {
+    R.getParam(KP + k).then(function (v) {
+      if (v === undefined || v === null || v === "") return;
+      if (k === "engine") { VAL.engine = parseVal("engine", v); after("engine"); } else incoming(k, v);
+    }).catch(function () {});
+  });
+  document.getElementById("engineBtn").onclick = function () { send("engine", "Resynth"); VAL.engine = 2; after("engine"); };
+  var drop = document.getElementById("drop"), file = document.getElementById("file");
+  drop.onclick = function (e) { if (e.target !== file) file.click(); };
+  file.onchange = function () { readFiles(file.files); file.value = ""; };
+  ["dragenter", "dragover"].forEach(function (t) { document.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
+  document.addEventListener("dragleave", function () { drop.classList.remove("over"); });
+  document.addEventListener("drop", function (e) { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files.length) readFiles(e.dataTransfer.files); });
+  window.addEventListener("resize", function () { drawWave(); drawFilter(); });
+}
+function fail(msg) { el("div", "err", document.body, msg); document.getElementById("hint").textContent = "not connected"; }
+if (!R || !R.getChainParams) fail("The Schwung remote API is not available on this page (open it from move.local:7700/remote-ui).");
+else R.getChainParams().then(start).catch(function () { fail("Could not read the module's parameters."); });
+})();
+</script>
+</body>
+</html>

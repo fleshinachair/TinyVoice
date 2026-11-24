@@ -7,16 +7,19 @@
         "A vocal processor",
         "for your voice.",
         "",
-        "Two engines:",
+        "Three engines:",
         " Vocoder: 13 voice",
         " modes",
         " Voice FX: a vowel",
         " talking filter for",
         " a synth",
+        " Resynth: hard tune",
+        " and resynthesis",
+        " into a synth",
         "",
         "Pick one on the",
         "Mode page.",
-        "Both have a Demo."
+        "All have a Demo."
       ]
     },
     {
@@ -66,6 +69,26 @@
             "",
             "Demo plays a built-in",
             "funk phrase instead."
+          ]
+        },
+        {
+          "title": "Resynth setup",
+          "lines": [
+            "Source: your voice.",
+            "",
+            "Put TinyVoice after",
+            "Line In and pick",
+            "Resynth on the Mode",
+            "page. Sing: it hard",
+            "tunes to Key and",
+            "Scale (Pitch page).",
+            "",
+            "Pitch MIDI: the pads",
+            "set the notes.",
+            "",
+            "Every control is on",
+            "the Remote UI:",
+            "move.local:7700"
           ]
         }
       ]
@@ -422,6 +445,90 @@
             "preset, and Demo",
             "stops. Pick a preset",
             "first."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Resynth",
+      "children": [
+        {
+          "title": "Pages",
+          "lines": [
+            "Main: Transform,",
+            "Robotify, Formant,",
+            "Synth Mix, Shift,",
+            "Octave, Quantize,",
+            "Dry/Wet.",
+            "Pitch: mode, Key,",
+            "Scale, range,",
+            "latency, Duo.",
+            "Synth: wave, Shape,",
+            "Stretch, Warble,",
+            "Widen, Smoothing.",
+            "Tone: filters, Gate,",
+            "De-ess, Sharpen.",
+            "Play: Glitch, notes,",
+            "input gain, Demo."
+          ]
+        },
+        {
+          "title": "Pitch modes",
+          "lines": [
+            "Scale: snaps to the",
+            "nearest note of Key",
+            "and Scale (Custom:",
+            "a preset's notes).",
+            "Note: one note (Duo",
+            "adds a second).",
+            "MIDI: the pads you",
+            "hold; none: silent.",
+            "",
+            "Quantize keeps more",
+            "of your vibrato low,",
+            "less high."
+          ]
+        },
+        {
+          "title": "Synth",
+          "lines": [
+            "Transform morphs",
+            "your voice into the",
+            "wave. Synth Mix",
+            "blends it with the",
+            "tuned voice.",
+            "Shift adds a line",
+            "in the scale.",
+            "Octave: down (-) or",
+            "up (+) lines.",
+            "Robotify makes the",
+            "harmonics exact."
+          ]
+        },
+        {
+          "title": "Presets",
+          "lines": [
+            "Save and load on My",
+            "Presets. Humanoid",
+            "presets you own can",
+            "be converted on a",
+            "computer (the repo's",
+            "import script) or",
+            "dropped on the",
+            "Remote UI page."
+          ]
+        },
+        {
+          "title": "Remote UI",
+          "lines": [
+            "Open move.local:7700",
+            "Remote UI, then the",
+            "TinyVoice panel.",
+            "Every control, the",
+            "wave and filter",
+            "drawn, a scale",
+            "keyboard, and Import",
+            "for .baby files."
           ]
         }
       ]

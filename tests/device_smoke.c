@@ -72,7 +72,7 @@ int main(int argc, char **argv)
     CHECK(inst != NULL);
     if (!inst) return 1;
 
-    char buf[1024];
+    static char buf[8192];
     int n = api->get_param(inst, "mix", buf, sizeof buf);
     CHECK(n > 0 && atof(buf) > 0.79 && atof(buf) < 0.81);        /* config_json was applied */
     printf("  mix after config_json: %s\n", buf);
@@ -135,7 +135,7 @@ int main(int argc, char **argv)
     printf("  Robot viz: %s\n", buf);
     CHECK(n > 0 && buf[0] == 'd');
     {   /* chain_params served by the DSP, with the widget's viz in it (that is what mounts canvas.js) */
-        static char cp[8192];
+        static char cp[32768];
         int m = api->get_param(inst, "chain_params", cp, sizeof cp);
         CHECK(m > 0 && cp[0] == '[' && strstr(cp, "custom:tinyvoice_scope") != NULL);
         printf("  chain_params served: %d bytes, widget declared: %s\n", m, strstr(cp, "custom:tinyvoice_scope") ? "yes" : "NO");
@@ -188,6 +188,38 @@ int main(int argc, char **argv)
         printf("  %-16s avg %.3f ms per 128-frame block%s\n", extra[k][0], ms, nonzero ? "" : "  (SILENT)");
         CHECK(nonzero);
         CHECK(ms < 2.0);
+    }
+    /* Resynth (the third personality, hm.c) on the Demo voice: its defaults, then the heaviest settings
+     * (Duo + Note Shift + Octave + Transform, every effect, Hi latency). */
+    {
+        static const char *const rs[][3] = {
+            { "Resynth",          "engine", "Resynth" },
+            { "RS transform",     "hm_transform", "0.7" },
+            { "RS heaviest",      "hm_tuning_duophonic", "On" },
+        };
+        api->set_param(inst, "freeze", "Off");
+        api->set_param(inst, "demo", "On");
+        for (int k = 0; k < (int)(sizeof rs / sizeof rs[0]); k++) {
+            api->set_param(inst, rs[k][1], rs[k][2]);
+            if (k == 2) {
+                api->set_param(inst, "hm_tuning_mode", "Note"); api->set_param(inst, "hm_pitch_shift", "7");
+                api->set_param(inst, "hm_octaving", "1.5"); api->set_param(inst, "hm_synth_mix", "0.5");
+                api->set_param(inst, "hm_widen", "1"); api->set_param(inst, "hm_deess", "12");
+                api->set_param(inst, "hm_lpf_freq", "110"); api->set_param(inst, "hm_lookahead", "Hi");
+                api->set_param(inst, "hm_wavetable_shape", "0.5"); api->set_param(inst, "hm_warble_depth", "0.5");
+            }
+            nonzero = 0;
+            struct timespec t0, t1;
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            run_audio(api, inst, 220.0, 400, &nonzero, &bad);
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            double ms = ((t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6) / 400.0;
+            printf("  %-16s avg %.3f ms per 128-frame block%s\n", rs[k][0], ms, nonzero ? "" : "  (SILENT)");
+            CHECK(nonzero);
+            CHECK(ms < 2.0);
+        }
+        api->set_param(inst, "engine", "Vocoder");
+        api->set_param(inst, "demo", "Off");
     }
     /* Voice FX audition: Demo On plays the funk phrase through each of the six presets with nothing routed in
      * (silence on the input). Demo is the Showcase Tour, which moves Vowel, Tract, Peak, Choir and Mix/Drv, so the
@@ -364,7 +396,7 @@ int main(int argc, char **argv)
     void *inst2 = api->create_instance("/x", buf);               /* a second instance restores from state */
     CHECK(inst2 != NULL);
     if (inst2) {
-        char b2[1024];
+        static char b2[8192];
         CHECK(api->get_param(inst2, "state", b2, sizeof b2) == n && strcmp(buf, b2) == 0);
         api->destroy_instance(inst2);
     }

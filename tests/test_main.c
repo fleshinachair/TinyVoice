@@ -871,10 +871,20 @@ static void test_state_roundtrip(void)
         {"engine", "VoiceFX"}, {"vf_vowel", "0.62"}, {"vf_tract", "0.31"}, {"vf_peak", "0.88"}, {"vf_choir", "0.73"},
         {"vf_breath", "0.44"}, {"vf_attack", "0.57"}, {"vf_release", "0.91"}, {"vf_mix", "0.38"},
     };
-    CHECK(sizeof set / sizeof set[0] == VT_P_COUNT - 3);            /* every saved param (not freeze, demo or the preset index) off its default */
+    /* every saved param (not freeze, demo, the preset index or Resynth's Glitch) off its default: the list
+     * above, then every Resynth param (hm_*) by rule */
+    CHECK(sizeof set / sizeof set[0] + (VT_P_HM_WAVE - VT_P_HM_FIRST + 1) - 1 == VT_P_COUNT - 4);
     for (size_t i = 0; i < sizeof set / sizeof set[0]; i++) CHECK(dsp_set_param(a, set[i][0], set[i][1]) == 0);
+    for (int id = VT_P_HM_FIRST; id <= VT_P_HM_WAVE; id++) {
+        const vt_param_def *d = dsp_param_def(id);
+        char v[32];
+        if (d->transient) continue;
+        if (d->type == VT_PTYPE_ENUM) snprintf(v, sizeof v, "%s", d->options[((int)d->def + 1) % d->num_options]);
+        else snprintf(v, sizeof v, "%g", (double)(d->min + 0.375f * (d->max - d->min)));
+        CHECK(dsp_set_param(a, d->key, v) == 0);
+    }
 
-    char state[1024];
+    char state[8192];
     int n = dsp_get_param(a, "state", state, sizeof state);
     CHECK(n > 0 && state[0] == '{' && state[n - 1] == '}');
     char small[40];
@@ -888,7 +898,7 @@ static void test_state_roundtrip(void)
         if (strcmp(va, vb)) printf("  %s: %s vs %s\n", key, va, vb);
         CHECK(strcmp(va, vb) == 0);
     }
-    char s2[1024];
+    static char s2[8192];
     CHECK(dsp_get_param(b, "state", s2, sizeof s2) == n && strcmp(state, s2) == 0);   /* stable fixed point */
 
     /* tolerant loader: whitespace, unknown keys, nested values, numeric enums, clamping, junk */
@@ -1214,14 +1224,15 @@ static void test_module_json_matches_params(void)
     /* the two personalities: `modes` names the root levels, `mode_param` is the param the host's Mode page writes */
     const char *uih = js_get(caps, "ui_hierarchy");
     const char *modes_arr = js_get(uih, "modes");
-    CHECK(modes_arr && js_arr_len(modes_arr) == 2);
+    CHECK(modes_arr && js_arr_len(modes_arr) == 3);
     CHECK(js_str(js_get(uih, "mode_param"), s, sizeof s) && strcmp(s, "engine") == 0);
     CHECK(modes_arr && js_str(js_elem(modes_arr, 0), s, sizeof s) && strcmp(s, "vocoder") == 0);
     CHECK(modes_arr && js_str(js_elem(modes_arr, 1), s, sizeof s) && strcmp(s, "voicefx") == 0);
+    CHECK(modes_arr && js_str(js_elem(modes_arr, 2), s, sizeof s) && strcmp(s, "resynth") == 0);
     {   /* the engine param's options are those mode names in the host's own spelling (case aside), so its Mode page commits a value the DSP takes */
         const vt_param_def *ed = dsp_param_def(VT_P_ENGINE);
-        CHECK(ed && ed->type == VT_PTYPE_ENUM && ed->num_options == 2);
-        CHECK(ed && vt_ieq(ed->options[0], "vocoder") && vt_ieq(ed->options[1], "voicefx"));
+        CHECK(ed && ed->type == VT_PTYPE_ENUM && ed->num_options == 3);
+        CHECK(ed && vt_ieq(ed->options[0], "vocoder") && vt_ieq(ed->options[1], "voicefx") && vt_ieq(ed->options[2], "resynth"));
     }
     const char *rootlv = js_get(levels, "vocoder");
     CHECK(rootlv != NULL);
@@ -1230,11 +1241,15 @@ static void test_module_json_matches_params(void)
     int nlevels = 0;
     char names[16][32];
     while (js_nth_member(levels, nlevels, names[nlevels], sizeof names[0]) && nlevels < 16) nlevels++;
-    CHECK(nlevels == 6);
+    CHECK(nlevels == 11);
     CHECK(strcmp(names[0], "vocoder") == 0);
     for (int l = 1; l < nlevels && l < 4; l++) CHECK(strcmp(names[l], page_names[l - 1]) == 0);
     CHECK(strcmp(names[4], "voicefx") == 0);
     CHECK(strcmp(names[5], "audition") == 0);
+    {   /* Resynth: its root (the main controls) and four pages */
+        static const char *const rs_names[5] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play" };
+        for (int l = 0; l < 5; l++) CHECK(nlevels > 6 + l && strcmp(names[6 + l], rs_names[l]) == 0);
+    }
 
     int listed_on[VT_P_COUNT] = {0}, referenced[16] = {0};
     for (int l = 0; l < nlevels && l < 4; l++) {
@@ -1304,8 +1319,23 @@ static void test_module_json_matches_params(void)
         CHECK(lv && knobs && js_arr_len(knobs) == 1 && js_str(js_elem(knobs, 0), s, sizeof s) && strcmp(s, "demo") == 0);
         listed_on[VT_P_DEMO]++;
     }
+    /* Resynth's pages: the knobs they hold (the rest of its params are on the Remote UI only: web_ui.html) */
+    {
+        static const char *const rs_lv[5] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play" };
+        for (int l = 0; l < 5; l++) {
+            const char *knobs = js_get(js_get(levels, rs_lv[l]), "knobs");
+            CHECK(knobs && js_arr_len(knobs) == 8);
+            for (int k = 0; k < 8 && knobs; k++) {
+                const int id = js_str(js_elem(knobs, k), s, sizeof s) ? dsp_param_index(s) : -1;
+                CHECK(id >= 0);
+                if (id >= 0) listed_on[id]++;
+            }
+        }
+    }
     for (int i = 0; i < VT_P_COUNT; i++) {
-        const int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET) ? 0 : (i == VT_P_DEMO ? 2 : 1);   /* Demo: the vocoder's More page and Voice FX's Audition page */   /* `engine` is the host's Mode page, `vf_preset` its preset browser: not knobs */
+        const int hm = i >= VT_P_HM_FIRST && i <= VT_P_HM_WAVE;
+        int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET) ? 0 : (i == VT_P_DEMO ? 3 : 1);   /* Demo: the vocoder's More page, Voice FX's Audition and Resynth's Play */   /* `engine` is the host's Mode page, `vf_preset` its preset browser: not knobs */
+        if (hm && listed_on[i] == 0) want_pages = 0;                 /* a Resynth param on the Remote UI only */
         if (listed_on[i] != want_pages) printf("  param %s listed on %d pages\n", dsp_param_def(i)->key, listed_on[i]);
         CHECK(listed_on[i] == want_pages);
     }
@@ -1913,7 +1943,7 @@ static void test_freeze_looper(void)
     CHECK(band_at(cap + n - 8192, 8192, 550.0) > 100.0 * band_at(cap + n - 8192, 8192, 880.0));
 
     /* Not part of the saved state, and a state can't switch it on. */
-    char st[1024];
+    static char st[8192];
     CHECK(dsp_get_param(vt, "state", st, sizeof st) > 0 && strstr(st, "\"freeze\"") == NULL && strstr(st, "\"demo\"") == NULL);
     CHECK(strstr(st, "\"freeze_len\"") != NULL);                   /* the length setting is saved */
     CHECK(dsp_set_param(vt, "freeze", "On") == -1);                /* the old two-way option is gone */
@@ -2199,7 +2229,7 @@ static void test_served_metadata(void)
     const char *caps = js_get(g_module_json, "capabilities");
     const char *file_cp = js_get(caps, "chain_params");
     vt_t *vt = dsp_init(VT_SAMPLE_RATE);
-    static char served[8192];
+    static char served[32768];
     int n = dsp_get_param(vt, "chain_params", served, sizeof served);
     CHECK(n > 0 && served[0] == '[');
     CHECK(js_arr_len(served) == js_arr_len(file_cp) && js_arr_len(served) == VT_P_COUNT + 3);
@@ -2652,7 +2682,7 @@ static void test_macro_labels(void)
 {
     /* The served chain_params names char1 / char2 / mod for the current mode. */
     vt_t *vt = dsp_init(VT_SAMPLE_RATE);
-    static char cp[8192];
+    static char cp[32768];
     char nm[64];
     for (int m = 0; m < VT_MODE_COUNT; m++) {
         char idx[8];
@@ -3793,7 +3823,7 @@ static void test_inert_knobs(void)
     }
 
     vt_t *w = dsp_init(VT_SAMPLE_RATE);                             /* the widgets get mode as an extra key */
-    static char cp[16384];
+    static char cp[32768];
     CHECK(dsp_get_param(w, "chain_params", cp, sizeof cp) > 0);
     for (int i = 0; i < 5; i++) {
         char kind[48];
@@ -4234,7 +4264,7 @@ static void test_gate_unified(void)
     /* New sets save Gate by name and no "auto". */
     vt = dsp_init(VT_SAMPLE_RATE);
     dsp_set_param(vt, "gate", "-42 dB");
-    static char st[2048];
+    static char st[8192];
     dsp_get_param(vt, "state", st, sizeof st);
     CHECK(strstr(st, "\"gate\":\"-42 dB\"") != NULL && strstr(st, "\"auto\"") == NULL);
     dsp_cleanup(vt);
@@ -4399,6 +4429,7 @@ static void test_snap_space_age(void)
 /* ------------------------------------------------- pending engine tests */
 
 #include "voice_tests.inc"
+#include "resynth_tests.inc"
 
 int main(void)
 {
@@ -4503,6 +4534,13 @@ int main(void)
     RUN(test_walkie_tail);
     RUN(test_freeze_minimum);
     RUN(test_mode_knobs);
+    /* Resynth (tests/resynth_tests.inc) */
+    RUN(test_resynth_tuning);
+    RUN(test_resynth_midi);
+    RUN(test_resynth_state);
+    RUN(test_resynth_isolation);
+    RUN(test_resynth_numeric_safety);
+    RUN(test_resynth_cpu);
     RUN(test_midi_agnostic_modes);
     RUN(test_latency_budget);
     RUN(test_headroom);
