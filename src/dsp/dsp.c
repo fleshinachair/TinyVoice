@@ -19,10 +19,12 @@
 #include "tour.h"
 #include "presets.h"
 #include "hm.h"
+#include "rsbank.h"
 #include "vt_floor.h"
 #include "module_meta.h"   /* generated: chain_params / ui_hierarchy JSON */
 
 #include <math.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -143,6 +145,7 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     [VT_P_VF_RELEASE] = FLOAT_DEF("vf_release", 0.0f, 1.0f,   0.3f),
     [VT_P_VF_MIX]    = FLOAT_DEF("vf_mix",     0.0f,  1.0f,   0.75f),
     [VT_P_VF_PRESET] = {"vf_preset", VT_PTYPE_FLOAT, 0, 5, 5, NULL, 0, 1},    /* 0..5 = the bank; transient; 5 = Vowel Morph Solo */
+    [VT_P_RS_PRESET] = {"rs_preset", VT_PTYPE_FLOAT, 0, RSBANK_MAX - 1, 0, NULL, 0, 1},   /* the Resynth bank (rsbank.c); transient */
     HM_PARAM_LIST(VT_X_HM)
     [VT_P_HM_KEY]    = ENUM_DEF("hm_key",   k_root_opts,     0),
     [VT_P_HM_SCALE]  = ENUM_DEF("hm_scale", k_hm_scale_opts, 0),       /* Major */
@@ -215,6 +218,7 @@ struct vt {
     int   hm_wt_gen;            /* bumped when hm_wt changes */
     int   hm_wt_gen_set;
     int   hm_held[VT_MAX_VOICES], hm_nheld;   /* pads the engine holds (MIDI mode), oldest first */
+    _Atomic(rsbank_t *) rs_bank;  /* Resynth's presets, published once by the loader thread (dsp_set_rs_bank) */
     /* Ghost hands, as the screen sees them. While the Showcase Tour runs, get_param on Voice FX's knobs answers
      * `disp` (the tour's current values, snapshotted by the audio block: get_param and set_param run on the same
      * callback thread, so a read never races the write) and the host's UI, which re-reads every visible knob a few
@@ -308,6 +312,7 @@ vt_t *dsp_init(int sample_rate)
     groove_init(&vt->groove, (float)vt->sample_rate);
     hm_init(&vt->hm, (float)vt->sample_rate);
     vt->hm_wave_set = -1;
+    atomic_init(&vt->rs_bank, NULL);
     vt->label_mode = -1;
     vt->run_mode = -1;
     vt->midi_ch = -1;                       /* omni until the host names the slot's channel */
@@ -338,7 +343,20 @@ vt_t *dsp_init(int sample_rate)
 void dsp_cleanup(vt_t *vt)
 {
     if (!vt) return;
+    rsbank_free(atomic_load_explicit(&vt->rs_bank, memory_order_acquire));
     VT_FREE(vt);
+}
+
+int dsp_set_rs_bank(vt_t *vt, struct rsbank *bank)
+{
+    rsbank_t *none = NULL;
+    if (!vt || !bank) return -1;
+    return atomic_compare_exchange_strong_explicit(&vt->rs_bank, &none, bank, memory_order_release, memory_order_relaxed) ? 0 : -1;
+}
+
+static const rsbank_t *rs_bank_of(vt_t *vt)
+{
+    return atomic_load_explicit(&vt->rs_bank, memory_order_acquire);
 }
 
 /* ---------------------------------------------------------------- params */
@@ -744,6 +762,19 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
     char *end;
     float f = strtof(val, &end);
     if (end == val || !isfinite(f)) return -1;
+    if (id == VT_P_RS_PRESET) {           /* Resynth's browser writes an index: that preset, over Resynth's defaults */
+        const rsbank_t *bk = rs_bank_of(vt);
+        const int n = bk ? bk->count : 0;
+        const int i = (int)lroundf(clampf(f, 0.0f, (float)(n > 0 ? n - 1 : 0)));
+        if (n > 0) {
+            for (int k = VT_P_HM_FIRST; k <= VT_P_HM_WAVE; k++)        /* nothing of the last preset carries over */
+                if (!k_params[k].transient) vt->p[k] = k_params[k].def;
+            set_hm_wt(vt, "", 0);
+            apply_state(vt, bk->e[i].state);
+        }
+        vt->p[VT_P_RS_PRESET] = (float)i;
+        return 0;
+    }
     if (id == VT_P_VF_PRESET) {                                   /* the browser writes an index: load that preset into the eight knobs */
         const vt_preset *ps = vt_preset_get(VT_ENGINE_VOICEFX, (int)lroundf(clampf(f, d->min, d->max)));
         if (!ps) return -1;
@@ -818,6 +849,13 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
     } else if (strcmp(key, "vf_preset_name") == 0) {
         const vt_preset *ps = vt_preset_get(VT_ENGINE_VOICEFX, (int)vt->p[VT_P_VF_PRESET]);
         n = snprintf(buf, (size_t)buf_len, "%s", ps ? ps->name : "");
+    } else if (strcmp(key, "rs_preset_count") == 0) {              /* the Resynth level's preset browser */
+        const rsbank_t *bk = rs_bank_of(vt);
+        n = snprintf(buf, (size_t)buf_len, "%d", bk ? bk->count : 0);
+    } else if (strcmp(key, "rs_preset_name") == 0) {
+        const rsbank_t *bk = rs_bank_of(vt);
+        const int i = (int)vt->p[VT_P_RS_PRESET];
+        n = snprintf(buf, (size_t)buf_len, "%s", !bk ? "(loading)" : bk->count == 0 ? "(no presets)" : i < bk->count ? bk->e[i].name : "");
     } else if (strcmp(key, "voices") == 0) {
         n = snprintf(buf, (size_t)buf_len, "%d", dsp_active_voices(vt));
     } else if (strcmp(key, "name") == 0) {

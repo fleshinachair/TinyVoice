@@ -4,23 +4,64 @@
  */
 #include "audio_fx_api_v2.h"
 #include "dsp.h"
+#include "rsbank.h"
+
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 static const host_api_v1_t *g_host;
 
+/* What the host holds: the engine, and the thread that reads Resynth's presets into it. */
+typedef struct {
+    vt_t *vt;
+    pthread_t loader;
+    int loader_on;
+    char dir[512];
+} vt_inst;
+
+#define VT(inst) (((vt_inst *)(inst))->vt)
+
+/* Resynth's preset bank: the folder read (files, allocation) here, off the audio thread, then handed over. */
+static void *bank_loader(void *arg)
+{
+    vt_inst *in = (vt_inst *)arg;
+    rsbank_t *b = rsbank_load(in->dir);
+    if (b && dsp_set_rs_bank(in->vt, b) != 0) rsbank_free(b);
+    return NULL;
+}
+
+/* Schwung's preset folder for this module: <root>/presets/tinyvoice beside <root>/modules/audio_fx/tinyvoice. */
+static void preset_dir(const char *module_dir, char *out, size_t n)
+{
+    const char *m = module_dir ? strstr(module_dir, "/modules/") : NULL;
+    if (m) snprintf(out, n, "%.*s/presets/tinyvoice", (int)(m - module_dir), module_dir);
+    else snprintf(out, n, "%s", "/data/UserData/schwung/presets/tinyvoice");
+}
+
 static void *vt_create_instance(const char *module_dir, const char *config_json)
 {
-    (void)module_dir;
     int sr = (g_host && g_host->sample_rate > 0) ? g_host->sample_rate : VT_SAMPLE_RATE;
-    vt_t *vt = dsp_init(sr);
+    vt_inst *in = (vt_inst *)calloc(1, sizeof *in);
+    if (!in) return NULL;
+    in->vt = dsp_init(sr);
+    if (!in->vt) { free(in); return NULL; }
     /* Host-supplied defaults use the same flat {"key": value} shape as "state".
      * Unknown or nested members are ignored. */
-    if (vt && config_json) (void)dsp_set_param(vt, "state", config_json);
-    return vt;
+    if (config_json) (void)dsp_set_param(in->vt, "state", config_json);
+    preset_dir(module_dir, in->dir, sizeof in->dir);
+    in->loader_on = pthread_create(&in->loader, NULL, bank_loader, in) == 0;
+    return in;
 }
 
 static void vt_destroy_instance(void *inst)
 {
-    dsp_cleanup((vt_t *)inst);
+    vt_inst *in = (vt_inst *)inst;
+    if (!in) return;
+    if (in->loader_on) pthread_join(in->loader, NULL);   /* it is done in well under a second */
+    dsp_cleanup(in->vt);
+    free(in);
 }
 
 /* The slot's receive channel (0-15; -1 All, -2 no slot: both omni). Asked
@@ -28,36 +69,36 @@ static void vt_destroy_instance(void *inst)
  * settings applies at once. NULL on hosts without slot context: omni. */
 static void vt_sync_channel(void *inst)
 {
-    if (g_host && g_host->slot_recv_channel) dsp_set_midi_channel((vt_t *)inst, g_host->slot_recv_channel(inst));
+    if (g_host && g_host->slot_recv_channel) dsp_set_midi_channel(VT(inst), g_host->slot_recv_channel(inst));
 }
 
 static void vt_process_block(void *inst, int16_t *audio_inout, int frames)
 {
     vt_sync_channel(inst);
-    if (g_host && g_host->get_bpm) dsp_set_bpm((vt_t *)inst, g_host->get_bpm());   /* Demo's and Freeze's bar length */
+    if (g_host && g_host->get_bpm) dsp_set_bpm(VT(inst), g_host->get_bpm());   /* Demo's and Freeze's bar length */
     /* Transport position for Freeze's downbeat-synced takes; NULL on older hosts. */
-    dsp_set_transport((vt_t *)inst, g_host && g_host->get_beat_position ? g_host->get_beat_position() : -1.0);
-    dsp_process_block((vt_t *)inst, audio_inout, frames);
+    dsp_set_transport(VT(inst), g_host && g_host->get_beat_position ? g_host->get_beat_position() : -1.0);
+    dsp_process_block(VT(inst), audio_inout, frames);
 }
 
 static void vt_set_param(void *inst, const char *key, const char *val)
 {
     /* "state" (full snapshot restore for presets/sets) is handled by the engine. */
-    (void)dsp_set_param((vt_t *)inst, key, val);
+    (void)dsp_set_param(VT(inst), key, val);
 }
 
 static int vt_get_param(void *inst, const char *key, char *buf, int buf_len)
 {
     /* chain_params / ui_hierarchy come from module.json; "state" is the full
      * 16-param snapshot used for autosave and presets. */
-    return dsp_get_param((vt_t *)inst, key, buf, buf_len);
+    return dsp_get_param(VT(inst), key, buf, buf_len);
 }
 
 static void vt_on_midi(void *inst, const uint8_t *msg, int len, int source)
 {
     vt_sync_channel(inst);
-    dsp_set_midi_source((vt_t *)inst, source);
-    dsp_handle_midi((vt_t *)inst, msg, len);
+    dsp_set_midi_source(VT(inst), source);
+    dsp_handle_midi(VT(inst), msg, len);
 }
 
 /* The chain host decides whether to send an FX any MIDI by looking this symbol

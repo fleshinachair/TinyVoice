@@ -380,6 +380,45 @@ int main(int argc, char **argv)
         printf("  HardTune maxed, then Harmony: Harmony on its own knobs %s; back in HardTune, still maxed %s\n", own ? "yes" : "NO", back ? "yes" : "NO");
         CHECK(own && back);
     }
+    /* Resynth's preset bank: read from the preset folder by a thread at create_instance, then the browser keys */
+    {
+        char cnt[32], name[96];
+        int count = 0;
+        struct timespec t0, t1, nap = {0, 20000000};
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int k = 0; k < 250; k++) {                       /* up to 5 s */
+            api->get_param(inst, "rs_preset_name", name, sizeof name);
+            if (strcmp(name, "(loading)") != 0) break;
+            nanosleep(&nap, NULL);
+        }
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        api->get_param(inst, "rs_preset_count", cnt, sizeof cnt);
+        count = atoi(cnt);
+        printf("  Resynth bank: %d presets, ready after %.0f ms (first: %s)\n", count,
+               (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6, name);
+        CHECK(strcmp(name, "(loading)") != 0);
+        double worst = 0.0;
+        for (int k = 0; k < count && k < 400; k++) {           /* every preset loads, and how long the browser's write takes */
+            char idx[16];
+            snprintf(idx, sizeof idx, "%d", k);
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            api->set_param(inst, "rs_preset", idx);
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            const double ms = (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6;
+            if (ms > worst) worst = ms;
+            api->get_param(inst, "rs_preset", idx, sizeof idx);
+            CHECK(atoi(idx) == k);
+        }
+        if (count > 0) {
+            api->set_param(inst, "rs_preset", "0");
+            api->get_param(inst, "engine", name, sizeof name);
+            CHECK(strcmp(name, "Resynth") == 0);
+            run_audio(api, inst, 220.0, 200, &nonzero, &bad);
+            CHECK(!bad);
+            printf("  Resynth preset load: worst %.3f ms (a set_param on the audio thread)\n", worst);
+            CHECK(worst < 1.0);
+        }
+    }
     api->set_param(inst, "engine", "Vocoder");
     api->set_param(inst, "demo", "Off");
     api->set_param(inst, "freeze", "Off");

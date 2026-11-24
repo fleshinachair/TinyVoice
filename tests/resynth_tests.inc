@@ -236,3 +236,91 @@ static void test_resynth_cpu(void)
     CHECK(us < 600.0);
     dsp_cleanup(vt);
 }
+
+/* Resynth's preset bank (rsbank.c) and its browser (rs_preset / rs_preset_count / rs_preset_name) */
+#include "rsbank.h"
+
+static float rs_get(vt_t *vt, const char *key)
+{
+    char b[64];
+    return dsp_get_param(vt, key, b, sizeof b) > 0 ? (float)atof(b) : -999.0f;
+}
+
+static void test_resynth_bank(void)
+{
+    char b[256];
+    /* the loader: Resynth presets of this module only, a state stored as an object or as a string, sorted by name
+     * case-insensitively, a missing name taken from the file, escapes decoded; Vocoder states, other modules,
+     * broken files and non-.json files skipped */
+    rsbank_t *bk = rsbank_load("tests/fixtures/rs_presets");
+    CHECK(bk && bk->count == 4);
+    if (!bk || bk->count != 4) { rsbank_free(bk); return; }
+    CHECK(strcmp(bk->e[0].name, "alpha") == 0 && strcmp(bk->e[1].name, "Bravo") == 0);
+    CHECK(strcmp(bk->e[2].name, "Caf\xc3\xa9 \"Q\"") == 0 && strcmp(bk->e[3].name, "g") == 0);
+    CHECK(strstr(bk->e[0].state, "\"hm_robotify\":0.4") != NULL && bk->e[0].state[0] == '{');   /* unescaped */
+    {
+        rsbank_t *none = rsbank_load("tests/fixtures/no_such_folder");
+        CHECK(none && none->count == 0);
+        rsbank_free(none);
+    }
+
+    vt_t *vt = dsp_init(VT_SAMPLE_RATE);
+    /* before the bank arrives: nothing to choose, and choosing is harmless */
+    CHECK(dsp_get_param(vt, "rs_preset_count", b, sizeof b) > 0 && strcmp(b, "0") == 0);
+    CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "(loading)") == 0);
+    CHECK(dsp_set_param(vt, "rs_preset", "2") == 0 && (int)rs_get(vt, "rs_preset") == 0);
+    CHECK(dsp_set_rs_bank(vt, bk) == 0);
+    {
+        rsbank_t *again = rsbank_load("tests/fixtures/rs_presets");
+        CHECK(dsp_set_rs_bank(vt, again) == -1);           /* one handover; the caller keeps the second */
+        rsbank_free(again);
+    }
+    CHECK(dsp_get_param(vt, "rs_preset_count", b, sizeof b) > 0 && strcmp(b, "4") == 0);
+
+    /* choosing loads it over Resynth's defaults: nothing of the last preset or of a hand on a knob carries over */
+    dsp_set_param(vt, "engine", "Vocoder");
+    dsp_set_param(vt, "hm_transform", "0.9");
+    dsp_set_param(vt, "hm_dry_wet", "0.3");
+    CHECK(dsp_set_param(vt, "rs_preset", "0") == 0);
+    CHECK(dsp_get_param(vt, "engine", b, sizeof b) > 0 && strcmp(b, "Resynth") == 0);
+    CHECK(fabsf(rs_get(vt, "hm_robotify") - 0.4f) < 1e-6f);
+    CHECK(fabsf(rs_get(vt, "hm_transform") - dsp_param_def(dsp_param_index("hm_transform"))->def) < 1e-6f);
+    CHECK(fabsf(rs_get(vt, "hm_dry_wet") - dsp_param_def(dsp_param_index("hm_dry_wet"))->def) < 1e-6f);
+    CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "alpha") == 0);
+    CHECK(dsp_set_param(vt, "rs_preset", "1") == 0);
+    CHECK(fabsf(rs_get(vt, "hm_transform") - 0.7f) < 1e-6f && (int)rs_get(vt, "hm_mask") == 1);
+    CHECK(fabsf(rs_get(vt, "hm_robotify") - dsp_param_def(dsp_param_index("hm_robotify"))->def) < 1e-6f);
+    CHECK(dsp_get_param(vt, "hm_scale", b, sizeof b) > 0 && strcmp(b, "Custom") == 0);
+    CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Bravo") == 0);
+    CHECK(dsp_set_param(vt, "rs_preset", "99") == 0 && (int)rs_get(vt, "rs_preset") == 3);      /* clamps to the last */
+    CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "g") == 0);
+    CHECK(fabsf(rs_get(vt, "hm_octaving") - 1.0f) < 1e-6f && fabsf(rs_get(vt, "hm_transform") - 0.0f) < 1.0f);
+    CHECK(dsp_set_param(vt, "rs_preset", "-3") == 0 && (int)rs_get(vt, "rs_preset") == 0);
+    /* the index is not saved: a state holds the knobs, not which preset they came from */
+    {
+        static char st[8192];
+        CHECK(dsp_get_param(vt, "state", st, sizeof st) > 0 && strstr(st, "rs_preset") == NULL);
+    }
+    /* and it plays */
+    {
+        static float out[VT_SAMPLE_RATE / 2];
+        int finite = 1;
+        rs_run(vt, 220.0, 0.2f, VT_SAMPLE_RATE / 2, out);
+        for (int i = 0; i < VT_SAMPLE_RATE / 2; i++) finite &= isfinite(out[i]) && fabsf(out[i]) <= 1.0f;
+        CHECK(finite);
+    }
+    dsp_cleanup(vt);                                       /* frees the bank */
+
+    /* one file's text, directly */
+    {
+        char nm[8], *st = NULL;
+        CHECK(rsbank_parse("{\"name\":\"a long name\",\"state\":{\"engine\":\"Resynth\"}}", nm, sizeof nm, &st) == 0);
+        CHECK(st && strcmp(nm, "a long ") == 0);           /* cut to fit */
+        free(st);
+        CHECK(rsbank_parse("{\"state\":{\"engine\":\"VoiceFX\"}}", nm, sizeof nm, &st) == -1 && st == NULL);
+        CHECK(rsbank_parse("[1,2]", nm, sizeof nm, &st) == -1);
+        CHECK(rsbank_parse("{\"state\":\"{\\\"engine\\\":\\\"Resynth\\\"}\",\"name\":\"s\"}", nm, sizeof nm, &st) == 0);
+        CHECK(st && strcmp(st, "{\"engine\":\"Resynth\"}") == 0 && strcmp(nm, "s") == 0);
+        free(st);
+    }
+}

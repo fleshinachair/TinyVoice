@@ -26,8 +26,8 @@ mkdir -p "$OUT"
 "$ZIG" cc -target "$TARGET" $OPT -shared -fPIC -fvisibility=hidden \
     -std=c11 -Wall -Wextra -Werror -pedantic \
     -I"$ROOT/src/host" -I"$ROOT/src/dsp" \
-    "$ROOT/src/dsp/dsp.c" "$ROOT/src/dsp/cher.c" "$ROOT/src/dsp/daft.c" "$ROOT/src/dsp/imogen.c" "$ROOT/src/dsp/psola.c" "$ROOT/src/dsp/modes.c" "$ROOT/src/dsp/freeze.c" "$ROOT/src/dsp/demo.c" "$ROOT/src/dsp/voice.c" "$ROOT/src/dsp/verb.c" "$ROOT/src/dsp/vfx.c" "$ROOT/src/dsp/presets.c" "$ROOT/src/dsp/groove.c" "$ROOT/src/dsp/tour.c" "$ROOT/src/dsp/hm.c" "$ROOT/src/dsp/hmfx.c" "$ROOT/src/dsp/fft.c" "$ROOT/src/dsp/plugin.c" \
-    -o "$OUT/$MODULE_ID.so" -lm
+    "$ROOT/src/dsp/dsp.c" "$ROOT/src/dsp/cher.c" "$ROOT/src/dsp/daft.c" "$ROOT/src/dsp/imogen.c" "$ROOT/src/dsp/psola.c" "$ROOT/src/dsp/modes.c" "$ROOT/src/dsp/freeze.c" "$ROOT/src/dsp/demo.c" "$ROOT/src/dsp/voice.c" "$ROOT/src/dsp/verb.c" "$ROOT/src/dsp/vfx.c" "$ROOT/src/dsp/presets.c" "$ROOT/src/dsp/groove.c" "$ROOT/src/dsp/tour.c" "$ROOT/src/dsp/hm.c" "$ROOT/src/dsp/hmfx.c" "$ROOT/src/dsp/fft.c" "$ROOT/src/dsp/rsbank.c" "$ROOT/src/dsp/plugin.c" \
+    -o "$OUT/$MODULE_ID.so" -lm -lpthread   # pthread: plugin.c loads Resynth's preset bank off the audio thread
 chmod 755 "$OUT/$MODULE_ID.so"
 
 cp "$ROOT/module.json"   "$OUT/module.json"

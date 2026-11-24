@@ -73,6 +73,8 @@ typedef enum {
     VT_P_VF_MIX,        /* 0..1  Mix/Drive: wet/dry up to 0.7, then all wet with the drive climbing */
     VT_P_VF_PRESET,     /* index into the Voice FX bank (presets.c); writing it loads that preset into the
                          * eight knobs above. Transient: a saved state holds the knob values, not the preset. */
+    VT_P_RS_PRESET,     /* index into the Resynth bank (rsbank.c: the Resynth presets in Schwung's preset folder,
+                         * loaded off the audio thread); writing it loads that preset. Transient, like vf_preset. */
     /* The Resynth personality (src/dsp/hm.c): one param per Humanoid control, key "hm_" + its preset id,
      * in hm_param order (src/dsp/hm_params.h), then the Move-side tuning and wave choice. */
     VT_P_HM_FIRST,
@@ -218,6 +220,13 @@ void dsp_set_bpm(vt_t *vt, float bpm);
  * (host->get_beat_position), < 0 when stopped. Bars are 4 beats. Freeze uses
  * it to start a bar take on the next downbeat. */
 void dsp_set_transport(vt_t *vt, double beat);
+
+/* Resynth's preset bank (rsbank.h), handed over once it is loaded. Built off the audio thread (rsbank_load) and
+ * published here with a release store; the audio thread's rs_preset / rs_preset_count / rs_preset_name read it
+ * with an acquire load. The instance owns it from then on (dsp_cleanup frees it). One handover per instance: a
+ * second is refused (returns -1) and the caller keeps and frees its bank. NULL = none (0 presets). */
+struct rsbank;
+int dsp_set_rs_bank(vt_t *vt, struct rsbank *bank);
 
 /* Introspection (tests, UI plumbing). */
 const vt_param_def *dsp_param_def(int id);          /* NULL if out of range */

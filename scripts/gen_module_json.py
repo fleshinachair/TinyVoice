@@ -73,6 +73,7 @@ PARAMS = [
     flt("vf_release", "Release", 0, 1, 0.01, 0.3, "%"),     # tail
     flt("vf_mix", "Mix/Drv", 0, 1, 0.01, 0.75, "%"),        # wet/dry up to 70 %, then all wet with the drive climbing
     flt("vf_preset", "Preset", 0, 5, 1, 5),                 # the Voice FX bank (presets.c); the host's preset browser writes it
+    flt("rs_preset", "Preset", 0, 1023, 1, 0),              # the Resynth bank (rsbank.c: the preset folder's Resynth presets); its browser writes it
 ] + []   # the Resynth block is appended below (it is read from src/dsp/hm_params.h)
 
 # ---- Resynth (src/dsp/hm.c): one parameter per Humanoid control, key "hm_" + the .baby preset id,
@@ -214,6 +215,11 @@ a('                    "params": %s' % line(AUDITION))
 a('                },')
 a('                "resynth": {')
 a('                    "name": "Resynth",')
+# Presets first (the host draws the browser as the level's first page): the Resynth presets in Schwung's
+# preset folder, read into memory when TinyVoice loads (rsbank.c)
+a('                    "list_param": "rs_preset",')
+a('                    "count_param": "rs_preset_count",')
+a('                    "name_param": "rs_preset_name",')
 a('                    "knobs": %s,' % line(RS_MAIN))
 a('                    "params": %s' % line(RS_MAIN + [{"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"},
                                                       {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"}]))

@@ -873,7 +873,7 @@ static void test_state_roundtrip(void)
     };
     /* every saved param (not freeze, demo, the preset index or Resynth's Glitch) off its default: the list
      * above, then every Resynth param (hm_*) by rule */
-    CHECK(sizeof set / sizeof set[0] + (VT_P_HM_WAVE - VT_P_HM_FIRST + 1) - 1 == VT_P_COUNT - 4);
+    CHECK(sizeof set / sizeof set[0] + (VT_P_HM_WAVE - VT_P_HM_FIRST + 1) - 1 == VT_P_COUNT - 5);
     for (size_t i = 0; i < sizeof set / sizeof set[0]; i++) CHECK(dsp_set_param(a, set[i][0], set[i][1]) == 0);
     for (int id = VT_P_HM_FIRST; id <= VT_P_HM_WAVE; id++) {
         const vt_param_def *d = dsp_param_def(id);
@@ -1202,7 +1202,8 @@ static void test_module_json_matches_params(void)
             CHECK(dsp_get_param(vt, d->key, got, sizeof got) > 0 && fabs(atof(got) - d->min) < 1e-6);
             snprintf(in, sizeof in, "%g", (double)d->max + 1000.0);
             dsp_set_param(vt, d->key, in);
-            CHECK(dsp_get_param(vt, d->key, got, sizeof got) > 0 && fabs(atof(got) - d->max) < 1e-6);
+            /* rs_preset's range is the bank's (count_param), loaded at run time: none here, so it stays 0 */
+            CHECK(dsp_get_param(vt, d->key, got, sizeof got) > 0 && fabs(atof(got) - (i == VT_P_RS_PRESET ? 0.0 : d->max)) < 1e-6);
         }
     }
     dsp_cleanup(vt);
@@ -1303,8 +1304,14 @@ static void test_module_json_matches_params(void)
         CHECK(js_str(js_get(lv, "list_param"), s, sizeof s) && strcmp(s, "vf_preset") == 0);
         CHECK(js_str(js_get(lv, "count_param"), s, sizeof s) && strcmp(s, "vf_preset_count") == 0);
         CHECK(js_str(js_get(lv, "name_param"), s, sizeof s) && strcmp(s, "vf_preset_name") == 0);
-        for (int q = 0; q < nlevels; q++)
-            if (strcmp(names[q], "voicefx") != 0) CHECK(js_get(js_get(levels, names[q]), "list_param") == NULL);
+        for (int q = 0; q < nlevels; q++)                              /* (and Resynth's own, below) */
+            if (strcmp(names[q], "voicefx") != 0 && strcmp(names[q], "resynth") != 0) CHECK(js_get(js_get(levels, names[q]), "list_param") == NULL);
+        {   /* Resynth's browser: its presets from the preset folder (rsbank.c) */
+            const char *rl = js_get(levels, "resynth");
+            CHECK(js_str(js_get(rl, "list_param"), s, sizeof s) && strcmp(s, "rs_preset") == 0);
+            CHECK(js_str(js_get(rl, "count_param"), s, sizeof s) && strcmp(s, "rs_preset_count") == 0);
+            CHECK(js_str(js_get(rl, "name_param"), s, sizeof s) && strcmp(s, "rs_preset_name") == 0);
+        }
         for (int k = 0; k < 8 && knobs; k++) {
             CHECK(js_str(js_elem(knobs, k), s, sizeof s) && strcmp(s, vf[k]) == 0);
             const int id = dsp_param_index(vf[k]);
@@ -1334,7 +1341,7 @@ static void test_module_json_matches_params(void)
     }
     for (int i = 0; i < VT_P_COUNT; i++) {
         const int hm = i >= VT_P_HM_FIRST && i <= VT_P_HM_WAVE;
-        int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET) ? 0 : (i == VT_P_DEMO ? 3 : 1);   /* Demo: the vocoder's More page, Voice FX's Audition and Resynth's Play */   /* `engine` is the host's Mode page, `vf_preset` its preset browser: not knobs */
+        int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET || i == VT_P_RS_PRESET) ? 0 : (i == VT_P_DEMO ? 3 : 1);   /* Demo: the vocoder's More page, Voice FX's Audition and Resynth's Play */   /* `engine` is the host's Mode page, `vf_preset` its preset browser: not knobs */
         if (hm && listed_on[i] == 0) want_pages = 0;                 /* a Resynth param on the Remote UI only */
         if (listed_on[i] != want_pages) printf("  param %s listed on %d pages\n", dsp_param_def(i)->key, listed_on[i]);
         CHECK(listed_on[i] == want_pages);
@@ -4541,6 +4548,7 @@ int main(void)
     RUN(test_resynth_isolation);
     RUN(test_resynth_numeric_safety);
     RUN(test_resynth_cpu);
+    RUN(test_resynth_bank);
     RUN(test_midi_agnostic_modes);
     RUN(test_latency_budget);
     RUN(test_headroom);

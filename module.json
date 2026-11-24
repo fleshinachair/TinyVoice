@@ -56,6 +56,9 @@
                 },
                 "resynth": {
                     "name": "Resynth",
+                    "list_param": "rs_preset",
+                    "count_param": "rs_preset_count",
+                    "name_param": "rs_preset_name",
                     "knobs": ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet"],
                     "params": ["hm_transform", "hm_robotify", "hm_formant_shift", "hm_synth_mix", "hm_pitch_shift", "hm_octaving", "hm_quantize", "hm_dry_wet", {"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"}, {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"}]
                 },
@@ -110,6 +113,7 @@
             {"key": "vf_release", "name": "Release", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.3},
             {"key": "vf_mix", "name": "Mix/Drv", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.75},
             {"key": "vf_preset", "name": "Preset", "type": "float", "min": 0, "max": 5, "step": 1, "default": 5},
+            {"key": "rs_preset", "name": "Preset", "type": "float", "min": 0, "max": 1023, "step": 1, "default": 0},
             {"key": "hm_pitch_mono", "name": "Note", "type": "float", "min": 24, "max": 96, "step": 1, "default": 60},
             {"key": "hm_pitch_duo", "name": "Duo Note", "type": "float", "min": 24, "max": 96, "step": 1, "default": 67},
             {"key": "hm_quantize_enabled", "name": "Bypass", "type": "enum", "options": ["Off", "On"], "default": 0},
