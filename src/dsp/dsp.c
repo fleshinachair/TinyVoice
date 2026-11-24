@@ -87,7 +87,7 @@ static const char *const k_gate_opts[VT_GATE_OPTS] = {
     "-30 dB", "-27 dB", "-24 dB", "-21 dB", "-18 dB", "-15 dB", "-12 dB", "-9 dB", "-6 dB", "-3 dB", "0 dB",
 };
 static const char *const k_onoff_opts[] = {"Off", "On"};
-static const char *const k_engine_opts[] = {"Vocoder", "VoiceFX", "Resynth"};
+static const char *const k_engine_opts[] = {"Vocoder", "Synth Voice", "Resynth"};   /* "Synth Voice" was "VoiceFX": a saved set's old name still loads (dsp_set_param) */
 /* Resynth's enum option lists, named after their hm_params.h macro (the table below pastes the name) */
 static const char *const k_hm_HM_OPTS_OFFON[] = {HM_OPTS_OFFON};
 static const char *const k_hm_HM_OPTS_LAT[]   = {HM_OPTS_LAT};
@@ -844,6 +844,7 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
     }
 
     if (id == VT_P_RS_BANK) vt->p[VT_P_RS_PRESET] = 0.0f;         /* a new list starts at its first preset (nothing is loaded by it) */
+    if (id == VT_P_ENGINE && ieq(val, "VoiceFX")) val = "Synth Voice";   /* the old name, in sets and presets saved before the rename */
     if (d->type == VT_PTYPE_ENUM) {
         for (int i = 0; i < d->num_options; i++) {
             if (strcmp(d->options[i], val) == 0) {

@@ -63,7 +63,7 @@ PARAMS = [
     flt("char5", "Char 5", 0, 1, 0.01, 0.5, "%"),
     # the personalities: the Mode selector page writes `engine`; the vf_* params are the Voice FX page,
     # the hm_* params (after vf_preset) the Resynth engine's
-    enum("engine", "Engine", ["Vocoder", "VoiceFX", "Resynth"], 0),
+    enum("engine", "Engine", ["Vocoder", "Synth Voice", "Resynth"], 0),
     flt("vf_vowel", "Vowel", 0, 1, 0.01, 0.0, "%"),         # A E I O U sweep
     flt("vf_tract", "Tract", 0, 1, 0.01, 0.5, "%"),         # formant scale / gender
     flt("vf_peak", "Peak", 0, 1, 0.01, 0.5, "%"),           # formant Q
@@ -175,7 +175,7 @@ out = []
 a = out.append
 a("{")
 for k, v in [("id", "tinyvoice"), ("name", "TinyVoice"), ("abbrev", "TVO"), ("version", "1.0.1"),
-             ("description", "Three engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Voice FX (a one-page talking formant filter with presets) and Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports Humanoid presets)"),
+             ("description", "Three engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Synth Voice (a one-page talking formant filter with presets) and Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports Humanoid presets)"),
              ("author", "Mat Taylor"), ("dsp", "tinyvoice.so"), ("api_version", 2), ("component_type", "audio_fx")]:
     a("    %s: %s," % (json.dumps(k), json.dumps(v)))
 a('    "capabilities": {')
@@ -186,7 +186,7 @@ a('        "midi_in": true,')
 a('        "ui_hierarchy": {')
 # `modes` + `mode_param`: the host adds its own Mode page (writes `engine`), and the
 # active mode's level is the walk root. Level names are the modes, lower case.
-a('            "modes": ["vocoder", "voicefx", "resynth"],')
+a('            "modes": ["vocoder", "synth voice", "resynth"],')
 a('            "mode_param": "engine",')
 a('            "levels": {')
 a('                "vocoder": {')
@@ -204,8 +204,8 @@ for name, label, keys, last in [("VOICE", "Voice", VOICE, False), ("PITCH", "Pit
     a('                    "knobs": %s,' % line(keys))
     a('                    "params": %s' % line([entry(k) for k in keys + MENU_ONLY.get(name, [])]))
     a('                }%s' % ("" if last else ","))
-a('                "voicefx": {')
-a('                    "name": "Voice FX",')
+a('                "synth voice": {')
+a('                    "name": "Synth Voice",')
 a('                    "list_param": "vf_preset",')
 a('                    "count_param": "vf_preset_count",')
 a('                    "name_param": "vf_preset_name",')

@@ -13,7 +13,7 @@ const check = (ok, msg) => { checks++; if (!ok) { failed++; console.error("FAIL:
 
 check(Array.isArray(help.children) && help.children.length > 0, "top level has no `children`");
 const titles = (help.children || []).map(c => c.title);
-for (const want of ["Overview", "Setup", "Vocoder", "Voice FX"]) check(titles.includes(want), "missing section " + want);
+for (const want of ["Overview", "Setup", "Vocoder", "Synth Voice"]) check(titles.includes(want), "missing section " + want);
 
 const leafTitles = [];
 let lines = 0;
@@ -43,8 +43,8 @@ for (const m of MODES) {
     check(!!leaf, "no page for mode " + m);
     if (leaf) check(leaf.lines.filter(l => /^ [2-6] /.test(l)).length === 5, m + ": expected the five knob names");
 }
-// The six Voice FX presets are named.
-const presets = (((help.children || []).find(c => c.title === "Voice FX") || { children: [] }).children.find(c => c.title === "Presets") || { lines: [] }).lines.join("\n");
+// The six Synth Voice presets are named.
+const presets = (((help.children || []).find(c => c.title === "Synth Voice") || { children: [] }).children.find(c => c.title === "Presets") || { lines: [] }).lines.join("\n");
 for (const p of ["Yeah Boy", "Robo Talk", "Monster Throat", "Funky Talkbox", "Alien Choir", "Vowel Morph Solo"]) check(presets.includes(p), "preset not listed: " + p);
 
 console.log(`help.json: ${checks} checks, ${failed} failed (${lines} lines, ${leafTitles.length} pages)`);

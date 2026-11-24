@@ -1283,9 +1283,9 @@ static void test_voicefx_isolation(void)
     /* Engine names: the option name in any case (the host's Mode page may hand back its own spelling), or the index */
     vt_t *vt = dsp_init(VT_SAMPLE_RATE);
     char v[16];
-    CHECK(dsp_set_param(vt, "engine", "voicefx") == 0 && dsp_get_param(vt, "engine", v, sizeof v) > 0 && strcmp(v, "VoiceFX") == 0);
+    CHECK(dsp_set_param(vt, "engine", "voicefx") == 0 && dsp_get_param(vt, "engine", v, sizeof v) > 0 && strcmp(v, "Synth Voice") == 0);
     CHECK(dsp_set_param(vt, "engine", "VOCODER") == 0 && dsp_get_param(vt, "engine", v, sizeof v) > 0 && strcmp(v, "Vocoder") == 0);
-    CHECK(dsp_set_param(vt, "engine", "1") == 0 && dsp_get_param(vt, "engine", v, sizeof v) > 0 && strcmp(v, "VoiceFX") == 0);
+    CHECK(dsp_set_param(vt, "engine", "1") == 0 && dsp_get_param(vt, "engine", v, sizeof v) > 0 && strcmp(v, "Synth Voice") == 0);
     CHECK(dsp_set_param(vt, "engine", "Talkbox") == -1);
 
     /* A change of engine pulses is_loading, which is what makes the host re-read chain_params and its pages */

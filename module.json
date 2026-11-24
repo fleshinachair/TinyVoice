@@ -3,7 +3,7 @@
     "name": "TinyVoice",
     "abbrev": "TVO",
     "version": "1.0.1",
-    "description": "Three engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Voice FX (a one-page talking formant filter with presets) and Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports Humanoid presets)",
+    "description": "Three engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Synth Voice (a one-page talking formant filter with presets) and Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports Humanoid presets)",
     "author": "Mat Taylor",
     "dsp": "tinyvoice.so",
     "api_version": 2,
@@ -14,7 +14,7 @@
         "audio_in": true,
         "midi_in": true,
         "ui_hierarchy": {
-            "modes": ["vocoder", "voicefx", "resynth"],
+            "modes": ["vocoder", "synth voice", "resynth"],
             "mode_param": "engine",
             "levels": {
                 "vocoder": {
@@ -41,8 +41,8 @@
                     "knobs": ["spread", "tone", "freeze", "freeze_len", "gate", "latch", "beauty", "demo"],
                     "params": ["spread", "tone", "freeze", "freeze_len", "gate", "latch", "beauty", "demo"]
                 },
-                "voicefx": {
-                    "name": "Voice FX",
+                "synth voice": {
+                    "name": "Synth Voice",
                     "list_param": "vf_preset",
                     "count_param": "vf_preset_count",
                     "name_param": "vf_preset_name",
@@ -113,7 +113,7 @@
             {"key": "latch", "name": "Latch", "type": "enum", "options": ["Off", "On"], "default": 0, "viz": {"kind": "custom:tinyvoice_latch", "group": "latch", "role": "a", "extra_keys": ["mode"]}},
             {"key": "char4", "name": "Char 4", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.5},
             {"key": "char5", "name": "Char 5", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.5},
-            {"key": "engine", "name": "Engine", "type": "enum", "options": ["Vocoder", "VoiceFX", "Resynth"], "default": 0},
+            {"key": "engine", "name": "Engine", "type": "enum", "options": ["Vocoder", "Synth Voice", "Resynth"], "default": 0},
             {"key": "vf_vowel", "name": "Vowel", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.0},
             {"key": "vf_tract", "name": "Tract", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.5},
             {"key": "vf_peak", "name": "Peak", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.5},

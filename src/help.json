@@ -10,7 +10,7 @@
         "Three engines:",
         " Vocoder: 13 voice",
         " modes",
-        " Voice FX: a vowel",
+        " Synth Voice: a vowel",
         " talking filter for",
         " a synth",
         " Resynth: hard tune",
@@ -49,7 +49,7 @@
           ]
         },
         {
-          "title": "Voice FX setup",
+          "title": "Synth Voice setup",
           "lines": [
             "Source: a synth.",
             "",
@@ -404,7 +404,7 @@
       ]
     },
     {
-      "title": "Voice FX",
+      "title": "Synth Voice",
       "children": [
         {
           "title": "Knobs",

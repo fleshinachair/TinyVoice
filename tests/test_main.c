@@ -868,7 +868,7 @@ static void test_state_roundtrip(void)
         {"spread", "0.71"}, {"tone", "0.4"}, {"glide", "120"}, {"mod", "0.33"},
         {"freeze_len", "4 Bars"}, {"beauty", "0.83"}, {"latch", "On"},
         {"char4", "0.77"}, {"char5", "0.21"},
-        {"engine", "VoiceFX"}, {"vf_vowel", "0.62"}, {"vf_tract", "0.31"}, {"vf_peak", "0.88"}, {"vf_choir", "0.73"},
+        {"engine", "Synth Voice"}, {"vf_vowel", "0.62"}, {"vf_tract", "0.31"}, {"vf_peak", "0.88"}, {"vf_choir", "0.73"},
         {"vf_breath", "0.44"}, {"vf_attack", "0.57"}, {"vf_release", "0.91"}, {"vf_mix", "0.38"},
     };
     /* every saved param (not freeze, demo, the preset index or Resynth's Glitch) off its default: the list
@@ -1228,12 +1228,12 @@ static void test_module_json_matches_params(void)
     CHECK(modes_arr && js_arr_len(modes_arr) == 3);
     CHECK(js_str(js_get(uih, "mode_param"), s, sizeof s) && strcmp(s, "engine") == 0);
     CHECK(modes_arr && js_str(js_elem(modes_arr, 0), s, sizeof s) && strcmp(s, "vocoder") == 0);
-    CHECK(modes_arr && js_str(js_elem(modes_arr, 1), s, sizeof s) && strcmp(s, "voicefx") == 0);
+    CHECK(modes_arr && js_str(js_elem(modes_arr, 1), s, sizeof s) && strcmp(s, "synth voice") == 0);
     CHECK(modes_arr && js_str(js_elem(modes_arr, 2), s, sizeof s) && strcmp(s, "resynth") == 0);
     {   /* the engine param's options are those mode names in the host's own spelling (case aside), so its Mode page commits a value the DSP takes */
         const vt_param_def *ed = dsp_param_def(VT_P_ENGINE);
         CHECK(ed && ed->type == VT_PTYPE_ENUM && ed->num_options == 3);
-        CHECK(ed && vt_ieq(ed->options[0], "vocoder") && vt_ieq(ed->options[1], "voicefx") && vt_ieq(ed->options[2], "resynth"));
+        CHECK(ed && vt_ieq(ed->options[0], "vocoder") && vt_ieq(ed->options[1], "synth voice") && vt_ieq(ed->options[2], "resynth"));
     }
     const char *rootlv = js_get(levels, "vocoder");
     CHECK(rootlv != NULL);
@@ -1245,7 +1245,7 @@ static void test_module_json_matches_params(void)
     CHECK(nlevels == 13);
     CHECK(strcmp(names[0], "vocoder") == 0);
     for (int l = 1; l < nlevels && l < 4; l++) CHECK(strcmp(names[l], page_names[l - 1]) == 0);
-    CHECK(strcmp(names[4], "voicefx") == 0);
+    CHECK(strcmp(names[4], "synth voice") == 0);
     CHECK(strcmp(names[5], "audition") == 0);
     {   /* Resynth: its root (the main controls) and four pages */
         static const char *const rs_names[7] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_notes", "rs_bank" };
@@ -1295,7 +1295,7 @@ static void test_module_json_matches_params(void)
     /* Voice FX: one page of eight, in the agreed order, nothing else */
     {
         static const char *const vf[8] = { "vf_vowel", "vf_tract", "vf_peak", "vf_choir", "vf_breath", "vf_attack", "vf_release", "vf_mix" };
-        const char *lv = js_get(levels, "voicefx");
+        const char *lv = js_get(levels, "synth voice");
         const char *knobs = js_get(lv, "knobs"), *params = js_get(lv, "params");
         CHECK(lv && knobs && params && js_get(lv, "name") != NULL);
         CHECK(knobs && js_arr_len(knobs) == 8 && params && js_arr_len(params) == 9);      /* eight knobs, then the nav to the Audition page */
@@ -1305,7 +1305,7 @@ static void test_module_json_matches_params(void)
         CHECK(js_str(js_get(lv, "count_param"), s, sizeof s) && strcmp(s, "vf_preset_count") == 0);
         CHECK(js_str(js_get(lv, "name_param"), s, sizeof s) && strcmp(s, "vf_preset_name") == 0);
         for (int q = 0; q < nlevels; q++)                              /* (and Resynth's own, below) */
-            if (strcmp(names[q], "voicefx") != 0 && strcmp(names[q], "resynth") != 0) CHECK(js_get(js_get(levels, names[q]), "list_param") == NULL);
+            if (strcmp(names[q], "synth voice") != 0 && strcmp(names[q], "resynth") != 0) CHECK(js_get(js_get(levels, names[q]), "list_param") == NULL);
         {   /* Resynth's browser: its presets from the preset folder (rsbank.c) */
             const char *rl = js_get(levels, "resynth");
             CHECK(js_str(js_get(rl, "list_param"), s, sizeof s) && strcmp(s, "rs_preset") == 0);
@@ -2261,7 +2261,7 @@ static void test_served_metadata(void)
     static char hier[4096];
     CHECK(dsp_get_param(vt, "ui_hierarchy", hier, sizeof hier) > 0);
     const char *lv = js_get(hier, "levels");
-    CHECK(lv && js_get(lv, "vocoder") && js_get(lv, "VOICE") && js_get(lv, "PITCH") && js_get(lv, "MORE") && js_get(lv, "voicefx"));
+    CHECK(lv && js_get(lv, "vocoder") && js_get(lv, "VOICE") && js_get(lv, "PITCH") && js_get(lv, "MORE") && js_get(lv, "synth voice"));
     CHECK(js_get(hier, "modes") != NULL && js_get(hier, "mode_param") != NULL);          /* the host's Mode page writes `engine` */
 
     char small[64];
