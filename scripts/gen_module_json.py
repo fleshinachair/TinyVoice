@@ -235,7 +235,7 @@ def line(o): return json.dumps(o, separators=(", ", ": "))
 out = []
 a = out.append
 a("{")
-for k, v in [("id", "tinyvoice"), ("name", "TinyVoice"), ("abbrev", "TVO"), ("version", "1.0.1"),
+for k, v in [("id", "tinyvoice"), ("name", "TinyVoice"), ("abbrev", "TVO"), ("version", "1.5.0"),
              ("description", "Four engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Synth Voice (a one-page talking formant filter with presets) Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports the reference presets) and Mangler (a multi-voice pitch and formant shifter: unison, spread, chords from the pads, a filter)"),
              ("author", "Mat Taylor"), ("dsp", "tinyvoice.so"), ("api_version", 2), ("component_type", "audio_fx")]:
     a("    %s: %s," % (json.dumps(k), json.dumps(v)))
