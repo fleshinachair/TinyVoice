@@ -13,7 +13,7 @@ Pick the engine on the module's first page (the **Mode** list) or from the tabs 
 | **Resynth** | Hard tuning and harmonic resynthesis: the voice is re-built from its harmonics, with a wavetable synth, a filter, widen and warble. 30 presets included, more by importing your own, banks of your own | Note mode: play pitches |
 | **Mangler** | A multi-voice pitch and formant shifter: up to 16 voices with unison and spread, chords from the pads, a filter. 21 presets, banks of your own | Chords from held pads |
 
-Every engine also has a **Looper** (a 16 s take of the input, bar-aligned to the transport) and a **Demo**: a built-in sung phrase that tours the engine, so you can audition it with nothing plugged in.
+Every engine also has a **Looper** (a 16 s take of the input, bar-aligned to the transport; **Save** writes the processed loop as a WAV into the Move's sample library) and a **Demo**: a built-in sung phrase that tours the engine, so you can audition it with nothing plugged in.
 
 ## The Remote UI
 

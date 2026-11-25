@@ -7,6 +7,7 @@
 #include "dsp.h"
 #include "rsbank.h"
 #include "bankmgr.h"
+#include "loopsave.h"
 #include "demo.h"
 
 #include <pthread.h>
@@ -42,7 +43,8 @@ static void *bank_worker(void *arg)
     vt_inst *in = (vt_inst *)arg;
     const struct timespec nap = { 0, 50 * 1000 * 1000 };
     while (!atomic_load(&in->stop)) {
-        (void)bankmgr_pump(in->bm);
+        if (in->bm) (void)bankmgr_pump(in->bm);
+        (void)loopsave_pump(dsp_loopsave(in->vt));     /* a finished Looper Save capture, written to a WAV */
         nanosleep(&nap, NULL);
     }
     return NULL;
@@ -63,6 +65,19 @@ static void banks_dir(const char *module_dir, char *out, size_t n)
     const char *m = module_dir ? strstr(module_dir, "/modules/") : NULL;
     if (m) snprintf(out, n, "%.*s/tinyvoice-banks", (int)(m - module_dir), module_dir);
     else snprintf(out, n, "%s", "/data/UserData/schwung/tinyvoice-banks");
+}
+
+/* Looper Save's folder: the Move's own sample library, <root>/../UserLibrary/Samples/TinyVoice (root = /data/UserData/schwung). */
+static void samples_dir(const char *module_dir, char *out, size_t n)
+{
+    const char *m = module_dir ? strstr(module_dir, "/modules/") : NULL;
+    if (m) {
+        int len = (int)(m - module_dir);                      /* .../schwung */
+        while (len > 0 && module_dir[len - 1] != '/') len--;  /* its parent: /data/UserData/ */
+        snprintf(out, n, "%.*sUserLibrary/Samples/TinyVoice", len, module_dir);
+    } else {
+        snprintf(out, n, "%s", "/data/UserData/UserLibrary/Samples/TinyVoice");
+    }
 }
 
 /* Schwung's preset folder for this module: <root>/presets/tinyvoice beside <root>/modules/audio_fx/tinyvoice. */
@@ -89,7 +104,12 @@ static void *vt_create_instance(const char *module_dir, const char *config_json)
     banks_dir(module_dir, in->banks, sizeof in->banks);
     atomic_init(&in->stop, 0);
     in->bm = bankmgr_create(in->vt, in->dflt, in->dir, in->banks);
-    in->worker_on = in->bm && pthread_create(&in->worker, NULL, bank_worker, in) == 0;
+    {
+        char sd[512];
+        samples_dir(module_dir, sd, sizeof sd);
+        loopsave_set_dir(dsp_loopsave(in->vt), sd);
+    }
+    in->worker_on = pthread_create(&in->worker, NULL, bank_worker, in) == 0;
     in->loader_on = pthread_create(&in->loader, NULL, bank_loader, in) == 0;
     return in;
 }
@@ -137,6 +157,10 @@ static int vt_get_param(void *inst, const char *key, char *buf, int buf_len)
      * 16-param snapshot used for autosave and presets. */
     if (strcmp(key, "bank_status") == 0 && ((vt_inst *)inst)->bm && buf && buf_len > 0) {   /* {"rev","ok","msg"} of the last bank command */
         bankmgr_status(((vt_inst *)inst)->bm, buf, buf_len);
+        return (int)strlen(buf);
+    }
+    if (strcmp(key, "loop_status") == 0 && buf && buf_len > 0) {                        /* {"rev","ok","msg"} of the last Looper Save */
+        loopsave_status(dsp_loopsave(VT(inst)), buf, buf_len);
         return (int)strlen(buf);
     }
     return dsp_get_param(VT(inst), key, buf, buf_len);

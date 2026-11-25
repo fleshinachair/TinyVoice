@@ -116,6 +116,7 @@ typedef enum {
     /* Performance toggles (knobs on MORE), not saved in "state" */
     VT_P_FREEZE,        /* enum  Off, On: Loop - play the kept Freeze take instead of the live input (never records) */
     VT_P_FREEZE_REC,    /* enum  Off, Rec: Rec - record a new take into the spare buffer (freeze.h; never plays) */
+    VT_P_FREEZE_SAVE,   /* enum  Off, Save, Saved, Failed: Save - write the processed loop to a WAV (loopsave.h); Saved / Failed are shown for 2 s */
     VT_P_DEMO,          /* enum  Off, On: built-in sung phrase, modes advance every 4 bars */
     VT_P_COUNT
 } vt_param_id;
@@ -265,6 +266,9 @@ int dsp_set_mg_bank(vt_t *vt, struct rsbank *bank);
  * replaces (NULL if none), which the caller must NOT free at once: the audio thread may be reading it. Keep it a few
  * seconds, then free it. The Presets page keeps its place by the bank's and the preset's names. */
 struct rsbank *dsp_swap_rs_bank(vt_t *vt, struct rsbank *bank);
+
+/* Looper Save (loopsave.h): the capture the worker thread writes out, and where it goes. */
+struct loopsave *dsp_loopsave(vt_t *vt);
 /* A bank was renamed (call it BEFORE the swap of the lists): if the Presets page is on `old_name` of that engine's list, it
  * follows to `new_name` instead of falling back to Default. */
 void dsp_bank_renamed(vt_t *vt, int mangler, const char *old_name, const char *new_name);

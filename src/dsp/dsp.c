@@ -13,6 +13,7 @@
 #include "modes.h"
 #include "voice.h"
 #include "freeze.h"
+#include "loopsave.h"
 #include "demo.h"
 #include "vfx.h"
 #include "groove.h"
@@ -108,6 +109,7 @@ static const char *const k_mg_chord_opts[]  = {"1", "2", "3", "4", "5", "6", "7"
 static const char *const k_mg_spread_opts[] = {"Spread", "Jitter"};
 #define MG_CHORDS_STR 384                 /* "mg_chords" text: 8 slots x 8 notes x 4 chars + separators */
 static const char *const k_freeze_rec_opts[] = {"Off", "Rec"};      /* Freeze's Rec control (freeze.h) */
+static const char *const k_freeze_save_opts[] = {"Off", "Save", "Saved", "Failed"};   /* Looper Save: the DSP moves it to Saved / Failed, then back to Off */
 static const char *const k_freeze_len_opts[] = {"Free", "1 Bar", "2 Bars", "4 Bars"};
 static const int k_freeze_bars[] = { 0, 1, 2, 4 };
 static const char *const k_root_opts[]  = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -190,6 +192,7 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     /* performance toggles: never saved in "state" */
     [VT_P_FREEZE]    = TOGGLE_DEF("freeze"),                             /* Loop: Off / On (plays the kept take) */
     [VT_P_FREEZE_REC] = TRANSIENT_ENUM_DEF("freeze_rec", k_freeze_rec_opts),   /* Rec: Off / Rec (records a new take) */
+    [VT_P_FREEZE_SAVE] = TRANSIENT_ENUM_DEF("freeze_save", k_freeze_save_opts),
     [VT_P_DEMO]      = TOGGLE_DEF("demo"),
 };
 
@@ -244,6 +247,9 @@ struct vt {
     fx_t fx;                    /* Snap, Morph, Prism, Double, Tape, Scream, HardTune */
     vox_t vox;                  /* Dalek, Harmony, Walkie */
     freeze_t freeze;            /* 16 s punch-in looper on the input */
+    loopsave_t ls;              /* Looper Save: one loop period of the output, written to a WAV by the worker (loopsave.h) */
+    int   save_asked;           /* the Save control's last value */
+    int   save_hold;            /* samples left of showing Saved / Failed on the knob */
     demo_t demo;                /* built-in sung phrase */
     vfx_t vfx;                  /* Voice FX: the formant engine of the second personality */
     groove_t groove;            /* Voice FX's audition source: what Demo plays there instead of the sung phrase */
@@ -372,6 +378,7 @@ vt_t *dsp_init(int sample_rate)
     imogen_init(&vt->imogen, (float)vt->sample_rate);
     fx_init(&vt->fx, (float)vt->sample_rate);
     freeze_init(&vt->freeze, (float)vt->sample_rate);
+    loopsave_init(&vt->ls, vt->sample_rate);
     demo_init(&vt->demo, (float)vt->sample_rate);
     vfx_init(&vt->vfx, (float)vt->sample_rate);
     groove_init(&vt->groove, (float)vt->sample_rate);
@@ -433,6 +440,11 @@ int dsp_set_mg_bank(vt_t *vt, struct rsbank *bank)
     rsbank_t *none = NULL;
     if (!vt || !bank) return -1;
     return atomic_compare_exchange_strong_explicit(&vt->mg_bank, &none, bank, memory_order_release, memory_order_relaxed) ? 0 : -1;
+}
+
+struct loopsave *dsp_loopsave(vt_t *vt)
+{
+    return vt ? &vt->ls : NULL;
 }
 
 struct rsbank *dsp_swap_rs_bank(vt_t *vt, struct rsbank *bank)
@@ -1769,6 +1781,21 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
     const float gain = (vf || rs || mg) ? 1.0f : powf(10.0f, vt->p[VT_P_GAIN] / 20.0f);
     const float sw_goal = mode == want_mode ? 1.0f : 0.0f;
     const int freeze_rec = (int)vt->p[VT_P_FREEZE_REC], freeze_loop = (int)vt->p[VT_P_FREEZE];   /* Rec, Loop (freeze.h) */
+    {   /* Looper Save: turned to Save it waits for the loop's start and keeps one period of the output (loopsave.h) */
+        const int sv = (int)vt->p[VT_P_FREEZE_SAVE];
+        if (sv != vt->save_asked) {
+            vt->save_asked = sv;
+            if (sv == 1) { vt->save_hold = 0; loopsave_arm(&vt->ls, !freeze_looping(&vt->freeze)); }
+            else if (sv == 0) loopsave_cancel(&vt->ls);
+        }
+    }
+    int ls_state = loopsave_state(&vt->ls);
+    int ls_bars = 0;
+    {   /* what the capture would be called: whole bars at the host tempo, else seconds */
+        const float bar_n = 240.0f / vt->bpm * sr;
+        const float r = (float)(vt->freeze.loop_len - vt->freeze.xf) / bar_n;
+        if (vt->freeze.loop_len > 0 && r >= 0.98f && fabsf(r - roundf(r)) * bar_n < 4.0f) ls_bars = (int)roundf(r);   /* a bar take is exact to the sample; a Free take that is near a bar by chance is named in seconds */
+    }
     {   /* Freeze Len: bars at the host tempo (4 beats a bar), 0 = free punch-out */
         const int bars = k_freeze_bars[(int)vt->p[VT_P_FREEZE_LEN]];
         freeze_set_target(&vt->freeze, bars ? (int)((float)bars * (240.0f / vt->bpm) * sr) : 0);
@@ -1926,6 +1953,10 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
             in_l = vt->hp_y[0];
             in_r = vt->hp_y[1];
         }
+        if (ls_state == LS_ARMED && freeze_looping(&vt->freeze) && vt->freeze.pos == 0 && vt->freeze.mix > 0.999f) {
+            loopsave_begin(&vt->ls, vt->freeze.loop_len - vt->freeze.xf, vt->freeze.loop_len, ls_bars, (int)lroundf(vt->bpm * 10.0f));
+            ls_state = loopsave_state(&vt->ls);          /* the loop is at its start: this sample is the first */
+        }
         float fmix;
         float loop = freeze_process(&vt->freeze, 0.5f * (in_l + in_r), freeze_rec, freeze_loop, &fmix);
         if (fmix > 0.0f) {
@@ -2048,6 +2079,10 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         if (vt->sg_ms < vt->dg_in_min) vt->dg_in_min = vt->sg_ms;     /* ... falls at once */
         lr[2 * i]     = soft_limit(out_l * gain);
         lr[2 * i + 1] = soft_limit(out_r * gain);
+        if (ls_state == LS_CAPTURING) {
+            loopsave_feed(&vt->ls, lr[2 * i], lr[2 * i + 1]);
+            if (vt->ls.n >= vt->ls.want) ls_state = LS_READY;
+        }
     }
     {   /* diag: holds decay over ~1 s, gate-open share averaged over ~1 s */
         const float k = 1.0f - expf(-(float)frames / sr);
@@ -2058,6 +2093,24 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         vt->dg_in_min += (vt->sg_ms - vt->dg_in_min) * k;            /* rises slowly ... */
         if (vt->dg_in_pk < 1e-20f) vt->dg_in_pk = 0.0f;
         if (vt->dg_out_pk < 1e-20f) vt->dg_out_pk = 0.0f;
+    }
+    if (ls_state == LS_ARMED || ls_state == LS_CAPTURING) {      /* the loop stopped, or a new take replaced it: nothing to keep */
+        if (!freeze_looping(&vt->freeze) || vt->freeze.done || (ls_state == LS_CAPTURING && vt->freeze.loop_len != vt->ls.loop_len))
+            loopsave_abort(&vt->ls, LS_WHY_CHANGED);
+    }
+    {   /* a finished save shows on the knob for 2 s: Saved or Failed, then Off */
+        const int res = loopsave_result(&vt->ls);
+        if (res) {
+            vt->p[VT_P_FREEZE_SAVE] = res == 1 ? 2.0f : 3.0f;
+            vt->save_asked = (int)vt->p[VT_P_FREEZE_SAVE];
+            vt->save_hold = 2 * (int)sr;
+        } else if (vt->save_hold > 0) {
+            vt->save_hold -= frames;
+            if (vt->save_hold <= 0) {
+                vt->save_hold = 0;
+                if ((int)vt->p[VT_P_FREEZE_SAVE] >= 2) { vt->p[VT_P_FREEZE_SAVE] = 0.0f; vt->save_asked = 0; }
+            }
+        }
     }
     if (freeze_take_done(&vt->freeze)) {           /* a take was kept and plays: the knobs follow (Rec back to Off, Loop On) */
         vt->p[VT_P_FREEZE_REC] = 0.0f;

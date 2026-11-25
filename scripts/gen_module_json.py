@@ -131,6 +131,7 @@ PARAMS += HM + HM_EXTRA + MG + [
     # performance toggles (not saved in "state")
     enum("freeze", "Loop", ["Off", "On"], 0),                  # Freeze (src/dsp/freeze.h): play the kept take; never records
     enum("freeze_rec", "Rec", ["Off", "Rec"], 0),              # record a new take (the old loop is kept until it completes); never plays
+    enum("freeze_save", "Save", ["Off", "Save", "Saved", "Failed"], 0),   # write the processed loop to a WAV (src/dsp/loopsave.h); the DSP shows Saved / Failed for 2 s
     enum("demo", "Demo", ["Off", "On"], 0),
 ]
 
@@ -142,8 +143,8 @@ def readout(key, name, lo, hi, step, unit):
     r["access"] = "read"
     return r
 
-# Freeze's own page, the same on the Vocoder and Resynth: Rec, Loop, Length.
-LOOPER = ["freeze_rec", "freeze", "freeze_len"]
+# Freeze's own page, the same on the Vocoder and Resynth: Rec, Loop, Length, Save.
+LOOPER = ["freeze_rec", "freeze", "freeze_len", "freeze_save"]
 
 READOUTS = [
     readout("pitch", "Pitch", 0, 2000, 0.1, "Hz"),
@@ -155,9 +156,10 @@ for role, r in zip(["a", "b", "c"], READOUTS):
 
 # The Freeze banner spans the Looper page's three knobs (Rec, Loop, Length): their values when idle; ARMED / REC n/N
 # / LOOP n/N (the bar it is on) when busy. The knobs under it still turn; their values show in the header while touched.
+# loop_status (Looper Save's result) rides on the first one: the Remote UI only sees keys a widget names (the manager pumps viz.extra_keys).
 for role, k in zip(["a", "b", "c"], LOOPER):
     p = next(x for x in PARAMS if x["key"] == k)
-    p["viz"] = {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": role, "extra_keys": ["scope"]}
+    p["viz"] = {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": role, "extra_keys": ["scope", "loop_status"] if role == "a" else ["scope"]}
 
 # Latch (MORE knob 6) draws its own value: On / Off in the modes it acts in
 # (Robot, Chords, Prism, Nightcall, Harmony), a dimmed "---" in the others.
@@ -189,7 +191,7 @@ for k, deps in RS_DEPS.items():
 
 # The Bank page's knob draws the bank's NAME (the list is the engine's own and yours, so it is not a fixed enum): custom:tinyvoice_bank
 # reads the get-only key rs_bank_name.
-next(x for x in PARAMS if x["key"] == "rs_bank")["viz"] = {"kind": "custom:tinyvoice_bank", "group": "bank", "role": "a", "extra_keys": ["rs_bank_name"]}
+next(x for x in PARAMS if x["key"] == "rs_bank")["viz"] = {"kind": "custom:tinyvoice_bank", "group": "bank", "role": "a", "extra_keys": ["rs_bank_name", "rs_bank_info", "bank_status"]}
 
 # Pages. VOICE is the home page (and the root's knobs): Mode, the five
 # contextual knobs, Mix, Level. PITCH: the tuning knobs and the scope on 5-7.

@@ -50,6 +50,7 @@ button:focus-visible,select:focus-visible,.dial:focus-visible{outline:2px solid 
 .bankbar button{background:#14161b;color:#d8dde6;border:1px solid #333944;border-radius:6px;padding:6px 11px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}
 .bankbar button:hover:not(:disabled){border-color:var(--a)}
 .bankbar button:disabled{opacity:.38;cursor:default}
+.lsave{margin-top:8px}.lsave button:disabled{opacity:.5;cursor:default}.lsave .foot{margin-top:6px}
 .bankbar button.danger{color:var(--warn)}
 #bankMsg{flex:1;min-width:160px;color:var(--dim);font-size:12px}
 #bankMsg.bad{color:var(--warn)}
@@ -367,6 +368,34 @@ function chooser(parent, key) {
   upd(m.default | 0);
 }
 
+/* Looper Save: the Move keeps one period of the processed loop (loop_status answers {"rev","ok","msg"}; "freeze_save" starts it).
+ * The knob on the Move's Looper page does the same; here a button and a line of what happened. */
+function loopStatus() {
+  return get("loop_status").then(function (t) { try { return JSON.parse(t); } catch (e) { return null; } }).catch(function () { return null; });
+}
+function loopSaveButton(parent) {
+  var row = el("div", "lsave", parent);
+  var b = el("button", "", row, "Save loop as WAV");
+  b.title = "Keeps one round of the loop, with the effect on it, as a WAV in the Move's sample library (Samples/TinyVoice). Needs a loop playing (Rec, then Loop On).";
+  var msg = el("div", "foot", row, "");
+  b.onclick = function () {
+    b.disabled = true;
+    loopStatus().then(function (s0) {
+      if (!s0) { msg.textContent = "The Move did not answer: update TinyVoice on it to save loops."; b.disabled = false; return; }
+      send("freeze_save", "Save");
+      msg.textContent = "Saving: it starts at the loop's next beginning. The result can take up to ~20 s to show here (the Move's Save knob shows it at once).";
+      var tries = 0;
+      (function poll() {
+        loopStatus().then(function (s) {
+          if (s && s.rev !== s0.rev) { msg.textContent = s.msg.charAt(0).toUpperCase() + s.msg.slice(1) + "."; toast(msg.textContent); b.disabled = false; return; }
+          if (++tries > 140) { msg.textContent = "No answer from the Move yet: look for the file in Samples/TinyVoice."; b.disabled = false; return; }   /* ~70 s: a 16 s loop, the file, and the manager's slow read-back */
+          setTimeout(poll, 500);
+        });
+      })();
+    });
+  };
+}
+
 /* a titled section: its switches first, then its dials (the first dial large when `hero`) */
 function group(parent, title, keys, hero) {
   var sec = el("div", "sec", parent);
@@ -614,6 +643,7 @@ function buildResynth() {
   p = panel(grid, "p-out", "OUTPUT");
   group(p, "", ["hm_autolevel", "hm_dry_wet", "hm_input_gain", "hm_mic_gate", "hm_output_gain"], true);
   group(p, "LOOPER", ["freeze_rec", "freeze", "freeze_len"]);
+  loopSaveButton(p);
   group(p, "AUDITION", ["demo"]);
   el("div", "foot", p, "Dials: drag up/down or scroll (Shift for fine), double-click for the default. Save a sound on the Move (My Presets); it then shows in the preset strip above and on the Move's Presets page.");
   drawWave(); drawFilter(); drawKeys(); applyNA();
@@ -705,6 +735,7 @@ function buildMangler() {
   group(p, "BAND-PASS", ["mg_freq", "mg_width"], true);
   group(p, "", ["mg_mix", "mg_volume", "hm_mic_gate"], true);
   group(p, "LOOPER", ["freeze_rec", "freeze", "freeze_len"]);
+  loopSaveButton(p);
   group(p, "AUDITION", ["demo"]);
   el("div", "foot", p, "Presets: the strip above (Default: ours; Imported: yours). Import loads a .preset file.");
   applyMgNA();
@@ -757,8 +788,9 @@ function buildVocoder() {
   p = panel(grid, "p-util", "SPACE  ·  GATE  ·  FREEZE");
   group(p, "", ["spread", "tone", "gate"], true);
   group(p, "LOOPER", ["freeze_rec", "freeze", "freeze_len"]);
+  loopSaveButton(p);
   group(p, "AUDITION", ["demo"]);
-  el("div", "foot", p, "Looper: Rec records a take of Length (it waits for the next bar when Move is playing, then loops by itself); Loop plays or stops it and never records. Demo plays a built-in sung phrase through every mode in turn (turn Mode to stop on one).");
+  el("div", "foot", p, "Looper: Rec records a take of Length (it waits for the next bar when Move is playing, then loops by itself); Loop plays or stops it and never records. Save keeps one round of the looped sound, effect included, as a WAV in the Move's Samples/TinyVoice. Demo plays a built-in sung phrase through every mode in turn (turn Mode to stop on one).");
 }
 
 /* ---------- Voice FX: Vowel, Character */

@@ -11,7 +11,7 @@ A vocal sound-design box for Ableton Move, as a [Schwung](https://github.com/cha
 - **A Remote UI** with every control of the active engine at once, live both ways with the Move: open Schwung's manager, go to Modules → TinyVoice and press **Open web UI**.
 - **Your own banks** for Resynth and Mangler, managed from the Remote UI: make, rename and delete banks, import presets into one, save the current sound into one, remove a preset. Banks live in `/data/UserData/schwung/tinyvoice-banks/` so reinstalling keeps them, and the Move's **Bank** page only picks. Each engine sees only its own banks.
 - **Import presets from the plugins they are inspired by** (Resynth takes `.baby` files, Mangler `.preset` files). Pick or drop your own files into the Remote UI and they are converted in the browser. None of those presets are included in TinyVoice.
-- **Looper** (was Freeze): separate Rec and Loop on a Looper page, a 16 s take bar-aligned to the transport, on every engine.
+- **Looper** (was Freeze): separate Rec and Loop on a Looper page, a 16 s take bar-aligned to the transport, on every engine. **Save** keeps one round of the looped, processed sound as a 16-bit stereo WAV in the Move's sample library (`Samples/TinyVoice`), named for its bars and tempo (`TinyVoice Loop 001 - 2 bars 120 bpm.wav`): a Save knob on the Looper page, or a button in the Remote UI.
 - **A real sung Demo** (a recorded phrase, credited in [CREDITS.md](CREDITS.md)) that tours each engine.
 - **On-screen help** for all four engines.
 

@@ -136,7 +136,7 @@
             "Demo.",
             "",
             "Looper: Rec, Loop,",
-            "Length.",
+            "Length, Save.",
             "",
             "Each mode keeps its",
             "own five knobs."
@@ -394,6 +394,15 @@
             "the take. It never",
             "records.",
             "",
+            "Save: turn on to",
+            "keep one round of the",
+            "loop, with the effect",
+            "on it, as a WAV in",
+            "Samples/TinyVoice. It",
+            "starts at the loop's",
+            "beginning. Saved",
+            "shows when done.",
+            "",
             "Your loop is safe",
             "until a new take is",
             "finished: turn Rec",
@@ -516,7 +525,8 @@
             "Notes: Duo, Note 1",
             "and 2, Latch, No Pad.",
             "Looper: Rec, Loop,",
-            "Length (as Vocoder).",
+            "Length, Save (as",
+            "Vocoder).",
             "Presets: first page.",
             "Bank: last page."
           ]
@@ -645,7 +655,7 @@
             "Jitter, Volume, Mic",
             "Gate, Latch, Demo.",
             "Looper: Rec, Loop,",
-            "Length.",
+            "Length, Save.",
             "Presets: first page.",
             "Bank: last page."
           ]

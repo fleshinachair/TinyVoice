@@ -12,6 +12,7 @@
 #include "psola.h"
 #include "rsbank.h"
 #include "bankmgr.h"
+#include "loopsave.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -873,9 +874,9 @@ static void test_state_roundtrip(void)
         {"engine", "Synth Voice"}, {"vf_vowel", "0.62"}, {"vf_tract", "0.31"}, {"vf_peak", "0.88"}, {"vf_choir", "0.73"},
         {"vf_breath", "0.44"}, {"vf_attack", "0.57"}, {"vf_release", "0.91"}, {"vf_mix", "0.38"},
     };
-    /* every saved param (not freeze, freeze_rec, demo, the preset index or Resynth's Glitch) off its default: the list
+    /* every saved param (not freeze, freeze_rec, freeze_save, demo, the preset index or Resynth's Glitch) off its default: the list
      * above, then every Resynth param (hm_*) by rule */
-    CHECK(sizeof set / sizeof set[0] + (VT_P_HM_WAVE - VT_P_HM_FIRST + 1) + (VT_P_MG_LAST - VT_P_MG_FIRST + 1) - 1 == VT_P_COUNT - 7);
+    CHECK(sizeof set / sizeof set[0] + (VT_P_HM_WAVE - VT_P_HM_FIRST + 1) + (VT_P_MG_LAST - VT_P_MG_FIRST + 1) - 1 == VT_P_COUNT - 8);
     for (size_t i = 0; i < sizeof set / sizeof set[0]; i++) CHECK(dsp_set_param(a, set[i][0], set[i][1]) == 0);
     for (int id = VT_P_HM_FIRST; id <= VT_P_MG_LAST; id++) {       /* Resynth's, then Mangler's (the Move-side extras between are in the first range) */
         const vt_param_def *d = dsp_param_def(id);
@@ -1236,7 +1237,7 @@ static void test_module_json_matches_params(void)
         { "mode", "char1", "char2", "mod", "char4", "char5", "mix", "gain" },       /* VOICE: Mode, five contextual knobs, Mix, Level */
         { "key", "scale", "retune", "glide", "pitch", "target", "cents" },           /* PITCH: scope on 5-7 */
         { "spread", "tone", "gate", "latch", "beauty", "demo" },                     /* MORE: Spread, Tone, Gate (with Auto), Latch, Beauty, Demo */
-        { "freeze_rec", "freeze", "freeze_len" },                                    /* LOOPER: Rec, Loop, Length (the banner spans them) */
+        { "freeze_rec", "freeze", "freeze_len", "freeze_save" },                           /* LOOPER: Rec, Loop, Length (the banner spans them), Save */
     };
     static const char *const page_names[4] = { "VOICE", "PITCH", "MORE", "LOOPER" };
     const char *levels = js_get(js_get(caps, "ui_hierarchy"), "levels");
@@ -1354,7 +1355,7 @@ static void test_module_json_matches_params(void)
     /* Resynth's pages: the knobs they hold (the rest of its params are on the Remote UI only: web_ui.html) */
     {
         static const char *const rs_lv[7] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_notes", "rs_looper" };
-        static const int rs_n[7] = { 8, 8, 8, 8, 7, 5, 3 };         /* Play: 7 knobs (Mic Gate the 6th); Notes (Duo, Note mode's notes, Latch, No Pad): 5; Looper: Rec, Loop, Length */
+        static const int rs_n[7] = { 8, 8, 8, 8, 7, 5, 4 };         /* Play: 7 knobs (Mic Gate the 6th); Notes (Duo, the notes, Latch, No Pad): 5; Looper: Rec, Loop, Length, Save */
         for (int l = 0; l < 7; l++) {
             const char *knobs = js_get(js_get(levels, rs_lv[l]), "knobs");
             CHECK(knobs && js_arr_len(knobs) == rs_n[l]);
@@ -1372,7 +1373,7 @@ static void test_module_json_matches_params(void)
     }
     {   /* Mangler's pages: Main, More, Filter (every knob a param), Looper (the same three) and its Bank page (the same one) */
         static const char *const mg_lv[4] = { "mangler", "mg_more", "mg_filter", "mg_looper" };
-        static const int mg_n[4] = { 8, 8, 8, 3 };
+        static const int mg_n[4] = { 8, 8, 8, 4 };
         for (int l = 0; l < 4; l++) {
             const char *knobs = js_get(js_get(levels, mg_lv[l]), "knobs");
             CHECK(knobs && js_arr_len(knobs) == mg_n[l]);
@@ -1392,7 +1393,7 @@ static void test_module_json_matches_params(void)
     for (int i = 0; i < VT_P_COUNT; i++) {
         const int hm = i >= VT_P_HM_FIRST && i <= VT_P_HM_WAVE;
         int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET || i == VT_P_RS_PRESET) ? 0 : (i == VT_P_DEMO ? 4 : i == VT_P_LATCH ? 3 : 1);
-        if (i == VT_P_FREEZE || i == VT_P_FREEZE_REC || i == VT_P_FREEZE_LEN) want_pages = 3;   /* the Looper page, on the Vocoder, Resynth and Mangler */
+        if (i == VT_P_FREEZE || i == VT_P_FREEZE_REC || i == VT_P_FREEZE_LEN || i == VT_P_FREEZE_SAVE) want_pages = 3;   /* the Looper page, on the Vocoder, Resynth and Mangler */
         if (i == VT_P_RS_BANK) want_pages = 2;                        /* the Bank page, on Resynth and Mangler */
         if (i == VT_P_HM_VGATE) want_pages = 2;                       /* Mic Gate: Resynth's Play page and Mangler's Filter page */
         if (i == dsp_param_index("hm_transform")) want_pages = 2;     /* Resynth's Main and Synth pages */   /* Demo: the vocoder's More page, Voice FX's Audition and Resynth's Play */   /* `engine` is the host's Mode page, `vf_preset` its preset browser: not knobs */
@@ -4562,6 +4563,7 @@ static void test_snap_space_age(void)
 #include "resynth_tests.inc"
 #include "mangler_tests.inc"
 #include "bankmgr_tests.inc"
+#include "loopsave_tests.inc"
 
 int main(void)
 {
@@ -4699,6 +4701,7 @@ int main(void)
     RUN(test_bank_user_folders);
     RUN(test_bankmgr_ops);
     RUN(test_bankmgr_engines);
+    RUN(test_loopsave);
     RUN(test_demo_recording);
     RUN(test_midi_agnostic_modes);
     RUN(test_latency_budget);

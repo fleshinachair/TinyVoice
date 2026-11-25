@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/stat.h>
 
 #include "audio_fx_api_v2.h"
 
@@ -511,6 +512,45 @@ int main(int argc, char **argv)
         api->get_param(inst, "bank_status", st, sizeof st);
         CHECK(strstr(st, "\"ok\":1") != NULL);
         api->set_param(inst, "rs_bank", "Default");
+    }
+    {   /* Looper Save, on the Move's real sample library: a 1.5 s take, Save, the worker writes the WAV; the file is removed again */
+        char st[512], v[32], name[256] = "", path[600];
+        const struct timespec nap = { 0, 50 * 1000 * 1000 };
+        int nz = 0, bd = 0, got = 0;
+        api->set_param(inst, "engine", "Vocoder");
+        api->set_param(inst, "mode", "Robot");
+        api->set_param(inst, "freeze_len", "Free");
+        run_audio(api, inst, 440.0, 30, &nz, &bd);
+        api->set_param(inst, "freeze_rec", "Rec");
+        run_audio(api, inst, 440.0, 520, &nz, &bd);                 /* ~1.5 s */
+        api->set_param(inst, "freeze_rec", "Off");
+        run_audio(api, inst, 440.0, 20, &nz, &bd);
+        api->get_param(inst, "freeze", v, sizeof v);
+        CHECK(strcmp(v, "On") == 0);
+        api->get_param(inst, "loop_status", st, sizeof st);
+        const char *r0 = strstr(st, "\"rev\":");
+        const int rev0 = r0 ? atoi(r0 + 6) : -1;
+        api->set_param(inst, "freeze_save", "Save");
+        for (int k = 0; k < 200 && !got; k++) {                      /* the capture runs with the audio, the worker in real time */
+            run_audio(api, inst, 440.0, 10, &nz, &bd);
+            nanosleep(&nap, NULL);
+            api->get_param(inst, "loop_status", st, sizeof st);
+            const char *r1 = strstr(st, "\"rev\":");
+            got = r1 && atoi(r1 + 6) != rev0;
+        }
+        printf("  looper save: %s\n", st);
+        CHECK(got && strstr(st, "\"ok\":1") != NULL);
+        const char *sv = strstr(st, "saved ");
+        if (sv && sscanf(sv + 6, "%255[^\"]", name) == 1) {
+            struct stat sb;
+            snprintf(path, sizeof path, "/data/UserData/UserLibrary/Samples/TinyVoice/%s", name);
+            CHECK(stat(path, &sb) == 0 && sb.st_size > 44 + 40000);
+            printf("  %s: %ld bytes\n", path, (long)sb.st_size);
+            remove(path);
+        } else {
+            CHECK(0);
+        }
+        api->set_param(inst, "freeze", "Off");
     }
     api->set_param(inst, "engine", "Vocoder");
     api->set_param(inst, "demo", "Off");
