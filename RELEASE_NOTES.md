@@ -79,7 +79,7 @@ ssh ableton@move.local "tar -C /data/UserData/schwung/modules/audio_fx -xzf - &&
 ssh ableton@move.local "nohup /data/UserData/schwung/restart-move.sh >/dev/null 2>&1 &"
 ```
 
-Then add **TinyVoice** as an audio FX in a slot, after a sound generator such as Line In (the Move's built-in mic works through Line In). The [README](README.md) has the full guide: every mode and knob, setup and gain staging, MIDI, and the DSP budget.
+Then add **TinyVoice** as an audio FX in a slot, after a sound generator such as Line In (the Move's built-in mic works through Line In). The [guide](docs/guide.md) has the full story: every mode and knob, setup and gain staging, MIDI, and the DSP budget.
 
 ## Known limitations
 

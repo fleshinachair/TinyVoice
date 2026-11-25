@@ -446,7 +446,7 @@ int main(int argc, char **argv)
         api->set_param(inst, "rs_bank", "Default");
         api->get_param(inst, "rs_preset_count", cnt, sizeof cnt);
         printf("  Mangler Default bank: %s presets\n", cnt);
-        CHECK(atoi(cnt) == 14);
+        CHECK(atoi(cnt) == 21);
         for (int k = 0; k < atoi(cnt); k++) {
             char idx[16];
             snprintf(idx, sizeof idx, "%d", k);
@@ -480,6 +480,37 @@ int main(int argc, char **argv)
         const double ms = ((t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6) / 500.0;
         printf("  Mangler, 16 voices Formant: %.3f ms per 128-frame block (the block is 2.9 ms; the host allows ~2.3)\n", ms);
         CHECK(!bad && ms < 1.2);
+    }
+    {   /* your own banks, on the Move's real folders: add a preset to a new bank, see it listed, load it, delete the bank */
+        char info[2048], st[256], v[64];
+        const struct timespec nap = { 0, 100 * 1000 * 1000 };
+        int seen = 0;
+        api->set_param(inst, "engine", "Mangler");
+        api->get_param(inst, "bank_status", st, sizeof st);
+        printf("  bank status: %s\n", st);
+        CHECK(strstr(st, "\"rev\":") != NULL);
+        api->set_param(inst, "bank_cmd", "add\nmangler\nzz_smoke\nSmoke One\n{\"name\":\"Smoke One\",\"module\":\"tinyvoice\",\"version\":1,\"state\":{\"engine\":\"Mangler\",\"mg_pitch\":5}}");
+        for (int k = 0; k < 40 && !seen; k++) {
+            nanosleep(&nap, NULL);
+            api->get_param(inst, "rs_bank_info", info, sizeof info);
+            seen = strstr(info, "zz_smoke") != NULL;
+        }
+        CHECK(seen);
+        api->set_param(inst, "rs_bank", "zz_smoke");
+        api->set_param(inst, "rs_preset", "0");
+        api->get_param(inst, "mg_pitch", v, sizeof v);
+        printf("  bank zz_smoke: info %s, mg_pitch %s\n", info, v);
+        CHECK(atof(v) == 5.0);
+        api->set_param(inst, "bank_cmd", "delete\nmangler\nzz_smoke\n");
+        for (int k = 0; k < 40 && seen; k++) {
+            nanosleep(&nap, NULL);
+            api->get_param(inst, "rs_bank_info", info, sizeof info);
+            seen = strstr(info, "zz_smoke") != NULL;
+        }
+        CHECK(!seen);
+        api->get_param(inst, "bank_status", st, sizeof st);
+        CHECK(strstr(st, "\"ok\":1") != NULL);
+        api->set_param(inst, "rs_bank", "Default");
     }
     api->set_param(inst, "engine", "Vocoder");
     api->set_param(inst, "demo", "Off");

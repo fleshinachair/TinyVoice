@@ -558,5 +558,21 @@ check(Object.entries(EXPECT).every(([k2, ex]) => JSON.stringify(T.GATED[k2].acts
     check(r.calls.length === 0 && r.k.runs[0].t === "N/A", "stock: Key in Tape is still N/A");
     stockOn = false;
 }
+// custom:tinyvoice_bank: the Bank page's knob draws the bank's name (up to two lines, clipped, inside the cell)
+{
+    const bd = (name, w = 32) => { const k = ltCtx(w); ov.widgetKinds["custom:tinyvoice_bank"].draw(k, { values: name === undefined ? {} : { rs_bank_name: name }, nowMs: 0 }); return k; };
+    let k = bd("Imported");
+    check(k.runs.length === 2 && k.runs.map((r) => r.t).join("") === "Imported", "bank: a name wider than the cell wraps to two lines");
+    check(k.outOfBounds === 0, "bank: inside the cell");
+    k = bd("Default");
+    check(k.runs.length === 2 && k.runs.map((r) => r.t).join("") === "Default" && bd("Default", 96).runs.length === 1, "bank: wrapped in a narrow cell, one line in a wide one");
+    k = bd("My Vocal Choirs Bank");
+    check(k.runs.length >= 1 && k.runs.length <= 2 && k.outOfBounds === 0, "bank: a long name wraps to two lines at most, inside the cell");
+    k = bd("Supercalifragilisticexpialidocious Name");
+    check(k.runs.length <= 2 && k.outOfBounds === 0, "bank: an unbreakable long name is clipped");
+    k = bd(undefined);
+    check(k.runs.length === 1 && k.runs[0].t === "--", "bank: nothing read yet shows --");
+    check(typeof T.drawBank === "function", "bank: in the test seam");
+}
 console.log(`canvas.js: ${checks} checks, ${failures} failed`);
 process.exit(failures ? 1 : 0);

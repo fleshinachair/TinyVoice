@@ -32,7 +32,7 @@ static const char *const VT_CHAIN_PARAMS_PARTS[] = {
     ",{\"key\":\"vf_release\",\"name\":\"Release\",\"type\":\"float\",\"min\":0,\"max\":1,\"step\":0.01,\"unit\":\"%\",\"default\":0.3}",
     ",{\"key\":\"vf_mix\",\"name\":\"Mix/Drv\",\"type\":\"float\",\"min\":0,\"max\":1,\"step\":0.01,\"unit\":\"%\",\"default\":0.75}",
     ",{\"key\":\"vf_preset\",\"name\":\"Preset\",\"type\":\"float\",\"min\":0,\"max\":5,\"step\":1,\"default\":5}",
-    ",{\"key\":\"rs_bank\",\"name\":\"Bank\",\"type\":\"enum\",\"options\":[\"Default\",\"Imported\",\"Tuner\",\"Voco\",\"Harmony\",\"Synth\",\"Dryish\",\"Instrument\",\"Artists\",\"Mine\"],\"default\":0}",
+    ",{\"key\":\"rs_bank\",\"name\":\"Bank\",\"type\":\"float\",\"min\":0,\"max\":25,\"step\":1,\"default\":0,\"viz\":{\"kind\":\"custom:tinyvoice_bank\",\"group\":\"bank\",\"role\":\"a\",\"extra_keys\":[\"rs_bank_name\"]}}",
     ",{\"key\":\"rs_preset\",\"name\":\"Preset\",\"type\":\"float\",\"min\":0,\"max\":1023,\"step\":1,\"default\":0}",
     ",{\"key\":\"hm_pitch_mono\",\"name\":\"Note\",\"type\":\"float\",\"min\":24,\"max\":96,\"step\":1,\"default\":60,\"viz\":{\"kind\":\"custom:tinyvoice_rsna\",\"group\":\"hm_pitch_mono\",\"role\":\"a\",\"extra_keys\":[\"hm_tuning_mode\"]}}",
     ",{\"key\":\"hm_pitch_duo\",\"name\":\"Duo Note\",\"type\":\"float\",\"min\":24,\"max\":96,\"step\":1,\"default\":67,\"viz\":{\"kind\":\"custom:tinyvoice_rsna\",\"group\":\"hm_pitch_duo\",\"role\":\"a\",\"extra_keys\":[\"hm_tuning_mode\",\"hm_tuning_duophonic\"]}}",

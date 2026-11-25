@@ -73,7 +73,7 @@ PARAMS = [
     flt("vf_release", "Release", 0, 1, 0.01, 0.3, "%"),     # tail
     flt("vf_mix", "Mix/Drv", 0, 1, 0.01, 0.75, "%"),        # wet/dry up to 70 %, then all wet with the drive climbing
     flt("vf_preset", "Preset", 0, 5, 1, 5),                 # the Voice FX bank (presets.c); the host's preset browser writes it
-    enum("rs_bank", "Bank", ["Default", "Imported", "Tuner", "Voco", "Harmony", "Synth", "Dryish", "Instrument", "Artists", "Mine"], 0),    # which bank the Presets page lists: the shipped presets, all of yours, or yours by kind (rsbank.h RSBANK_NAMES, same order)
+    flt("rs_bank", "Bank", 0, 25, 1, 0),                    # which bank the Presets page lists: the engine's list (Resynth: Default, Imported, the kinds; Mangler: Default, Imported), then yours; the DSP clamps to the list, the Bank page draws its name (canvas.js)
     flt("rs_preset", "Preset", 0, 1023, 1, 0),              # the Resynth bank (rsbank.c: the preset folder's Resynth presets); its browser writes it
 ] + []   # the Resynth block is appended below (it is read from src/dsp/hm_params.h)
 
@@ -98,11 +98,11 @@ HM_EXTRA = [
     flt("hm_mask", "Notes", 0, 4095, 1, 2741),                                  # tuning_auto_notes, bit pc (2741 = C major)
     enum("hm_scale_hold", "Hold Scale", ["Off", "On"], 1),                      # On: a preset keeps your Key / Scale / Notes (set and forget)
     enum("hm_autolevel", "Auto Level", ["Off", "On"], 1),                       # On: the output leveller holds every preset at one loudness
-    enum("hm_midi_idle", "No Pad", ["Tune", "Silent"], 0),                      # MIDI mode with no pad held: keep tuning to the scale, or go silent (Humanoid)
+    enum("hm_midi_idle", "No Pad", ["Tune", "Silent"], 0),                      # MIDI mode with no pad held: keep tuning to the scale, or go silent (the reference)
     flt("hm_mic_gate", "Mic Gate", -72, -24, 1, -42, "dB"),                    # the voice gate on the raw input (Resynth runs Auto): lower for a quiet voice
     enum("hm_wave", "Wave", ["Saw", "Square", "Triangle", "Sine", "Preset"], 0),  # Preset = the wavetable a preset carried (hm_wt)
 ]
-# ---- Mangler (src/dsp/mangle.c, modelled on PitchMonster): its controls in PitchMonster's units.
+# ---- Mangler (src/dsp/mangle.c, modelled on the reference): its controls in the reference's units.
 OFFON = ["Off", "On"]
 MG = [
     enum("mg_shift", "Shifter", ["Granular", "Formant", "Vocode"], 0),     # the core: grains / PSOLA with formants / a monotone at an absolute note
@@ -187,6 +187,10 @@ RS_DEPS = {
 for k, deps in RS_DEPS.items():
     next(x for x in PARAMS if x["key"] == k)["viz"] = {"kind": "custom:tinyvoice_rsna", "group": k, "role": "a", "extra_keys": deps}
 
+# The Bank page's knob draws the bank's NAME (the list is the engine's own and yours, so it is not a fixed enum): custom:tinyvoice_bank
+# reads the get-only key rs_bank_name.
+next(x for x in PARAMS if x["key"] == "rs_bank")["viz"] = {"kind": "custom:tinyvoice_bank", "group": "bank", "role": "a", "extra_keys": ["rs_bank_name"]}
+
 # Pages. VOICE is the home page (and the root's knobs): Mode, the five
 # contextual knobs, Mix, Level. PITCH: the tuning knobs and the scope on 5-7.
 # MORE: Spread, Tone, Gate, Latch / Beauty, Demo. Freeze has a page of its own (LOOPER, above; it sat on MORE
@@ -232,7 +236,7 @@ out = []
 a = out.append
 a("{")
 for k, v in [("id", "tinyvoice"), ("name", "TinyVoice"), ("abbrev", "TVO"), ("version", "1.0.1"),
-             ("description", "Four engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Synth Voice (a one-page talking formant filter with presets) Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports Humanoid presets) and Mangler (a multi-voice pitch and formant shifter: unison, spread, chords from the pads, a filter)"),
+             ("description", "Four engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Synth Voice (a one-page talking formant filter with presets) Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports the reference presets) and Mangler (a multi-voice pitch and formant shifter: unison, spread, chords from the pads, a filter)"),
              ("author", "Mat Taylor"), ("dsp", "tinyvoice.so"), ("api_version", 2), ("component_type", "audio_fx")]:
     a("    %s: %s," % (json.dumps(k), json.dumps(v)))
 a('    "capabilities": {')

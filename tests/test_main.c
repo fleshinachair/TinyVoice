@@ -10,6 +10,8 @@
 #include "modes.h"
 #include "demo.h"
 #include "psola.h"
+#include "rsbank.h"
+#include "bankmgr.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -1158,8 +1160,8 @@ static void test_module_json_matches_params(void)
             const char *o = js_elem(cp, i);
             if (o && js_get(o, "viz")) declared++;
         }
-        CHECK(declared == 12 + 17);                              /* the scope's 3, Freeze banner's 3 (Rec, Loop, Length), Latch's 1, Key/Scale/Retune/Glide/Beauty 5;
-                                                                    Resynth's N/A knobs 17 (custom:tinyvoice_rsna: tests/canvas_test.mjs) */
+        CHECK(declared == 12 + 18);                              /* the scope's 3, Freeze banner's 3 (Rec, Loop, Length), Latch's 1, Key/Scale/Retune/Glide/Beauty 5;
+                                                                    Resynth's N/A knobs 17 (custom:tinyvoice_rsna: tests/canvas_test.mjs), the Bank page's knob 1 (custom:tinyvoice_bank) */
         /* Nothing disappears: no param is conditionally hidden. Gate holds
          * Auto as its lowest setting, then -60..0 dB. */
         for (int i = 0; i < js_arr_len(cp); i++) CHECK(js_get(js_elem(cp, i), "visible_if") == NULL);
@@ -1217,8 +1219,10 @@ static void test_module_json_matches_params(void)
             CHECK(dsp_get_param(vt, d->key, got, sizeof got) > 0 && fabs(atof(got) - d->min) < 1e-6);
             snprintf(in, sizeof in, "%g", (double)d->max + 1000.0);
             dsp_set_param(vt, d->key, in);
-            /* rs_preset's range is the bank's (count_param), loaded at run time: none here, so it stays 0 */
-            CHECK(dsp_get_param(vt, d->key, got, sizeof got) > 0 && fabs(atof(got) - (i == VT_P_RS_PRESET ? 0.0 : d->max)) < 1e-6);
+            /* rs_preset's range is the bank's (count_param), loaded at run time: none here, so it stays 0; rs_bank's is the
+             * engine's list of banks (the ten fixed ones until the lists are in) */
+            CHECK(dsp_get_param(vt, d->key, got, sizeof got) > 0 &&
+                  fabs(atof(got) - (i == VT_P_RS_PRESET ? 0.0 : i == VT_P_RS_BANK ? (double)(RSBANK_BANKS - 1) : d->max)) < 1e-6);
         }
     }
     dsp_cleanup(vt);
@@ -4557,6 +4561,7 @@ static void test_snap_space_age(void)
 #include "voice_tests.inc"
 #include "resynth_tests.inc"
 #include "mangler_tests.inc"
+#include "bankmgr_tests.inc"
 
 int main(void)
 {
@@ -4690,6 +4695,10 @@ int main(void)
     RUN(test_mangler_cpu);
     RUN(test_mangler_bank);
     RUN(test_mangler_demo);
+    RUN(test_bank_names);
+    RUN(test_bank_user_folders);
+    RUN(test_bankmgr_ops);
+    RUN(test_bankmgr_engines);
     RUN(test_demo_recording);
     RUN(test_midi_agnostic_modes);
     RUN(test_latency_budget);

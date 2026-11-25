@@ -2,15 +2,19 @@
  * Schwung audio_fx v2 adapter: maps audio_fx_api_v2_t onto the engine in dsp.h.
  * Headers come from src/host/ (run scripts/fetch_host_headers.sh).
  */
+#define _POSIX_C_SOURCE 200809L
 #include "audio_fx_api_v2.h"
 #include "dsp.h"
 #include "rsbank.h"
+#include "bankmgr.h"
 #include "demo.h"
 
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static const host_api_v1_t *g_host;
 
@@ -22,21 +26,43 @@ typedef struct {
     char dir[512];          /* Imported bank: Schwung's preset folder for this module */
     char voice[512];        /* the Demo's recorded phrase */
     char dflt[512];         /* Default bank: the presets shipped in the module folder */
+    char banks[512];        /* your own banks: one folder per engine, one per bank */
+    bankmgr_t *bm;          /* bank management (bankmgr.h): commands in, banks read and swapped in by the worker */
+    pthread_t worker;
+    int worker_on;
+    atomic_int stop;
 } vt_inst;
 
 #define VT(inst) (((vt_inst *)(inst))->vt)
 
-/* Resynth's preset bank: the folder read (files, allocation) here, off the audio thread, then handed over. */
+/* The preset banks (Resynth's and Mangler's, yours included) are read and kept up to date by the bank worker: it reads them
+ * at once, then every 50 ms runs whatever bank command has come in (bankmgr.c), off the audio thread. */
+static void *bank_worker(void *arg)
+{
+    vt_inst *in = (vt_inst *)arg;
+    const struct timespec nap = { 0, 50 * 1000 * 1000 };
+    while (!atomic_load(&in->stop)) {
+        (void)bankmgr_pump(in->bm);
+        nanosleep(&nap, NULL);
+    }
+    return NULL;
+}
+
+/* The Demo's phrase: read here, off the audio thread, then handed over. */
 static void *bank_loader(void *arg)
 {
     vt_inst *in = (vt_inst *)arg;
-    rsbank_t *b = rsbank_load(in->dflt, in->dir);
-    if (b && dsp_set_rs_bank(in->vt, b) != 0) rsbank_free(b);
-    rsbank_t *m = rsbank_load_engine("mangler", in->dflt, in->dir);   /* the same folders, the presets that run Mangler */
-    if (m && dsp_set_mg_bank(in->vt, m) != 0) rsbank_free(m);
     demo_pcm_t *d = demo_pcm_load(in->voice);                /* the Demo's recorded phrase, if the module ships one */
     if (d && dsp_set_demo_pcm(in->vt, d) != 0) demo_pcm_free(d);
     return NULL;
+}
+
+/* Your own banks: <root>/tinyvoice-banks, outside the module's folder so a reinstall keeps them. */
+static void banks_dir(const char *module_dir, char *out, size_t n)
+{
+    const char *m = module_dir ? strstr(module_dir, "/modules/") : NULL;
+    if (m) snprintf(out, n, "%.*s/tinyvoice-banks", (int)(m - module_dir), module_dir);
+    else snprintf(out, n, "%s", "/data/UserData/schwung/tinyvoice-banks");
 }
 
 /* Schwung's preset folder for this module: <root>/presets/tinyvoice beside <root>/modules/audio_fx/tinyvoice. */
@@ -60,6 +86,10 @@ static void *vt_create_instance(const char *module_dir, const char *config_json)
     preset_dir(module_dir, in->dir, sizeof in->dir);
     snprintf(in->dflt, sizeof in->dflt, "%s/presets", module_dir ? module_dir : "");
     snprintf(in->voice, sizeof in->voice, "%s/demo_voice.raw", module_dir ? module_dir : "");
+    banks_dir(module_dir, in->banks, sizeof in->banks);
+    atomic_init(&in->stop, 0);
+    in->bm = bankmgr_create(in->vt, in->dflt, in->dir, in->banks);
+    in->worker_on = in->bm && pthread_create(&in->worker, NULL, bank_worker, in) == 0;
     in->loader_on = pthread_create(&in->loader, NULL, bank_loader, in) == 0;
     return in;
 }
@@ -68,7 +98,10 @@ static void vt_destroy_instance(void *inst)
 {
     vt_inst *in = (vt_inst *)inst;
     if (!in) return;
+    atomic_store(&in->stop, 1);
+    if (in->worker_on) pthread_join(in->worker, NULL);   /* within one nap */
     if (in->loader_on) pthread_join(in->loader, NULL);   /* it is done in well under a second */
+    bankmgr_destroy(in->bm);
     dsp_cleanup(in->vt);
     free(in);
 }
@@ -92,6 +125,8 @@ static void vt_process_block(void *inst, int16_t *audio_inout, int frames)
 
 static void vt_set_param(void *inst, const char *key, const char *val)
 {
+    /* a bank command (new, rename, delete, add, save, remove): queued for the bank worker (bankmgr.h) */
+    if (strcmp(key, "bank_cmd") == 0) { if (((vt_inst *)inst)->bm) (void)bankmgr_submit(((vt_inst *)inst)->bm, val); return; }
     /* "state" (full snapshot restore for presets/sets) is handled by the engine. */
     (void)dsp_set_param(VT(inst), key, val);
 }
@@ -100,6 +135,10 @@ static int vt_get_param(void *inst, const char *key, char *buf, int buf_len)
 {
     /* chain_params / ui_hierarchy come from module.json; "state" is the full
      * 16-param snapshot used for autosave and presets. */
+    if (strcmp(key, "bank_status") == 0 && ((vt_inst *)inst)->bm && buf && buf_len > 0) {   /* {"rev","ok","msg"} of the last bank command */
+        bankmgr_status(((vt_inst *)inst)->bm, buf, buf_len);
+        return (int)strlen(buf);
+    }
     return dsp_get_param(VT(inst), key, buf, buf_len);
 }
 

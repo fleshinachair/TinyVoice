@@ -154,7 +154,7 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     [VT_P_VF_RELEASE] = FLOAT_DEF("vf_release", 0.0f, 1.0f,   0.3f),
     [VT_P_VF_MIX]    = FLOAT_DEF("vf_mix",     0.0f,  1.0f,   0.75f),
     [VT_P_VF_PRESET] = {"vf_preset", VT_PTYPE_FLOAT, 0, 5, 5, NULL, 0, 1},    /* 0..5 = the bank; transient; 5 = Vowel Morph Solo */
-    [VT_P_RS_BANK]   = TRANSIENT_ENUM_DEF("rs_bank", k_rs_bank_opts),     /* which bank the Presets page lists */
+    [VT_P_RS_BANK]   = {"rs_bank", VT_PTYPE_FLOAT, 0, RSBANK_SLOTS - 1, 0, NULL, 0, 1},   /* which bank the Presets page lists: the engine's list, then yours */
     [VT_P_RS_PRESET] = {"rs_preset", VT_PTYPE_FLOAT, 0, RSBANK_MAX - 1, 0, NULL, 0, 1},   /* the Resynth bank (rsbank.c); transient */
     HM_PARAM_LIST(VT_X_HM)
     [VT_P_HM_KEY]    = ENUM_DEF("hm_key",   k_root_opts,     0),
@@ -162,10 +162,10 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     [VT_P_HM_MASK]   = FLOAT_DEF("hm_mask",  0.0f, 4095.0f, 2741.0f),  /* C major */
     [VT_P_HM_HOLD]   = ENUM_DEF("hm_scale_hold", k_onoff_opts, 1),     /* On: a preset keeps Key / Scale / Notes */
     [VT_P_HM_LEVEL]  = ENUM_DEF("hm_autolevel", k_onoff_opts, 1),      /* On: the output leveller */
-    [VT_P_HM_IDLE]   = ENUM_DEF("hm_midi_idle", k_hm_idle_opts, 0),    /* MIDI mode, no pad: Tune to the scale / Silent (Humanoid) */
+    [VT_P_HM_IDLE]   = ENUM_DEF("hm_midi_idle", k_hm_idle_opts, 0),    /* MIDI mode, no pad: Tune to the scale / Silent (the reference) */
     [VT_P_HM_VGATE]  = FLOAT_DEF("hm_mic_gate", -72.0f, -24.0f, -42.0f), /* the voice gate in Resynth, dBFS RMS of the raw input */
     [VT_P_HM_WAVE]   = ENUM_DEF("hm_wave",  k_hm_wave_opts,  0),       /* Saw */
-    /* Mangler (PitchMonster's units; defaults are PitchMonster's own plain-voice start) */
+    /* Mangler (the reference's units; defaults are the reference's own plain-voice start) */
     [VT_P_MG_SHIFT]   = ENUM_DEF("mg_shift",   k_mg_shift_opts,  MG_GRANULAR),
     [VT_P_MG_PITCH]   = FLOAT_DEF("mg_pitch",   -48.0f, 24.0f,   0.0f),
     [VT_P_MG_FORMANT] = FLOAT_DEF("mg_formant", -24.0f, 24.0f,   0.0f),
@@ -248,7 +248,7 @@ struct vt {
     vfx_t vfx;                  /* Voice FX: the formant engine of the second personality */
     groove_t groove;            /* Voice FX's audition source: what Demo plays there instead of the sung phrase */
     hm_t hm;                    /* Resynth: the third personality (harmonic analysis / resynthesis) */
-    mg_t mg;                    /* Mangler: the fourth (multi-voice pitch / formant shifter, modelled on PitchMonster) */
+    mg_t mg;                    /* Mangler: the fourth (multi-voice pitch / formant shifter, modelled on the reference) */
     int   mg_fold;              /* Mangler Pads: octaves (x12 st) the held pads are moved by, to sit near C4 */
     int   demo_mg_snap, demo_mg_step;       /* Mangler's Demo: a snapshot is held / the step last loaded */
     float demo_mg_p[VT_P_MG_LAST - VT_P_MG_FIRST + 1];
@@ -256,7 +256,7 @@ struct vt {
     _Atomic(rsbank_t *) mg_bank;  /* Mangler's presets (dsp_set_mg_bank) */
     float hm_wt[VT_HM_WT_N];    /* the cycle a preset carried (hm_wt), used when Wave is Preset */
     int   hm_wt_valid;
-    int   hm_wt_len;            /* the Humanoid table's own length before padding (the ":<len>" suffix), 0 = a full cycle */
+    int   hm_wt_len;            /* the the reference table's own length before padding (the ":<len>" suffix), 0 = a full cycle */
     char  hm_wt_str[VT_HM_WT_STR];   /* as received, for "state" */
     int   hm_wave_set;          /* the wave the engine holds (-1 = none yet) */
     int   hm_wt_gen;            /* bumped when hm_wt changes */
@@ -271,6 +271,13 @@ struct vt {
      * bank has arrived the index is pointed back at that name, nothing loaded (the knobs came from the state). */
     char  rs_name[RSBANK_NAME];
     int   rs_find;                  /* rs_name is to be looked up in the bank (after a restore) */
+    char  rs_bank_cur[RSBANK_NAME]; /* the name of the bank the Presets page is on (kept by rs_set_bank) */
+    char  rs_bank_want[RSBANK_NAME];/* a bank to look up by name when a list is there (a restore; a list that changed; an engine switch) */
+    _Atomic unsigned bank_gen;      /* bumped when a list is swapped (dsp_swap_*) */
+    _Atomic int ren_state;          /* a rename hint (dsp_bank_renamed): 0 none, 1 being written, 2 ready */
+    int   ren_mg;
+    char  ren_old[RSBANK_NAME], ren_new[RSBANK_NAME];
+    unsigned bank_seen;
     char  demo_rs_name[RSBANK_NAME];
     int   hold_skip;            /* inside a preset load with Hold Scale on: hm_key / hm_scale / hm_mask are left alone */
     int   hm_held[VT_MAX_VOICES], hm_nheld;   /* pads the engine holds (MIDI mode), oldest first */
@@ -376,6 +383,8 @@ vt_t *dsp_init(int sample_rate)
     atomic_init(&vt->rs_bank, NULL);
     atomic_init(&vt->mg_bank, NULL);
     atomic_init(&vt->demo_pcm, NULL);
+    atomic_init(&vt->bank_gen, 0u);
+    atomic_init(&vt->ren_state, 0);
     vt->label_mode = -1;
     vt->run_mode = -1;
     vt->midi_ch = -1;                       /* omni until the host names the slot's channel */
@@ -426,6 +435,33 @@ int dsp_set_mg_bank(vt_t *vt, struct rsbank *bank)
     return atomic_compare_exchange_strong_explicit(&vt->mg_bank, &none, bank, memory_order_release, memory_order_relaxed) ? 0 : -1;
 }
 
+struct rsbank *dsp_swap_rs_bank(vt_t *vt, struct rsbank *bank)
+{
+    if (!vt) return NULL;
+    rsbank_t *old = atomic_exchange_explicit(&vt->rs_bank, bank, memory_order_acq_rel);
+    atomic_fetch_add_explicit(&vt->bank_gen, 1u, memory_order_release);
+    return old;
+}
+
+void dsp_bank_renamed(vt_t *vt, int mangler, const char *old_name, const char *new_name)
+{
+    int none = 0;
+    if (!vt || !old_name || !new_name) return;
+    if (!atomic_compare_exchange_strong_explicit(&vt->ren_state, &none, 1, memory_order_acquire, memory_order_relaxed)) return;
+    vt->ren_mg = mangler != 0;
+    snprintf(vt->ren_old, sizeof vt->ren_old, "%s", old_name);
+    snprintf(vt->ren_new, sizeof vt->ren_new, "%s", new_name);
+    atomic_store_explicit(&vt->ren_state, 2, memory_order_release);
+}
+
+struct rsbank *dsp_swap_mg_bank(vt_t *vt, struct rsbank *bank)
+{
+    if (!vt) return NULL;
+    rsbank_t *old = atomic_exchange_explicit(&vt->mg_bank, bank, memory_order_acq_rel);
+    atomic_fetch_add_explicit(&vt->bank_gen, 1u, memory_order_release);
+    return old;
+}
+
 int dsp_set_demo_pcm(vt_t *vt, struct demo_pcm *pcm)
 {
     demo_pcm_t *none = NULL;
@@ -439,11 +475,29 @@ static const rsbank_t *rs_bank_of(vt_t *vt)
     return atomic_load_explicit((int)vt->p[VT_P_ENGINE] == VT_ENGINE_MANGLER ? &vt->mg_bank : &vt->rs_bank, memory_order_acquire);
 }
 
+static int ieq(const char *a, const char *b);
+
+/* the name of bank bn in this engine's list (before the list is in: the fixed names) */
+static const char *rs_bank_name_at(const rsbank_t *bk, int bn)
+{
+    if (bn < 0 || bn >= RSBANK_SLOTS) return k_rs_bank_opts[0];
+    if (bk) return bn < bk->nbanks ? bk->name[bn] : k_rs_bank_opts[0];
+    return bn < RSBANK_BANKS ? k_rs_bank_opts[bn] : k_rs_bank_opts[0];
+}
+
+/* the Presets page is on bank bn: the index, and its name (what a restore, a changed list and the other engine look it up by) */
+static void rs_set_bank(vt_t *vt, const rsbank_t *bk, int bn)
+{
+    vt->p[VT_P_RS_BANK] = (float)bn;
+    snprintf(vt->rs_bank_cur, sizeof vt->rs_bank_cur, "%s", rs_bank_name_at(bk, bn));
+    vt->rs_bank_want[0] = '\0';          /* (a state applied just now may have named a bank: this is where the page is) */
+}
+
 /* the index of rs_name in bank bn, -1 if it isn't there */
 static int rs_find_name(vt_t *vt, int bn)
 {
     const rsbank_t *bk = rs_bank_of(vt);
-    if (!bk || !vt->rs_name[0] || bn < 0 || bn >= RSBANK_BANKS) return -1;
+    if (!bk || !vt->rs_name[0] || bn < 0 || bn >= RSBANK_SLOTS) return -1;
     for (int i = 0; i < bk->count[bn]; i++)
         if (strcmp(bk->e[bn][i].name, vt->rs_name) == 0) return i;
     return -1;
@@ -452,9 +506,32 @@ static int rs_find_name(vt_t *vt, int bn)
 /* after a restore: point the Presets page at the saved preset once the bank is there (nothing is loaded) */
 static void rs_resolve(vt_t *vt)
 {
-    if (!vt->rs_find || !rs_bank_of(vt)) return;
+    const rsbank_t *bk = rs_bank_of(vt);
+    if (!bk) return;
+    const unsigned g = atomic_load_explicit(&vt->bank_gen, memory_order_acquire);
+    if (g != vt->bank_seen) {                  /* a list was swapped (a bank made, renamed, removed): keep the place by its name */
+        vt->bank_seen = g;
+        if (atomic_load_explicit(&vt->ren_state, memory_order_acquire) == 2) {      /* a rename: the page follows its bank */
+            if (vt->ren_mg == ((int)vt->p[VT_P_ENGINE] == VT_ENGINE_MANGLER) && ieq(vt->rs_bank_cur, vt->ren_old))
+                snprintf(vt->rs_bank_cur, sizeof vt->rs_bank_cur, "%s", vt->ren_new);
+            atomic_store_explicit(&vt->ren_state, 0, memory_order_release);
+        }
+        if (!vt->rs_bank_want[0]) snprintf(vt->rs_bank_want, sizeof vt->rs_bank_want, "%s", vt->rs_bank_cur);
+        vt->rs_find = 1;
+    }
+    if (!vt->rs_find) return;
     vt->rs_find = 0;
-    const int i = rs_find_name(vt, (int)vt->p[VT_P_RS_BANK]);
+    int bn = (int)vt->p[VT_P_RS_BANK];
+    if (vt->rs_bank_want[0]) {                 /* by name: this engine's list may not have it (then Default) */
+        int f = -1;
+        for (int k = 0; k < bk->nbanks && f < 0; k++) if (ieq(bk->name[k], vt->rs_bank_want)) f = k;
+        bn = f >= 0 ? f : 0;
+        vt->rs_bank_want[0] = '\0';
+    } else if (bn < 0 || bn >= bk->nbanks) {
+        bn = 0;
+    }
+    rs_set_bank(vt, bk, bn);
+    const int i = rs_find_name(vt, bn);
     vt->p[VT_P_RS_PRESET] = i >= 0 ? (float)i : 0.0f;
 }
 
@@ -480,7 +557,7 @@ static int b64_val(char c)
 }
 
 /* hm_wt: base64 of VT_HM_WT_N little-endian int16 samples (one cycle), optionally followed by ":<len>", the length
- * of the Humanoid table it was made from (2..4096) before it was zero-padded and resampled: Humanoid plays the
+ * of the the reference table it was made from (2..4096) before it was zero-padded and resampled: the reference plays the
  * harmonics from that length up flat (hm_set_wavetable_len). "" clears it. */
 static int set_hm_wt(vt_t *vt, const char *s, size_t n)
 {
@@ -555,7 +632,7 @@ static void hm_sync(vt_t *vt)
             case 2:  cyc[i] = ph < 0.5f ? -1.0f + 4.0f * ph : 3.0f - 4.0f * ph; break;               /* triangle */
             case 3:  cyc[i] = sinf(6.2831853f * ph); break;                                           /* sine */
             case HM_WAVE_PRESET: cyc[i] = vt->hm_wt_valid ? vt->hm_wt[i] : -1.0f + 2.0f * ph; break;
-            default: cyc[i] = -1.0f + 2.0f * ph; break;                                               /* saw (Humanoid's INIT) */
+            default: cyc[i] = -1.0f + 2.0f * ph; break;                                               /* saw (the reference's INIT) */
             }
         }
         hm_set_wavetable(h, cyc, VT_HM_WT_N);
@@ -801,7 +878,7 @@ static void rs_load(vt_t *vt, const rsbank_t *bk, int bn, int i)
         for (int k = VT_P_MG_FIRST; k <= VT_P_MG_LAST; k++) vt->p[k] = k_params[k].def;
         mg_default_chords(&vt->mg);
         apply_state(vt, bk->e[bn][i].state);
-        vt->p[VT_P_RS_BANK] = (float)bn;
+        rs_set_bank(vt, bk, bn);
         snprintf(vt->rs_name, sizeof vt->rs_name, "%s", bk->e[bn][i].name);
         vt->rs_find = 0;
         return;
@@ -815,7 +892,7 @@ static void rs_load(vt_t *vt, const rsbank_t *bk, int bn, int i)
     vt->hold_skip = hold && !strstr(bk->e[bn][i].state, "\"hm_scale_hold\":\"Off\"");
     apply_state(vt, bk->e[bn][i].state);
     vt->hold_skip = 0;
-    vt->p[VT_P_RS_BANK] = (float)bn;     /* (after the state: a preset saved from My Presets carries an rs_bank / rs_name of its own) */
+    rs_set_bank(vt, bk, bn);             /* (after the state: a preset saved from My Presets carries an rs_bank / rs_name of its own) */
     snprintf(vt->rs_name, sizeof vt->rs_name, "%s", bk->e[bn][i].name);
     vt->rs_find = 0;
 }
@@ -890,7 +967,10 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
     /* The screen shows the tour's values only while it runs: switching Demo or the engine ends that at once, so the
      * very next read of a knob is the user's own. */
     if (id == VT_P_DEMO || id == VT_P_ENGINE) vt->disp_on = 0;
-    if (id == VT_P_ENGINE) vt->rs_find = 1;      /* the Presets page lists the new engine's bank: point it at the preset of that name, if any */
+    if (id == VT_P_ENGINE) {                     /* the Presets page lists the new engine's banks: its place by name (Default if this engine lacks that bank) */
+        vt->rs_find = 1;
+        if (!vt->restoring && !vt->rs_bank_want[0]) snprintf(vt->rs_bank_want, sizeof vt->rs_bank_want, "%s", vt->rs_bank_cur);
+    }
     /* A hand on a knob the tour is turning (the host writes the knob it was turned from the value it was SHOWING, so
      * the player takes over from where the dial was) or on the preset browser: the tour steps aside. Demo goes Off,
      * the value written is the user's, and every other knob is back on the user's own value. A state restore is not
@@ -904,15 +984,18 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
     }
 
     if (id == VT_P_RS_BANK) {     /* a new list starts at the preset you have loaded if it is in it, else at its first (nothing is loaded) */
+        const rsbank_t *bk = rs_bank_of(vt);
+        const int nb = bk ? (bk->nbanks > 0 ? bk->nbanks : 1) : RSBANK_BANKS;
         int b = -1;
-        for (int i = 0; i < d->num_options && b < 0; i++) if (ieq(d->options[i], val)) b = i;
+        for (int i = 0; i < nb && b < 0; i++) if (ieq(rs_bank_name_at(bk, i), val)) b = i;
         if (b < 0) {
             char *end;
             const long idx = strtol(val, &end, 10);
             if (end == val || *end != '\0') return -1;
-            b = idx < 0 ? 0 : idx >= d->num_options ? d->num_options - 1 : (int)idx;
+            b = idx < 0 ? 0 : idx >= nb ? nb - 1 : (int)idx;
         }
-        vt->p[VT_P_RS_BANK] = (float)b;
+        rs_set_bank(vt, bk, b);
+        vt->rs_bank_want[0] = '\0';
         const int i = rs_find_name(vt, b);
         vt->p[VT_P_RS_PRESET] = i >= 0 ? (float)i : 0.0f;
         return 0;
@@ -1010,7 +1093,8 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
             if (mg_chords_format(&vt->mg, cs, sizeof cs) >= 0) n += snprintf(buf + n, (size_t)(buf_len - n), ",\"mg_chords\":\"%s\"", cs);
         }
         if (vt->rs_name[0] && n >= 0 && n < buf_len) {               /* the Presets page's place (rs_resolve) */
-            n += snprintf(buf + n, (size_t)(buf_len - n), ",\"rs_bank\":\"%s\",\"rs_name\":\"", k_rs_bank_opts[(int)vt->p[VT_P_RS_BANK]]);
+            n += snprintf(buf + n, (size_t)(buf_len - n), ",\"rs_bank\":\"%s\",\"rs_name\":\"",
+                          vt->rs_bank_cur[0] ? vt->rs_bank_cur : rs_bank_name_at(rs_bank_of(vt), (int)vt->p[VT_P_RS_BANK]));
             for (const char *c = vt->rs_name; *c && n >= 0 && n < buf_len - 2; c++) {
                 if (*c == '"' || *c == '\\') buf[n++] = '\\';
                 if ((unsigned char)*c >= 0x20) buf[n++] = *c;
@@ -1048,6 +1132,17 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
     } else if (strcmp(key, "vf_preset_name") == 0) {
         const vt_preset *ps = vt_preset_get(VT_ENGINE_VOICEFX, (int)vt->p[VT_P_VF_PRESET]);
         n = snprintf(buf, (size_t)buf_len, "%s", ps ? ps->name : "");
+    } else if (strcmp(key, "rs_bank_name") == 0) {                 /* the Bank page's widget (canvas.js) */
+        n = snprintf(buf, (size_t)buf_len, "%s", rs_bank_name_at(rs_bank_of(vt), (int)vt->p[VT_P_RS_BANK]));
+    } else if (strcmp(key, "rs_bank_info") == 0) {                 /* the Remote UI's bank list: this engine's, yours from first_user */
+        const rsbank_t *bk = rs_bank_of(vt);
+        const int nb = bk ? bk->nbanks : RSBANK_BANKS;
+        n = snprintf(buf, (size_t)buf_len, "{\"banks\":[");
+        for (int i = 0; i < nb && n >= 0 && n < buf_len - 80; i++)
+            n += snprintf(buf + n, (size_t)(buf_len - n), "%s\"%s\"", i ? "," : "", rs_bank_name_at(bk, i));
+        if (n >= 0 && n < buf_len)
+            n += snprintf(buf + n, (size_t)(buf_len - n), "],\"first_user\":%d,\"cur\":%d,\"max\":%d}",
+                          bk ? bk->first_user : RSBANK_BANKS, (int)vt->p[VT_P_RS_BANK], RSBANK_USER_MAX);
     } else if (strcmp(key, "rs_preset_count") == 0) {              /* the Resynth level's preset browser */
         const rsbank_t *bk = rs_bank_of(vt);
         n = snprintf(buf, (size_t)buf_len, "%d", bk ? bk->count[(int)vt->p[VT_P_RS_BANK]] : 0);
@@ -1202,10 +1297,12 @@ static int apply_members(vt_t *vt, const char *json)
                 vt->rs_find = 1;
                 continue;
             }
-            if (strcmp(key, "rs_bank") == 0) {
-                char b[32];
+            if (strcmp(key, "rs_bank") == 0) {                       /* by name: a fixed one now, any (yours too) when the list is in */
+                char b[RSBANK_NAME];
                 const size_t bn = vn < sizeof b ? vn : sizeof b - 1;
                 memcpy(b, vs, bn); b[bn] = '\0';
+                snprintf(vt->rs_bank_want, sizeof vt->rs_bank_want, "%s", b);
+                snprintf(vt->rs_bank_cur, sizeof vt->rs_bank_cur, "%s", b);
                 for (int j = 0; j < RSBANK_BANKS; j++) if (ieq(k_rs_bank_opts[j], b)) vt->p[VT_P_RS_BANK] = (float)j;
                 vt->rs_find = 1;
                 continue;
@@ -1450,7 +1547,7 @@ static inline float headroom(float x)
 }
 
 /* Mangler's pads: the notes held (the Demo's chord, the latched chord or the pads), oldest first, moved by whole octaves
- * together until their mean is in C4's neighbourhood (Move's pads sit high; PitchMonster's notes are offsets from C4). */
+ * together until their mean is in C4's neighbourhood (Move's pads sit high; the reference's notes are offsets from C4). */
 static int mg_pad_list(vt_t *vt, int demo_on, const int *demo_notes, int latched, int out[VT_MAX_VOICES])
 {
     int n = 0;
@@ -1563,7 +1660,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         if (vt->demo_rs_snap && !vt->demo_pinned) {                  /* (pinned: the preset or knob the player stopped on is theirs) */
             memcpy(&vt->p[VT_P_HM_FIRST], vt->demo_rs_p, sizeof vt->demo_rs_p);
             if (vt->demo_rs_wt_valid) set_hm_wt(vt, vt->demo_rs_wt, strlen(vt->demo_rs_wt)); else set_hm_wt(vt, "", 0);
-            vt->p[VT_P_RS_BANK] = (float)vt->demo_rs_bank;
+            rs_set_bank(vt, rs_bank_of(vt), vt->demo_rs_bank);
             vt->p[VT_P_RS_PRESET] = (float)vt->demo_rs_idx;
             memcpy(vt->rs_name, vt->demo_rs_name, sizeof vt->rs_name);
         }
@@ -1571,7 +1668,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         if (vt->demo_mg_snap && !vt->demo_pinned) {
             memcpy(&vt->p[VT_P_MG_FIRST], vt->demo_mg_p, sizeof vt->demo_mg_p);
             mg_chords_parse(&vt->mg, vt->demo_mg_chords);
-            vt->p[VT_P_RS_BANK] = (float)vt->demo_rs_bank;
+            rs_set_bank(vt, rs_bank_of(vt), vt->demo_rs_bank);
             vt->p[VT_P_RS_PRESET] = (float)vt->demo_rs_idx;
             memcpy(vt->rs_name, vt->demo_rs_name, sizeof vt->rs_name);
         }
@@ -1592,7 +1689,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
                 for (int i = 0; i < bk->count[0]; i++)
                     if (strcmp(bk->e[0][i].name, k_rs_demo[step]) == 0) {
                         rs_load(vt, bk, 0, i);
-                        vt->p[VT_P_RS_BANK] = 0.0f;
+                        rs_set_bank(vt, bk, 0);
                         vt->p[VT_P_RS_PRESET] = (float)i;
                         break;
                     }
@@ -1606,7 +1703,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
             if (cnt && step != vt->demo_mg_step) {
                 vt->demo_mg_step = step;
                 rs_load(vt, bk, 0, step);
-                vt->p[VT_P_RS_BANK] = 0.0f;
+                rs_set_bank(vt, bk, 0);
                 vt->p[VT_P_RS_PRESET] = (float)step;
             }
         }
@@ -1644,7 +1741,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
      * own Choir for the stereo chorus: nothing on the pages it hides can leave
      * it in a state its one page cannot show. */
     const int vf = mode == VT_MODE_VOICEFX;
-    /* Resynth runs Humanoid's own front end (Input gain, Gate), Dry/Wet, Widen and Output: TinyVoice's
+    /* Resynth runs the reference's own front end (Input gain, Gate), Dry/Wet, Widen and Output: TinyVoice's
      * Auto, Tone, Spread, Mix and Level stay out of it (its pages do not show them). */
     const int rs = mode == VT_MODE_RESYNTH;
     const int mg = mode == VT_MODE_MANGLER;     /* Mangler: its own Mix and Volume, with the same automatic front end */

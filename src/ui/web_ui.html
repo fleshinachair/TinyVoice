@@ -11,8 +11,8 @@
  * (range, options): floats are dials (drag up/down, Shift for fine, wheel, arrow keys,
  * double-click = default), Off/On params are switches, short option lists are segmented
  * buttons. Values show in real units (Hz, notes, dB) where the engine's mapping is known.
- * The header steps through the Resynth presets on the Move; Import .baby loads a Humanoid
- * preset file straight to it. */
+ * The header steps through the presets of the chosen engine on the Move; Import loads a preset file
+ * (a .baby for Resynth, a .preset for Mangler) straight to it. */
 :root{
   --bg:#0a0b0e; --panel:#15171c; --panel2:#1b1e24; --line:#262a33; --txt:#e4e8ef; --dim:#9aa2b1; --faint:#646c7a;
   --a:#7cc7ff; --cap1:#3a3f4a; --cap2:#1d2027; --warn:#ffb86b;
@@ -44,10 +44,21 @@ button:focus-visible,select:focus-visible,.dial:focus-visible{outline:2px solid 
 .seg.wrap button{border:1px solid #333944!important;border-radius:6px;background:#111317}
 .hide{display:none!important}
 .tabs button{padding:6px 14px;font-size:12px;font-weight:600}
+.bankbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.bankbar .lbl{font-size:10px;letter-spacing:.2em;color:var(--faint);font-weight:700;margin-right:2px}
+.bankbar .gap{width:14px}
+.bankbar button{background:#14161b;color:#d8dde6;border:1px solid #333944;border-radius:6px;padding:6px 11px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.bankbar button:hover:not(:disabled){border-color:var(--a)}
+.bankbar button:disabled{opacity:.38;cursor:default}
+.bankbar button.danger{color:var(--warn)}
+#bankMsg{flex:1;min-width:160px;color:var(--dim);font-size:12px}
+#bankMsg.bad{color:var(--warn)}
 #drop{border:1px dashed #3a404c;border-radius:7px;padding:6px 11px;color:var(--dim);cursor:pointer}
 #drop.over{border-color:var(--a);color:var(--a)}
 .grid{display:grid;gap:12px;grid-template-columns:repeat(3,minmax(0,1fr))}
 @media (max-width:1180px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.col{display:flex;flex-direction:column;gap:12px;min-width:0}
+@media (max-width:1180px){#gridM .col{display:contents}}
 @media (max-width:760px){.grid{grid-template-columns:1fr}.preset .lcd{min-width:0;flex:1}.preset{flex:1 1 100%}}
 .panel{position:relative;background:linear-gradient(180deg,var(--panel2),var(--panel) 120px);border:1px solid var(--line);border-radius:10px;
   padding:12px 14px 12px;box-shadow:0 10px 24px #00000040}
@@ -119,17 +130,29 @@ canvas{width:100%;height:96px;background:linear-gradient(#0b0d11,#07080a);border
   <div class="seg tabs" id="tabs" title="The engine TinyVoice runs">
     <button data-e="Vocoder">Vocoder</button><button data-e="Synth Voice">Synth Voice</button><button data-e="Resynth">Resynth</button><button data-e="Mangler">Mangler</button>
   </div>
-  <select class="bank" id="bankSeg" aria-label="Preset bank" title="Default: presets shipped with TinyVoice. Imported: all of yours (imported Humanoid presets, and anything you saved on the Move), then the same split by kind; Mine: your own saves">
-    <option>Default</option><option>Imported</option><option>Tuner</option><option>Voco</option><option>Harmony</option>
-    <option>Synth</option><option>Dryish</option><option>Instrument</option><option>Artists</option><option>Mine</option>
+  <select class="bank" id="bankSeg" aria-label="Preset bank" title="The banks of this engine: Default (shipped with TinyVoice), Imported (everything you imported or saved in My Presets) and, after those, your own. Each engine has banks of its own.">
+    <option>Default</option><option>Imported</option>
   </select>
   <div class="preset" title="The presets of the chosen bank on the Move">
     <button id="prevP" aria-label="Previous preset">&#9664;</button>
     <div class="lcd"><small id="pIdx">PRESET</small><span id="pName">…</span></div>
     <button id="nextP" aria-label="Next preset">&#9654;</button>
   </div>
-  <label id="drop" title="Drop a .baby preset here, or click to choose one">Import .baby <input type="file" id="file" accept=".baby" multiple hidden></label>
+  <label id="drop" title="Load a preset file straight onto the running engine, without saving it to a bank: .baby for Resynth, .preset for Mangler. (To keep it, use Import into bank.)">Load file <input type="file" id="file" accept=".baby,.preset" multiple hidden></label>
 </header>
+<div class="bankbar hide" id="bankbar">
+  <span class="lbl">BANK</span>
+  <button id="bkNew" title="Make an empty bank of your own for this engine">New</button>
+  <button id="bkRename" title="Rename the bank you are on (your own banks only)">Rename</button>
+  <button id="bkDelete" class="danger" title="Delete the bank you are on and its presets (your own banks only)">Delete</button>
+  <span class="gap"></span>
+  <span class="lbl">PRESETS</span>
+  <button id="bkImport" title="Pick preset files (.baby for Resynth, .preset for Mangler) and keep them in a bank: yours, or a new one">Import into bank…</button>
+  <button id="bkSave" title="Keep the sound you have dialled in as a preset in a bank of yours">Save sound to bank…</button>
+  <button id="bkRemove" class="danger" title="Remove the preset shown from the bank you are on (your own banks only)">Remove preset</button>
+  <span id="bankMsg"></span>
+  <input type="file" id="bkFile" accept=".baby,.preset" multiple hidden>
+</div>
 <div class="grid hide" id="gridV"></div>
 <div class="grid hide" id="gridF"></div>
 <div class="grid hide" id="gridR"></div>
@@ -596,7 +619,7 @@ function buildResynth() {
   drawWave(); drawFilter(); drawKeys(); applyNA();
 }
 
-/* ---------- Mangler: its controls in PitchMonster's units; the chord slots as note names */
+/* ---------- Mangler: its controls in real units; the chord slots as note names */
 /* which Mangler controls do something now (dimmed ones still turn), as on the Move */
 var MG_ACTS = {
   mg_formant: function (g) { return g("mg_shift") !== 0; }, mg_fix: function (g) { return g("mg_shift") !== 0; },
@@ -645,17 +668,21 @@ function sendChords() {
   send("mg_chords", parts.join(";"));
 }
 function buildMangler() {
-  var grid = document.getElementById("gridM"), p;
+  var g0 = document.getElementById("gridM"), p;
+  /* three balanced columns (Shift + Voices, Notes with its eight chord rows, Filter / Output); the narrow layouts
+   * dissolve the columns (display:contents) back into one grid of four panels */
+  var c1 = el("div", "col", g0), c2 = el("div", "col", g0), c3 = el("div", "col", g0), grid = c1;
   p = panel(grid, "p-pitch", "SHIFT");
   group(p, "", ["mg_shift"]);
-  group(p, "PITCH  ·  FORMANT", ["mg_pitch", "mg_formant"], true);
-  group(p, "", ["mg_snap", "mg_fix"]);
-  group(p, "GRAIN  (GRANULAR)", ["mg_grain", "mg_gjitter"], true);
+  group(p, "PITCH  ·  FORMANT  ·  GRAIN", ["mg_pitch", "mg_formant", "mg_grain"], true);
+  group(p, "", ["mg_snap", "mg_fix", "mg_gjitter"]);
   p = panel(grid, "p-synth", "VOICES");
   group(p, "UNISON", ["mg_voices", "mg_detune", "mg_time"], true);
   group(p, "", ["mg_scatter", "mg_smear", "mg_wide"]);
+  grid = c2;
   p = panel(grid, "p-util", "NOTES");
-  group(p, "", ["mg_notes", "mg_chord", "mg_mono", "latch"]);
+  group(p, "", ["mg_notes", "mg_mono", "latch"]);
+  group(p, "", ["mg_chord"]);
   var sec = el("div", "sec", p);
   el("h3", "", sec, "CHORD SLOTS  ·  NOTES");
   var box = el("div", "chords", sec);
@@ -672,13 +699,14 @@ function buildMangler() {
     })(i);
   }
   el("div", "foot", p, "Chord: the slot picked above gives the voices' notes. Pads: the pads you hold (Mono: the newest). Notes are offsets from C4.");
+  grid = c3;
   p = panel(grid, "p-filter", "FILTER  ·  OUTPUT");
   group(p, "", ["mg_filter"]);
   group(p, "BAND-PASS", ["mg_freq", "mg_width"], true);
   group(p, "", ["mg_mix", "mg_volume", "hm_mic_gate"], true);
   group(p, "LOOPER", ["freeze_rec", "freeze", "freeze_len"]);
   group(p, "AUDITION", ["demo"]);
-  el("div", "foot", p, "Modelled on PitchMonster. Presets: the strip above (Default: ours; Imported: converted from your PitchMonster install with scripts/import_pitchmonster.py).");
+  el("div", "foot", p, "Presets: the strip above (Default: ours; Imported: yours). Import loads a .preset file.");
   applyMgNA();
 }
 
@@ -777,27 +805,57 @@ function showEngine() {
   be.textContent = ["VOCODER", "SYNTH VOICE", "RESYNTH", "MANGLER"][e] || "";
   be.style.color = ["#ffb454", "#ff86bf", "#7cc7ff", "#9be28a"][e] || "";
   document.getElementById("bankSeg").classList.toggle("hide", e !== 2 && e !== 3);
-  document.getElementById("drop").classList.toggle("hide", e !== 2);
+  document.getElementById("bankbar").classList.toggle("hide", e !== 2 && e !== 3);
+  document.getElementById("drop").classList.toggle("hide", e !== 2 && e !== 3);
   document.querySelector(".preset").classList.toggle("hide", e === 0);
   if (e !== 0 && R) readPreset();
   drawWave(); drawFilter(); drawVowel();
 }
 
 /* ---------- presets on the Move: Resynth (rs_preset ...) and Voice FX (vf_preset ...) */
-var P = { i: 0, n: 0, name: "", bank: "Default" };
+var P = { i: 0, n: 0, name: "", bank: "Default", bankIdx: 0 };
+var BK = { first: 10, max: 16, n: 2 };      /* this engine's list: where yours start, how many you may have, how many banks */
 function PK() { return (VAL.engine | 0) === 1 ? { idx: "vf_preset", n: "vf_preset_count", name: "vf_preset_name", bank: null } : { idx: "rs_preset", n: "rs_preset_count", name: "rs_preset_name", bank: "rs_bank" }; }
 function get(key) { return R.getParam(KP + key).then(function (v) { return v === undefined || v === null ? "" : String(v); }); }
+function fillBanks(o) {          /* the select: the engine's banks, yours under a heading; rebuilt only when the list changed */
+  var sel = document.getElementById("bankSeg"), key = o.banks.join("|") + "#" + o.first_user;
+  if (sel.getAttribute("data-key") === key) return;
+  sel.setAttribute("data-key", key);
+  sel.textContent = "";
+  var grp = null;
+  o.banks.forEach(function (b, i) {
+    var op = document.createElement("option");
+    op.value = b; op.textContent = b;
+    if (i >= o.first_user) {
+      if (!grp) { grp = document.createElement("optgroup"); grp.label = "Yours"; sel.appendChild(grp); }
+      grp.appendChild(op);
+    } else sel.appendChild(op);
+  });
+}
+function bankButtons() {         /* what can be done on the bank you are on */
+  var mine = P.bankIdx >= BK.first, full = BK.n - BK.first >= BK.max;
+  document.getElementById("bkNew").disabled = full;
+  document.getElementById("bkRename").disabled = !mine;
+  document.getElementById("bkDelete").disabled = !mine;
+  document.getElementById("bkRemove").disabled = !(mine && P.n > 0);
+}
 function showPreset() {
   document.getElementById("bankSeg").value = P.bank;
+  bankButtons();
   document.getElementById("pName").textContent = P.n > 0 ? P.name : (P.name || "no presets");
   document.getElementById("pIdx").textContent = P.n > 0 ? "PRESET " + (P.i + 1) + " / " + P.n : "PRESET";
 }
 function readPreset() {
   var k = PK();
-  return Promise.all([get(k.n), get(k.idx), get(k.name), k.bank ? get(k.bank) : Promise.resolve("")]).then(function (r) {
-    var changed = r[2] !== P.name;
+  return Promise.all([get(k.n), get(k.idx), get(k.name), k.bank ? get("rs_bank_info") : Promise.resolve("")]).then(function (r) {
+    var changed = r[2] !== P.name, info = null;
     P.n = parseInt(r[0], 10) || 0; P.i = parseInt(r[1], 10) || 0; P.name = r[2];
-    if ([].some.call(document.getElementById("bankSeg").options, function (o) { return o.value === r[3]; })) P.bank = r[3];
+    try { info = r[3] ? JSON.parse(r[3]) : null; } catch (e) { info = null; }
+    if (info && info.banks && info.banks.length) {
+      fillBanks(info);
+      BK.first = info.first_user; BK.max = info.max; BK.n = info.banks.length;
+      P.bankIdx = info.cur | 0; P.bank = info.banks[P.bankIdx] || info.banks[0];
+    }
     showPreset();
     return changed;
   }).catch(function () { return false; });
@@ -818,30 +876,38 @@ function refreshAll() {
 }
 
 /* ---------- Import .baby: parse in the browser, send to the Move */
+/* A preset file is either played on the engine (Load file) or collected into SINK, a flat {key: value} state with enums by
+ * name, which is what a bank stores (Import into bank). put() is the one place that tells the two apart. */
+var SINK = null;
+function put(key, v) {
+  var m = META[key];
+  if (SINK) { SINK[key] = (m && m.type === "enum" && typeof v === "number") ? m.options[v] : v; return; }
+  send(key, v);
+  if (CTL[key]) CTL[key].set(typeof v === "string" ? parseVal(key, v) : v);
+}
 function importBaby(text, name) {
   var doc = new DOMParser().parseFromString(text, "application/xml");
-  if (!doc.querySelector("Humanoid")) { toast(name + ": not a Humanoid preset"); return; }
-  send("engine", "Resynth"); VAL.engine = 2; after("engine");
+  if (!doc.querySelector("Humanoid")) { toast(name + ": not a Humanoid preset"); return null; }
+  if (!SINK) { send("engine", "Resynth"); VAL.engine = 2; after("engine"); }
   doc.querySelectorAll("Humanoid > PARAM").forEach(function (p) {
     var id = p.getAttribute("id"), v = p.getAttribute("value"), key = "hm_" + id, m = META[key];
     if (!m || v === null || id === "freeze") return;
     var f = parseFloat(v);
     if (isNaN(f)) return;
-    if (m.type === "enum") { f = Math.max(0, Math.min(m.options.length - 1, Math.round(f))); send(key, f); CTL[key] && CTL[key].set(f); }
-    else { f = Math.max(m.min, Math.min(m.max, f)); send(key, f); CTL[key] && CTL[key].set(f); }
+    if (m.type === "enum") { f = Math.max(0, Math.min(m.options.length - 1, Math.round(f))); put(key, f); }
+    else { f = Math.max(m.min, Math.min(m.max, f)); put(key, f); }
   });
   var tt = doc.querySelector("tuning_tree");
   if (tt) {
     var mode = parseInt(tt.getAttribute("tuning_mode") || "0", 10), duo = parseInt(tt.getAttribute("tuning_duophonic") || "0", 10);
-    send("hm_tuning_mode", mode); CTL.hm_tuning_mode && CTL.hm_tuning_mode.set(mode);
-    send("hm_tuning_duophonic", duo); CTL.hm_tuning_duophonic && CTL.hm_tuning_duophonic.set(duo);
+    put("hm_tuning_mode", mode);
+    put("hm_tuning_duophonic", duo);
     var an = tt.querySelector("tuning_auto_notes");
-    if (an && VAL.hm_scale_hold === 1) toast("Kept your Key / Scale (Hold Scale is on)");
+    if (an && !SINK && VAL.hm_scale_hold === 1) toast("Kept your Key / Scale (Hold Scale is on)");
     else if (an) {
       var mask = 0;
       for (var i = 0; i < 12; i++) if (an.getAttribute("_" + i) === "1") mask |= 1 << i;
-      send("hm_mask", mask); send("hm_scale", "Custom");
-      CTL.hm_mask.set(mask); CTL.hm_scale && CTL.hm_scale.set(3);
+      put("hm_mask", mask); put("hm_scale", "Custom");
     }
   }
   var wt = doc.querySelector("wavetable_tree");
@@ -849,7 +915,7 @@ function importBaby(text, name) {
     var bin = atob(wt.getAttribute("wavetable_base64")), n = bin.length >> 2, n0 = n;
     var dv = new DataView(new ArrayBuffer(n * 4));
     for (var j = 0; j < n * 4; j++) dv.setUint8(j, bin.charCodeAt(j));
-    /* Humanoid plays the table zero-padded to max(256, next power of two) samples as one cycle (measured) */
+    /* the table is played zero-padded to max(256, next power of two) samples as one cycle (measured) */
     var pad = 256; while (pad < n) pad *= 2;
     var src = new Float32Array(pad), peak = 1e-9;
     for (j = 0; j < n; j++) { src[j] = dv.getFloat32(4 * j, true); peak = Math.max(peak, Math.abs(src[j])); }
@@ -861,18 +927,175 @@ function importBaby(text, name) {
       var s = Math.round(Math.max(-1, Math.min(1, v)) * 32767); if (s < 0) s += 65536;
       out += String.fromCharCode(s & 255, s >> 8);
     }
-    /* ":<len>": the table's own length; Humanoid plays the harmonics from there up to the padded length flat */
+    /* ":<len>": the table's own length; the harmonics from there up to the padded length play flat */
     var b64 = btoa(out) + ":" + n0;
-    send("hm_wt", b64); send("hm_wave", "Preset");
-    wtCycle = b64ToCycle(b64); CTL.hm_wave && CTL.hm_wave.set(4);
+    if (SINK) { SINK.hm_wt = b64; SINK.hm_wave = "Preset"; }
+    else { send("hm_wt", b64); send("hm_wave", "Preset"); wtCycle = b64ToCycle(b64); CTL.hm_wave && CTL.hm_wave.set(4); }
   }
+  var nm = name.replace(/\.baby$/i, "");
+  if (SINK) return nm;
   drawWave(); drawFilter(); drawKeys(); applyNA();
-  toast("Loaded " + name.replace(/\.baby$/i, "") + " (save it on the Move: My Presets)");
+  toast("Loaded " + nm + " (keep it: Import into bank, or save it on the Move: My Presets)");
+  return nm;
+}
+/* Import .preset (Mangler): XML <PARAM id value/> in real units + <Chord_n Note_k=".."/>; the same mapping as scripts/import_pitchmonster.py.
+ * [TinyVoice key, file id, kind, default, min, max (or option count)] */
+var PM_MAP = [
+  ["mg_shift", "shiftMode", "enum", 0, 3], ["mg_pitch", "pitch", "num", 0, -48, 24], ["mg_formant", "formantShift", "num", 0, -24, 24],
+  ["mg_voices", "unisonVoices", "int", 1, 1, 8], ["mg_detune", "pitchSpreadAmount", "num", 0, 0, 12], ["mg_time", "timeSpreadAmount", "num", 0, 0, 1000],
+  ["mg_grain", "grainRate", "num", 10, 1, 100], ["mg_mix", "dryWet", "num", 1, 0, 1], ["mg_notes", "noteMode", "enum", 0, 3],
+  ["mg_chord", "selectedChord", "enum", 0, 8], ["mg_mono", "monoMode", "bool", 1], ["mg_fix", "formantFix", "bool", 1],
+  ["mg_snap", "pitchSnapOn", "bool", 1], ["mg_scatter", "pitchScatterOn", "bool", 0], ["mg_smear", "timeScatterOn", "bool", 0],
+  ["mg_wide", "wideModeOn", "bool", 0], ["mg_gjitter", "grainRateJitter", "bool", 1], ["mg_filter", "filterEnable", "bool", 0],
+  ["mg_freq", "filterFreq", "num", 1000, 20, 20000], ["mg_width", "filterBandwidth", "num", 10, 0.1, 10], ["mg_volume", "masterVolume", "num", 0, -24, 12]
+];
+function importPM(text, name) {
+  var doc = new DOMParser().parseFromString(text, "application/xml"), P = {};
+  doc.querySelectorAll("PARAM").forEach(function (e) { var f = parseFloat(e.getAttribute("value")); if (!isNaN(f)) P[e.getAttribute("id")] = f; });
+  if (!doc.querySelector("PARAM") || P.unisonVoices === undefined && P.shiftMode === undefined) { toast(name + ": not a Mangler preset"); return null; }
+  if (!SINK) { send("engine", "Mangler"); VAL.engine = 3; after("engine"); }
+  PM_MAP.forEach(function (m) {
+    var v = P[m[1]] === undefined ? m[3] : P[m[1]];
+    if (m[2] === "bool") v = v > 0.5 ? 1 : 0;
+    else if (m[2] === "enum") v = Math.max(0, Math.min(m[4] - 1, Math.round(v)));
+    else if (m[2] === "int") v = Math.max(m[4], Math.min(m[5], Math.round(v)));
+    else v = Math.max(m[4], Math.min(m[5], v));
+    put(m[0], v);
+  });
+  var slots = [];
+  for (var i = 0; i < 8; i++) {
+    var c = doc.querySelector("Chord_" + i), ns = [];
+    if (c) [].forEach.call(c.attributes, function (a) { if (/^Note_\d+$/.test(a.name)) { var n = parseInt(a.value, 10); if (n >= 0 && n <= 127) ns.push(n); } });
+    slots.push(ns.slice(0, 8).join(","));
+  }
+  var cs = slots.join(";");
+  var md = doc.querySelector("__metadata"), nm = (md && md.getAttribute("name")) || name.replace(/\.preset$/i, "");
+  if (SINK) { SINK.mg_chords = cs; return nm; }
+  send("mg_chords", cs); chordsToText(cs);
+  applyMgNA();
+  toast("Loaded " + nm + " (keep it: Import into bank, or save it on the Move: My Presets)");
+  return nm;
+}
+/* a file's preset as a bank stores it: {engine, name, json} (null if it is not one) */
+function fileToPreset(text, fname) {
+  var pm = /\.preset$/i.test(fname) || (!/\.baby$/i.test(fname) && text.indexOf("<Humanoid") < 0), st, nm;
+  SINK = {};
+  try { nm = pm ? importPM(text, fname) : importBaby(text, fname); st = SINK; } finally { SINK = null; }
+  if (!nm) return null;
+  st.engine = pm ? "Mangler" : "Resynth";
+  return { engine: pm ? "mangler" : "resynth", name: String(nm).replace(/[\u0000-\u001f]/g, " ").trim() || "preset",
+           json: JSON.stringify({ name: nm, module: "tinyvoice", version: 1, state: st }) };
+}
+
+/* ---------- banks: new / rename / delete a bank of yours, import files into one, save the sound to one, remove a preset.
+ * The Move does the file work (bank_cmd in, bank_status out: rev counts its passes); each engine has banks of its own. */
+var FIXED_BANK = /^(default|imported|tuner|voco|harmony|synth|dryish|instrument|artists|mine)$/i;
+function bankNameOk(n) { return /^[A-Za-z0-9 ._()&+'-]{1,40}$/.test(n) && !/^[ .]|[ .]$/.test(n) && !FIXED_BANK.test(n); }
+var BANK_RULE = "A bank name is 1-40 letters, digits, spaces or . _ - ( ) & + ' (and not one of the fixed banks' names).";
+function engineName() { return (VAL.engine | 0) === 3 ? "mangler" : "resynth"; }
+function bankMsg(text, bad) {
+  var m = document.getElementById("bankMsg");
+  m.textContent = text; m.classList.toggle("bad", !!bad);
+  if (text) toast(text);
+}
+function bankStatus() {
+  return get("bank_status").then(function (t) { try { return JSON.parse(t); } catch (e) { return null; } }).catch(function () { return null; });
+}
+/* run commands [[op, bank, name, payload, engine]] one after the other, each when the Move has done the one before */
+function runBank(cmds, done) {
+  var i = 0, okN = 0;
+  bankStatus().then(function (s0) {
+    if (!s0) { bankMsg("The Move did not answer: update TinyVoice on it to use banks.", true); return; }
+    (function next(rev) {
+      if (i >= cmds.length) { bankMsg(cmds.length > 1 ? okN + " of " + cmds.length + " done" : "", false); finish(); return; }
+      var c = cmds[i++];
+      R.setParam(KP + "bank_cmd", c[0] + "\n" + (c[4] || engineName()) + "\n" + c[1] + "\n" + (c[2] || "") + (c[3] !== undefined ? "\n" + c[3] : ""));
+      var tries = 0;
+      (function poll() {
+        bankStatus().then(function (s) {
+          if (s && s.rev !== rev) { if (s.ok) { okN++; if (cmds.length === 1) bankMsg(s.msg, false); next(s.rev); } else { bankMsg(s.msg, true); finish(); } }
+          else if (++tries > 50) { bankMsg("The Move did not answer.", true); finish(); }
+          else setTimeout(poll, 200);
+        });
+      })();
+    })(s0.rev);
+  });
+  function finish() { setTimeout(function () { readPreset().then(refreshAll); }, 150); if (done) done(); }
+}
+function askBank(question, dflt) {
+  var n = prompt(question, dflt);
+  if (n === null) return null;
+  n = n.trim();
+  if (!bankNameOk(n)) { bankMsg(BANK_RULE, true); return null; }
+  return n;
+}
+function cleanName(n) { return String(n).replace(/[^A-Za-z0-9 ._()&+'-]/g, "_").trim().slice(0, 60) || "preset"; }
+function wireBanks() {
+  document.getElementById("bkNew").onclick = function () {
+    var n = askBank("Name for the new bank:", "My Bank");
+    if (n) runBank([["new", n]], function () { R.setParam(KP + "rs_bank", n); });
+  };
+  document.getElementById("bkRename").onclick = function () {
+    if (P.bankIdx < BK.first) return;
+    var n = askBank("New name for the bank " + P.bank + ":", P.bank);
+    if (n && n !== P.bank) runBank([["rename", P.bank, n]]);
+  };
+  document.getElementById("bkDelete").onclick = function () {
+    if (P.bankIdx < BK.first) return;
+    if (confirm("Delete the bank " + P.bank + " and its " + P.n + " preset(s) from the Move? This cannot be undone.")) runBank([["delete", P.bank]]);
+  };
+  document.getElementById("bkRemove").onclick = function () {
+    if (P.bankIdx < BK.first || P.n <= 0) return;
+    if (confirm("Remove " + P.name + " from the bank " + P.bank + "?")) runBank([["remove", P.bank, P.name]]);
+  };
+  document.getElementById("bkSave").onclick = function () {
+    var nm = prompt("Name for this sound:", P.name && P.name !== "no presets" ? P.name : "My sound");
+    if (nm === null) return;
+    nm = cleanName(nm);
+    var bank = P.bankIdx >= BK.first ? P.bank : askBank("Save it into which bank? (a new name makes a new bank)", "My Bank");
+    if (bank) runBank([["save", bank, nm]], function () { R.setParam(KP + "rs_bank", bank); });
+  };
+  var bf = document.getElementById("bkFile");
+  document.getElementById("bkImport").onclick = function () { bf.click(); };
+  bf.onchange = function () {
+    var files = [].slice.call(bf.files), items = [], left = files.length;
+    bf.value = "";
+    if (!left) return;
+    files.forEach(function (f) {
+      var r = new FileReader();
+      r.onload = function () {
+        var it = fileToPreset(String(r.result), f.name);
+        if (it) items.push(it);
+        if (--left === 0) importItems(items, files.length);
+      };
+      r.readAsText(f);
+    });
+  };
+}
+function importItems(items, total) {
+  if (!items.length) { bankMsg("None of the " + total + " file(s) was a preset for Resynth (.baby) or Mangler (.preset).", true); return; }
+  if (items.some(function (it) { return it.json.length > 15000; })) items = items.filter(function (it) { return it.json.length <= 15000; });
+  var bank = askBank("Import " + items.length + " preset(s) into which bank? (a new name makes a new bank)", P.bankIdx >= BK.first ? P.bank : "My Bank");
+  if (!bank) return;
+  var kinds = {}; items.forEach(function (it) { kinds[it.engine] = 1; });
+  var cmds = items.map(function (it) { return ["add", bank, it.name, it.json, it.engine]; });
+  runBank(cmds, function () {
+    var ks = Object.keys(kinds);
+    if (ks.length === 1) {                                   /* show the bank in the engine they are for */
+      var e = ks[0] === "mangler" ? "Mangler" : "Resynth";
+      if (engineName() !== ks[0]) { send("engine", e); VAL.engine = META.engine.options.indexOf(e); after("engine"); }
+      setTimeout(function () { R.setParam(KP + "rs_bank", bank); setTimeout(function () { readPreset().then(refreshAll); }, 200); }, 400);
+    }
+  });
 }
 function readFiles(files) {
   [].forEach.call(files, function (f) {
     var r = new FileReader();
-    r.onload = function () { importBaby(String(r.result), f.name); };
+    r.onload = function () {
+      var t = String(r.result);
+      if (/\.preset$/i.test(f.name) || (!/\.baby$/i.test(f.name) && t.indexOf("<Humanoid") < 0)) importPM(t, f.name);
+      else importBaby(t, f.name);
+    };
     r.readAsText(f);
   });
 }
@@ -909,6 +1132,7 @@ function start(cp) {
     R.setParam(KP + "rs_bank", P.bank);
     setTimeout(readPreset, 150);
   };
+  wireBanks();
   document.getElementById("prevP").onclick = function () { stepPreset(-1); };
   document.getElementById("nextP").onclick = function () { stepPreset(1); };
   [].forEach.call(document.querySelectorAll("#tabs button"), function (b) {

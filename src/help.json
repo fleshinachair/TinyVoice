@@ -595,6 +595,23 @@
           ]
         },
         {
+          "title": "Your banks",
+          "lines": [
+            "Make banks of your",
+            "own in the Remote UI:",
+            "New, Rename, Delete,",
+            "Import into bank,",
+            "Save sound to bank,",
+            "Remove preset.",
+            "Each engine has its",
+            "own banks: Resynth",
+            "never sees Mangler's.",
+            "They follow the fixed",
+            "ones on the Bank",
+            "page: turn to pick."
+          ]
+        },
+        {
           "title": "Remote UI",
           "lines": [
             "Open move.local:7700",
@@ -677,7 +694,7 @@
         {
           "title": "Presets",
           "lines": [
-            "Default: 14 of ours.",
+            "Default: 21 of ours.",
             "Imported: presets",
             "converted on your",
             "computer (the repo's",
@@ -685,6 +702,9 @@
             "script) and sent to",
             "the Move, chord",
             "slots included.",
+            "Your own banks: made",
+            "on the Remote UI, as",
+            "on Resynth.",
             "Demo plays Default",
             "presets, 4 bars each."
           ]

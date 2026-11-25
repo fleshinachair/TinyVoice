@@ -7,15 +7,15 @@
 #define PI_F 3.14159265358979f
 #define TWO_PI_F 6.28318530717959f
 
-/* Output gain of the resynthesis over the input: Humanoid's INIT measures +2.3 dB. */
+/* Output gain of the resynthesis over the input: the reference's INIT measures +2.3 dB. */
 #define HM_MAKEUP 1.303f
 #define HM_LEVEL_CEIL 0.4955f         /* the limiter's ceiling: -6.1 dBFS, the module's headroom ceiling (TINYVOICE_OUTPUT_HEADROOM) */
-#define HM_OUT_CEIL 0.944f            /* Humanoid's output limiter: -0.5 dBFS */
+#define HM_OUT_CEIL 0.944f            /* The reference's output limiter: -0.5 dBFS */
 #define HM_LEVEL_TARGET_MS 0.0200f   /* the leveller's aim: -17 dBFS RMS (sung phrases land ~-17.5, level with Robot) */
 /* Partials stop below this (Hz), whatever the sample rate. */
 #define HM_FMAX 18000.0f
 
-/* The table: src/dsp/hm_params.h (Humanoid's ids, units and ranges; defaults as INIT
+/* The table: src/dsp/hm_params.h (the reference's ids, units and ranges; defaults as INIT
  * except Latency, Lo here for live singing). Order = hm_param. */
 #define HM_X_INFO(id, pid, label, kind, def, lo, hi, step, unit, ...) {pid, (float)(def), (float)(lo), (float)(hi)},
 static const hm_param_info k_par[HM_NPARAM] = { HM_PARAM_LIST(HM_X_INFO) };
@@ -105,7 +105,7 @@ void hm_init(hm_t *h, float sample_rate)
     memset(h, 0, sizeof(*h));
     h->sr = sample_rate;
     h->fold_note[0] = h->fold_note[1] = -1;
-    h->lv_g = 1.0f; h->lv_lim = 1.0f;  /* autolevel is off here (the A/B tools compare with Humanoid untouched); the module turns it on */
+    h->lv_g = 1.0f; h->lv_lim = 1.0f;  /* autolevel is off here (the A/B tools compare with the reference untouched); the module turns it on */
     fft_init(&h->fft, HM_NFFT);
     for (int i = 0; i < HM_NPARAM; i++) h->p[i] = k_par[i].def;
     h->mask = 0xAB5;                  /* C major, as INIT */
@@ -167,7 +167,7 @@ void hm_set_wavetable(hm_t *h, const float *cycle, int n)
 {
     if (!cycle || n < 2) return;
     if (n > HM_WT_SRC) n = HM_WT_SRC;
-    /* Humanoid plays a table zero-padded to max(256, the next power of two) samples as one cycle (measured on
+    /* The reference plays a table zero-padded to max(256, the next power of two) samples as one cycle (measured on
      * four library tables of 92 / 184 / 600 / 4096 samples: within 0.3 dB per harmonic), so a short table is
      * much brighter than its own spectrum. A 512-sample cycle (the module's hm_wt) is unchanged. */
     int np2 = 256;
@@ -234,7 +234,7 @@ static void build_wavetable(hm_t *h)
      * table's exactly; a full cycle is resampled to HM_WT_N (the phase distortion stays smooth up to 1 kHz harmonics) */
     const int n = h->wt_src_n;
     /* the law changes something only for a table of up to 256 samples (P = 256: the block, and the mirror above
-     * k = 128, both inside Humanoid's 256 harmonics); a longer one reads like any full cycle */
+     * k = 128, both inside the reference's 256 harmonics); a longer one reads like any full cycle */
     const int N = h->wt_len > 1 && h->wt_len <= 256 && h->wt_len <= n ? h->wt_len : 0;
     const int m = N ? n : HM_WT_N;
     /* the table's own part of the (padded, maybe resampled) cycle: the first len / P of it */
@@ -272,7 +272,7 @@ static void build_wavetable(hm_t *h)
         h->im[i] = 0.0f;
     }
     fft_run(&h->fft, h->re, h->im, m, 0);
-    /* Harmonic levels, measured on Humanoid (92 / 184 / 225-sample library tables at 61.7 Hz, every harmonic to 256
+    /* Harmonic levels, measured on the reference (92 / 184 / 225-sample library tables at 61.7 Hz, every harmonic to 256
      * within ~1 dB): a table of N samples zero-padded to P = max(256, the next power of two) gives harmonic k < N
      * the amplitude |FFT_P[k]| / N (above P/2 the mirror, as any real FFT), every harmonic N <= k < P the amplitude
      * 1, and nothing from P up (a gain table left at 1 past the table's own length, it seems). A 92-sample table
@@ -332,10 +332,10 @@ static void track_pitch(hm_t *h, int la)
     }
     const float rms = sqrtf((float)(e / n2));
     /* The search reaches an octave under Range Lo (58 Hz at the least: the frame holds 2.2 periods
-     * there) and up to 1.6 kHz whatever Range Hi says. Humanoid tracks a steady voice down to ~D2 with
+     * there) and up to 1.6 kHz whatever Range Hi says. The reference tracks a steady voice down to ~D2 with
      * Range Lo at C3 or C4 (it plays those notes ~47 c sharp, a quirk not copied) and up to E6 with
      * Range Hi at A4; a hard floor at Range Lo silenced a baritone (97-151 Hz) for 68 % of a phrase
-     * at the INIT range, where Humanoid held 86 %. */
+     * at the INIT range, where the reference held 86 %. */
     float fmin = fmaxf(midi_hz(h->p[HM_RANGE_LO] - 12.0f) * 0.97f, 58.0f);
     float fmax = fmaxf(midi_hz(h->p[HM_RANGE_HI]) * 1.03f, 1600.0f);
     float f0 = 0.0f, clar = 0.0f;
@@ -496,11 +496,11 @@ static float filter_db(const hm_t *h, float f)
     for (int side = 0; side < 2; side++) {
         const float fc = midi_hz(side ? h->p[HM_LPF] : h->p[HM_HPF]);
         const float res = side ? h->p[HM_LPF_RES] : h->p[HM_HPF_RES];
-        /* a filter parked at its end stop does nothing, unless its resonance is set: Humanoid's negative-resonance
+        /* a filter parked at its end stop does nothing, unless its resonance is set: the reference's negative-resonance
          * roll-off is heard from an LPF at maximum (Vocal Enhancer, LPF Res -39.5: its top 4-7 dB under ours) */
         if (res == 0.0f && ((side == 0 && fc < 16.0f) || (side == 1 && fc > 0.48f * h->sr))) continue;
         const float x = side ? log2f(fc) - lf2 : lf2 - log2f(fc);    /* octaves into the passband */
-        /* Measured on Humanoid (a saw at 82 Hz, Transform 1): the edge is a brick wall (-80 dB 0.08 octave
+        /* Measured on the reference (a saw at 82 Hz, Transform 1): the edge is a brick wall (-80 dB 0.08 octave
          * past it); a negative resonance is a roll-off from 1.4 octaves inside the passband, 0.85 |res| dB
          * per octave (res -40: -10 dB an octave in, -27 at 0.6; res -80: -50 at 0.6); a positive one is a
          * peak of res dB just inside the edge (0.15 octave), within 1-2 dB from 11 to 24 dB. */
@@ -522,7 +522,7 @@ static float filter_db(const hm_t *h, float f)
     return d;
 }
 
-/* Sharpen, measured on Humanoid: a fixed curve (from a flat-spectrum input) plus a partial
+/* Sharpen, measured on the reference: a fixed curve (from a flat-spectrum input) plus a partial
  * flattening of the input's spectral tilt (from a vowel), both scaled by Sharpen / 100; Bias moves
  * the lows. Loudness-neutral: the lines are renormalised afterwards. Adds dB to `out` (grid). */
 static void sharpen_curve(const hm_t *h, float *out)
@@ -578,7 +578,7 @@ static float fc_quantize(float q)
 {
     float n = clampf(2.26886f * q - 0.0676f, 0.0f, 1.0f);
     static const float xn[4] = {0.0f, 0.5f, 0.84f, 1.0f};
-    /* ln of 3.51, 9.73, 25.2, 55.8 Hz: the cutoffs of this hop-rate one-pole that pass Humanoid's
+    /* ln of 3.51, 9.73, 25.2, 55.8 Hz: the cutoffs of this hop-rate one-pole that pass the reference's
      * measured 79 / 41 / 13 / 3 % of a 5.5 Hz vibrato (solved for the discrete filter) */
     static const float lf[4] = {1.2556f, 2.2752f, 3.2268f, 4.0218f};
     int i = n < 0.5f ? 0 : (n < 0.84f ? 1 : 2);
@@ -682,7 +682,7 @@ static void hop(hm_t *h)
 
     /* Warble: vibrato on the output pitch. Mode 0 = LFO (rate x 10.1 Hz, measured), mode 1 = the
      * fast "FM" one (8 + 32 x rate Hz as far as a pitch tracker can follow it). A negative rate is
-     * tempo synced (Humanoid stood still with the transport stopped): 1/1 .. 1/16 of a bar. */
+     * tempo synced (the reference stood still with the transport stopped): 1/1 .. 1/16 of a bar. */
     const float rate = h->p[HM_WARBLE_RATE];
     float wr;
     if (rate < 0.0f) {
@@ -701,12 +701,12 @@ static void hop(hm_t *h)
     const float ns = h->p[HM_NOTE_SHIFT], oc = h->p[HM_OCTAVE], sm = h->p[HM_SYNTH_MIX];
     const int mode = (int)lrintf(h->p[HM_TUNING_MODE]);
     /* Synth Mix: the pitch-corrected signal (path A) and the resynthesis (path B) are different
-     * signals in Humanoid, crossfaded linearly (measured with the two at different pitches: A x (1 - sm),
+     * signals in the reference, crossfaded linearly (measured with the two at different pitches: A x (1 - sm),
      * B x sm, within 0.1 dB from 0.1 to 0.9). On the same pitch they interfere: about -4.8 dB at 0.5
      * on a voice, varying per harmonic and with the pitch; modelled as one phase between the paths,
      * 108 degrees at Transform 0 relaxing to 90 (a power sum, the average measured) at Transform 1. */
     const float wa = 1.0f - sm, wb = sm;
-    /* Note Shift TRANSPOSES path B (Humanoid: at Synth Mix 1 only the shifted voice is heard, at 0.5 the
+    /* Note Shift TRANSPOSES path B (the reference: at Synth Mix 1 only the shifted voice is heard, at 0.5 the
      * voice and the shifted line at -6 dB each); the Octave lines follow the shifted pitch. */
     const int shifting = fabsf(ns) > 0.01f;
     const float sub_g = oc < -0.01f ? 0.52f * (-oc) : 0.0f;
@@ -747,7 +747,7 @@ static void hop(hm_t *h)
     sharpen_curve(h, env_s);
     for (int i = 0; i < HM_GRID; i++) env_s[i] += h->env[i];
 
-    /* Loudness: Humanoid holds every line at the voice's loudness wherever it is moved (Note mode from -7 to +24 st:
+    /* Loudness: the reference holds every line at the voice's loudness wherever it is moved (Note mode from -7 to +24 st:
      * within ~1 dB), so the reference is the voice's own harmonic series. Reading it at the line's harmonics instead
      * lost 6-14 dB going up (fewer harmonics under the envelope). The Octave lines keep their measured ratio to the
      * line they follow. */
@@ -760,7 +760,7 @@ static void hop(hm_t *h)
         }
         int K = (int)(fminf(HM_FMAX, 0.45f * sr) / L->f0);
         if (K > HM_KMAX) K = HM_KMAX;
-        /* voice levels from the (formant-shifted) envelope. Humanoid keeps the loudness of
+        /* voice levels from the (formant-shifted) envelope. The reference keeps the loudness of
          * each line whatever Formant and Emphasis do: the reference is the unshifted envelope. */
         double pv = 0.0, pw = 0.0, pref = 0.0;
         float mx = -1e9f;
@@ -867,11 +867,11 @@ static void hop(hm_t *h)
 void hm_begin(hm_t *h)
 {
     h->k_ig = db_lin(h->p[HM_INPUT_GAIN]);
-    /* Humanoid's Output tops out at +9 dB (+12 measured +9.0; -24..+9 exact) */
+    /* The reference's Output tops out at +9 dB (+12 measured +9.0; -24..+9 exact) */
     h->k_og = db_lin(fminf(h->p[HM_OUTPUT_GAIN], 9.0f)) * HM_MAKEUP;
     h->k_dw = h->p[HM_DRY_WET];
     h->k_lat = hm_latency(h);
-    /* The gate, measured on Humanoid: it reads the RMS (a sine and a voice both open at exactly RMS = threshold,
+    /* The gate, measured on the reference: it reads the RMS (a sine and a voice both open at exactly RMS = threshold,
      * whatever their peak; a peak reading kept it open ~8 dB under the threshold on a voice), a mean square with
      * a ~20 ms time constant (the opening delay against level, and the ~50 ms it takes to notice a drop); Attack is
      * the opening fade, Release the closing one (linear, -20 dB at ~0.85 x Release), Hold exact. */
@@ -915,7 +915,7 @@ void hm_tick(hm_t *h, float x, float *outl, float *outr)
     float l = y, rr = y;
     hmfx_tick(&h->fx, &l, &rr);
     /* the makeup takes the dry too (Dry/Wet 0 measured +2 dB); Out Gain only the wet (Dry/Wet 0.5, Out -12: the dry
-     * unchanged, the wet 12 dB down; it cut Vocal Enhancer's dry with its wet, 6 dB under Humanoid) */
+     * unchanged, the wet 12 dB down; it cut Vocal Enhancer's dry with its wet, 6 dB under the reference) */
     const float dg = (1.0f - h->k_dw) * HM_MAKEUP, wg = h->k_dw * h->k_og;
     float ol = dg * dry + wg * l, orr = dg * dry + wg * rr;
     float ceil = HM_OUT_CEIL;
@@ -924,7 +924,7 @@ void hm_tick(hm_t *h, float x, float *outl, float *outr)
          * slow RMS that cannot jump more than 4x (6 dB) in one step, so the clicks a synth path makes at note onsets don't
          * set it (they held the gain down for seconds), and it stands still in pauses, so the gain neither pumps on a
          * phrase onset nor lifts the room between phrases. Out Gain comes before it and is levelled away: imported
-         * presets use it to even out their own loudness in Humanoid (32 of 282, down to -12.5 dB), which applied after
+         * presets use it to even out their own loudness in the reference (32 of 282, down to -12.5 dB), which applied after
          * the leveller left them that much quieter than the rest. */
         const float p = 0.5f * (ol * ol + orr * orr);
         h->lv_pow += (p - h->lv_pow) * h->k_lv_p;
@@ -942,7 +942,7 @@ void hm_tick(hm_t *h, float x, float *outl, float *outr)
     }
     /* A peak limiter: anything past the ceiling is pulled down at once and let back up over 120 ms. Under Auto Level
      * the gain is a guess at the start of a note (it can be 20 dB too high for the first half second); without it this
-     * is Humanoid's own output limiter (peaks held at about -0.5 dBFS: a +19 dB filter resonance came out at -0.7). */
+     * is the reference's own output limiter (peaks held at about -0.5 dBFS: a +19 dB filter resonance came out at -0.7). */
     const float pk = fmaxf(fabsf(ol), fabsf(orr));
     const float need = pk > ceil ? ceil / pk : 1.0f;
     h->lv_lim += (need - h->lv_lim) * (need < h->lv_lim ? h->k_lim_a : h->k_lim_r);

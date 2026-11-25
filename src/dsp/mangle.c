@@ -63,7 +63,7 @@ static void layout(mg_t *m)
             else for (int i = 0; i < m->n_pads && nn < MG_MAX_NOTES; i++) m->notes[nn++] = m->pads[i] - 60;
         }
     } else if (p->note_mode == MG_NOTES_CHORD) {
-        for (int i = 0; i < m->chord_n[m->slot]; i++) m->notes[nn++] = m->chord[m->slot][i] - 60;   /* an empty slot: silent (PitchMonster) */
+        for (int i = 0; i < m->chord_n[m->slot]; i++) m->notes[nn++] = m->chord[m->slot][i] - 60;   /* an empty slot: silent (the reference) */
     } else {
         m->notes[nn++] = 0;                      /* Normal: the voice at Pitch */
     }
@@ -80,7 +80,7 @@ static void layout(mg_t *m)
             memset(v->g, 0, sizeof v->g);
             v->started = v->have_mark = 0;
             /* each voice at its own grain phase: voices at one pitch started in step summed coherently (+3 dB per
-             * doubling, +5.9 dB at 8; PitchMonster +2.3 Granular, flat Formant) */
+             * doubling, +5.9 dB at 8; the reference +2.3 Granular, flat Formant) */
             v->ph[0] = rnd(&v->rng) * 0.5f; v->ph[1] = v->ph[0] + 0.5f;
             v->inc[0] = v->inc[1] = 0.0f;                 /* restarts at its first sample */
             v->until_next = rnd(&v->rng) * MG_UNVOICED_T0; /* PSOLA: its first grain (and so its mark grid) a little later */
@@ -91,7 +91,7 @@ static void layout(mg_t *m)
         v->st = pitch + (float)m->notes[j] + (u > 1 && !p->detune_jitter ? -0.5f * S + S * (float)q / (float)(u - 1) : 0.0f);
         v->delay = u > 1 && !p->time_jitter ? T * (float)q / (float)(u - 1) : 0.0f;
         /* A note's unison voices after the first read 3..7 ms further back (fixed per voice: layout runs every
-         * block), so voices at one pitch don't sum coherently: PitchMonster's identical voices add +1.0 dB at 8
+         * block), so voices at one pitch don't sum coherently: the reference's identical voices add +1.0 dB at 8
          * (Formant), ours +9 before */
         v->off = q > 0 ? (0.003f + 0.004f * ((float)q * 0.618034f - floorf((float)q * 0.618034f))) * m->sr : 0.0f;
         float pos = 0.0f;                                 /* -1 left .. +1 right */
@@ -169,7 +169,7 @@ static void tap_restart(mg_t *m, mg_voice *v, int k)
     const float r = clampf(exp2f(st / 12.0f), 1.0f / 16.0f, 4.0f);
     const float rate = p->grain_hz * (p->grain_jitter ? 0.5f + rnd(&v->rng) : 1.0f);
     float base = p->time_jitter ? rnd(&v->rng) * clampf(p->time_ms, 0.0f, MG_MAX_TIME_MS) * 0.001f * m->sr : v->delay;
-    /* every grain reads up to 2 ms further back at random: PitchMonster's Granular is not a clean delay at 0 st (null
+    /* every grain reads up to 2 ms further back at random: the reference's Granular is not a clean delay at 0 st (null
      * -16 dB against the input) and its identical voices barely add (+1.6 dB at 8): its grains scatter like this */
     base += rnd(&v->rng) * MG_GRAIN_SCATTER * m->sr + v->off;
     float w = fabsf(1.0f - r) * m->sr / rate;
@@ -192,7 +192,7 @@ static float granular(mg_t *m, mg_voice *v)
         const float d = v->base[k] + (v->r[k] > 1.0f ? 1.0f - ph : ph) * v->w[k];
         /* sin^1.5: between Hann (the taps sum to 1 when they read the same sample) and a sine window (their powers
          * sum to 1 when they read different ones). Shifted, the taps are uncorrelated: power 0.85, -0.7 dB under 0 st;
-         * PitchMonster -0.8 on a real vocal (Hann was -1.9) */
+         * The reference -0.8 on a real vocal (Hann was -1.9) */
         const float s = sinf(PI_F * ph), wnd = s * sqrtf(s);
         out += wnd * rd(m, m->n - 1.0 - (double)d);
         v->ph[k] = ph + v->inc[k];
@@ -232,7 +232,7 @@ static float psola(mg_t *m, mg_voice *v, int vocode)
         const float Tout = T0 / pr;
         /* A grain is two input periods, played in 2 T0 / r: the formant moves by r and the grain still holds two
          * periods. (Reading r x 2 periods into a 2 T0 grain, as psola.c does up to r = 2, put the input's own pitch
-         * inside each grain at r times: at Formant +19 the low harmonics were 10-13 dB under PitchMonster's.) */
+         * inside each grain at r times: at Formant +19 the low harmonics were 10-13 dB under the reference's.) */
         float span = 2.0f * T0;
         float len = span / r;
         if (len < MG_MIN_GRAIN * sr) { len = MG_MIN_GRAIN * sr; span = len * r; }
@@ -261,7 +261,7 @@ static float psola(mg_t *m, mg_voice *v, int vocode)
             g->rate = r;
             g->len = len;
             g->t = 0.0f;
-            /* PitchMonster's level follows the ratio: -3 dB an octave down (grains as loud as at 0 st, fewer of them),
+            /* The reference's level follows the ratio: -3 dB an octave down (grains as loud as at 0 st, fewer of them),
              * +1.5 dB an octave up (measured on a real vocal: -24 st -6.0, -12 -3.3, +12 +1.7, +24 +3.4) */
             g->gain = sqrtf(2.0f * T0 / len) * (pr > 1.0f ? 1.0f / sqrtf(sqrtf(pr)) : 1.0f);
             g->active = 1;
@@ -307,7 +307,7 @@ void mg_tick(mg_t *m, float in, float t0, float *out_l, float *out_r)
         m->t0h[(size_t)(((long long)m->n / MG_HOP) & (MG_RING / MG_HOP - 1))] = t0 > 1.0f ? t0 : 0.0f;
     m->n += 1.0;
 
-    /* each unison voice 1/sqrt(U) (PitchMonster's click copies: -3 / -6 / -9 dB at 2 / 4 / 8), each chord note 1/N^(1/4):
+    /* each unison voice 1/sqrt(U) (the reference's click copies: -3 / -6 / -9 dB at 2 / 4 / 8), each chord note 1/N^(1/4):
      * a chord gets louder by 1.5 dB per doubling of its notes (measured +1.5 / +3 / +4.5 at 2 / 4 / 8 notes) */
     const float goal = m->n_voices > 0 ? 1.0f / (sqrtf((float)m->n_unison) * sqrtf(sqrtf((float)m->n_notes))) : 0.0f;
     m->vgain += (goal - m->vgain) * m->k_amp;

@@ -36,7 +36,7 @@ void hmfx_begin(hmfx_t *f, const float *p, float bpm)
     f->wd = p[HM_WIDEN] > 0.0f ? 0.725f * powf(p[HM_WIDEN], 1.17f) : 0.0f;
     f->ch_base = 0.012f * sr;
     f->ch_dep = 0.004f * sr;
-    /* Cutoff barely changes Humanoid's width (measured): ~160 .. 250 Hz here */
+    /* Cutoff barely changes the reference's width (measured): ~160 .. 250 Hz here */
     f->ch_a = expf(-2.0f * PI_F * (200.0f * powf(10.0f, (p[HM_WIDEN_CUTOFF] - 0.9f) * 1.0f)) / sr);
     f->ch_dinc = 2.0f * PI_F * clampf(p[HM_WIDEN_RATE], 0.05f, 20.0f) * 0.25f / sr;
     /* freeze: the last Buffer ms (or a tempo division) loops while on */

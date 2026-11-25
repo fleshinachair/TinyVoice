@@ -1,6 +1,6 @@
 /*
- * Mangler: TinyVoice's fourth engine, modelled on Devious Machines' PitchMonster
- * (laws measured in TinyVoice-lab pitchmonster/FINDINGS.md). A multi-voice pitch
+ * Mangler: TinyVoice's fourth engine, modelled on a reference plugin
+ * (laws measured offline in the calibration lab, outside this repo). A multi-voice pitch
  * shifter with three cores sharing one input ring:
  *
  *   Granular  per voice, a two-tap rotating delay-line shifter. Each tap restarts
@@ -20,10 +20,10 @@
  * puts a note's unison voices evenly over [-S/2, S/2] (Jitter: a random offset
  * per grain), Time Spread delays them evenly over 0..T (Jitter: per grain);
  * each voice x 1/sqrt(N); Wide pans them across the field. Then a 2nd-order
- * high-pass at f 2^(-bw/2) and low-pass at f 2^(bw/2) (Filter), PitchMonster's
+ * high-pass at f 2^(-bw/2) and low-pass at f 2^(bw/2) (Filter), the reference's
  * Mix (dry = min(1, 2(1-w)), wet = min(1, 2w)) and Volume.
  *
- * Latency is ours, not PitchMonster's 30 ms: a few samples (Granular) to about
+ * Latency is ours, not the reference's 30 ms: a few samples (Granular) to about
  * half a period plus the grain's reach (Formant / Vocode), for live singing.
  *
  * Fixed-size state, no allocation; the caller supplies the tracked period
@@ -49,7 +49,7 @@ extern "C" {
 enum { MG_GRANULAR = 0, MG_FORMANT, MG_VOCODE };
 enum { MG_NOTES_NORMAL = 0, MG_NOTES_PADS, MG_NOTES_CHORD };
 
-/* The controls, in PitchMonster's own units. */
+/* The controls, in the reference's own units. */
 typedef struct {
     int   engine;          /* MG_GRANULAR / _FORMANT / _VOCODE */
     float pitch;           /* semitones, -48..+24 */
@@ -67,7 +67,7 @@ typedef struct {
     int   filter_on;
     float filter_hz;       /* 20..20000 */
     float filter_oct;      /* bandwidth, octaves 0.1..10 */
-    float mix;             /* 0..1, PitchMonster's law */
+    float mix;             /* 0..1, the reference's law */
     float volume_db;
     int   note_mode;       /* MG_NOTES_* */
     int   mono;            /* Pads: the newest pad only */

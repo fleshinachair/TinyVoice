@@ -1,5 +1,5 @@
 /* Mangler (src/dsp/mangle.c), the fourth personality. Included by test_main.c after resynth_tests.inc.
- * The sound is calibrated against PitchMonster offline (in TinyVoice-lab, outside this repo): these check the module. */
+ * The sound is calibrated against the reference offline (in TinyVoice-lab, outside this repo): these check the module. */
 
 #include "mangle.h"
 

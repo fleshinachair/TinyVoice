@@ -1,5 +1,5 @@
 /* Resynth (src/dsp/hm.c), the third personality. Included by test_main.c after voice_tests.inc.
- * The sound itself is calibrated against Humanoid offline (in TinyVoice-lab, outside this repo): these check the module. */
+ * The sound itself is calibrated against the reference offline (in TinyVoice-lab, outside this repo): these check the module. */
 
 #include <time.h>
 #include "hm.h"
@@ -67,7 +67,7 @@ static void test_resynth_tuning(void)
     dsp_cleanup(vt);
 }
 
-/* Humanoid plays a wavetable zero-padded to max(256, next power of two) samples as one cycle (measured in the lab) */
+/* The reference plays a wavetable zero-padded to max(256, next power of two) samples as one cycle (measured in the lab) */
 static void test_resynth_wavetable_pad(void)
 {
     hm_t *h = calloc(1, sizeof *h);
@@ -88,7 +88,7 @@ static void test_resynth_wavetable_pad(void)
     free(h);
 }
 
-/* Humanoid's short tables (measured on 92 / 184 / 225-sample library tables, every harmonic to 256 within ~1 dB):
+/* The reference's short tables (measured on 92 / 184 / 225-sample library tables, every harmonic to 256 within ~1 dB):
  * harmonic k < N is |FFT_P[k]| / N, every harmonic N <= k < P = 256 is 1 (flat), nothing from P up. The module's
  * hm_wt carries such a table padded and resampled to 512 with its length as ":<len>". */
 static void rs_wt_build(hm_t *h)
@@ -155,7 +155,7 @@ static void test_resynth_midi(void)
     vt_t *vt = dsp_init(VT_SAMPLE_RATE);
     dsp_set_param(vt, "engine", "Resynth");
     dsp_set_param(vt, "hm_tuning_mode", "MIDI");
-    dsp_set_param(vt, "hm_midi_idle", "Silent");                  /* Humanoid's way: no pad, no sound (the default Tunes instead, below) */
+    dsp_set_param(vt, "hm_midi_idle", "Silent");                  /* The reference's way: no pad, no sound (the default Tunes instead, below) */
     rs_run(vt, 200.0, 0.2f, VT_SAMPLE_RATE / 2, out);
     double e = 0;
     for (int i = VT_SAMPLE_RATE / 4; i < VT_SAMPLE_RATE / 2; i++) e += (double)out[i] * out[i];
@@ -484,7 +484,7 @@ static void test_resynth_bank_place(void)
     CHECK(dsp_set_param(c, "state", st) == 0);                       /* the set restore: no bank yet */
     CHECK(dsp_get_param(c, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "(loading)") == 0);
     CHECK(dsp_set_rs_bank(c, rsbank_load("tests/fixtures/rs_default", "tests/fixtures/rs_presets")) == 0);
-    CHECK(dsp_get_param(c, "rs_bank", b, sizeof b) > 0 && strcmp(b, "Imported") == 0);
+    CHECK(dsp_get_param(c, "rs_bank_name", b, sizeof b) > 0 && strcmp(b, "Imported") == 0);
     CHECK((int)rs_get(c, "rs_preset") == 2);
     CHECK(dsp_get_param(c, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Caf\xc3\xa9 \"Q\"") == 0);
     CHECK(fabsf(rs_get(c, "hm_transform") - 0.33f) < 1e-6f);         /* not reloaded */
@@ -497,7 +497,7 @@ static void test_resynth_bank_place(void)
     vt_t *e = dsp_init(VT_SAMPLE_RATE);
     CHECK(dsp_set_param(e, "state", "{\"engine\":\"Resynth\"}") == 0);
     CHECK(dsp_set_rs_bank(e, rsbank_load("tests/fixtures/rs_default", "tests/fixtures/rs_presets")) == 0);
-    CHECK((int)rs_get(e, "rs_preset") == 0 && dsp_get_param(e, "rs_bank", b, sizeof b) > 0 && strcmp(b, "Default") == 0);
+    CHECK((int)rs_get(e, "rs_preset") == 0 && dsp_get_param(e, "rs_bank_name", b, sizeof b) > 0 && strcmp(b, "Default") == 0);
     dsp_cleanup(a); dsp_cleanup(c); dsp_cleanup(e);
 }
 
@@ -526,13 +526,13 @@ static void test_resynth_bank(void)
     CHECK(dsp_set_param(vt, "rs_preset", "2") == 0 && (int)rs_get(vt, "rs_preset") == 0);
     CHECK(dsp_set_rs_bank(vt, bk) == 0);
     /* two banks: Default (shipped) is listed first, sorted; Imported is the user's folder */
-    CHECK(dsp_get_param(vt, "rs_bank", b, sizeof b) > 0 && strcmp(b, "Default") == 0);
+    CHECK(dsp_get_param(vt, "rs_bank_name", b, sizeof b) > 0 && strcmp(b, "Default") == 0);
     CHECK(dsp_get_param(vt, "rs_preset_count", b, sizeof b) > 0 && strcmp(b, "4") == 0);
     CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Alpha shipped") == 0);
     CHECK(dsp_set_param(vt, "rs_preset", "3") == 0 && dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Zed first") == 0);
     CHECK(fabsf(rs_get(vt, "hm_robotify") - 0.9f) < 1e-6f);                                     /* a Default preset loads like any */
     CHECK(dsp_set_param(vt, "rs_bank", "Imported") == 0 && (int)rs_get(vt, "rs_preset") == 0);   /* a new list starts at its first */
-    CHECK(dsp_get_param(vt, "rs_bank", b, sizeof b) > 0 && strcmp(b, "Imported") == 0);
+    CHECK(dsp_get_param(vt, "rs_bank_name", b, sizeof b) > 0 && strcmp(b, "Imported") == 0);
     {
         rsbank_t *again = rsbank_load("tests/fixtures/rs_default", "tests/fixtures/rs_presets");
         CHECK(dsp_set_rs_bank(vt, again) == -1);           /* one handover; the caller keeps the second */
@@ -611,7 +611,7 @@ static void test_resynth_bank_kinds(void)
 
     vt_t *vt = dsp_init(VT_SAMPLE_RATE);
     CHECK(dsp_set_rs_bank(vt, bk) == 0);
-    CHECK(dsp_set_param(vt, "rs_bank", "Artists") == 0 && dsp_get_param(vt, "rs_bank", b, sizeof b) > 0 && strcmp(b, "Artists") == 0);
+    CHECK(dsp_set_param(vt, "rs_bank", "Artists") == 0 && dsp_get_param(vt, "rs_bank_name", b, sizeof b) > 0 && strcmp(b, "Artists") == 0);
     CHECK(dsp_get_param(vt, "rs_preset_count", b, sizeof b) > 0 && strcmp(b, "1") == 0);
     CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Zed - Pad") == 0);
     CHECK(dsp_set_param(vt, "rs_preset", "0") == 0 && fabsf(rs_get(vt, "hm_robotify") - 0.3f) < 1e-6f);
@@ -789,7 +789,7 @@ static void test_resynth_mic_gate(void)
     CHECK(rms[1] - rms[0] > 20.0);
 }
 
-/* The gate, measured on Humanoid: RMS against the threshold (not the peak), Attack opens, Release closes */
+/* The gate, measured on the reference: RMS against the threshold (not the peak), Attack opens, Release closes */
 static void test_resynth_gate_rms(void)
 {
     hm_t *h = calloc(1, sizeof *h);

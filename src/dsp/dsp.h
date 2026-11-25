@@ -73,7 +73,7 @@ typedef enum {
     VT_P_VF_MIX,        /* 0..1  Mix/Drive: wet/dry up to 0.7, then all wet with the drive climbing */
     VT_P_VF_PRESET,     /* index into the Voice FX bank (presets.c); writing it loads that preset into the
                          * eight knobs above. Transient: a saved state holds the knob values, not the preset. */
-    VT_P_RS_BANK,       /* enum  Default, Imported: which bank the Presets page lists (transient) */
+    VT_P_RS_BANK,       /* 0..25: which bank the Presets page lists (transient); the engine's own list (rsbank.h), then yours */
     VT_P_RS_PRESET,     /* index into the Resynth bank (rsbank.c: the Resynth presets in Schwung's preset folder,
                          * loaded off the audio thread); writing it loads that preset. Transient, like vf_preset. */
     /* The Resynth personality (src/dsp/hm.c): one param per Humanoid control, key "hm_" + its preset id,
@@ -88,7 +88,7 @@ typedef enum {
     VT_P_HM_IDLE,       /* enum  Tune, Silent: MIDI mode with no pad held (Tune = keep correcting to the scale) */
     VT_P_HM_VGATE,      /* -72..-24 dB: Mic Gate, the voice gate's threshold on the raw input in Resynth (-42 = the vocoder's Auto) */
     VT_P_HM_WAVE,       /* enum  Saw, Square, Triangle, Sine, Preset (Preset = the cycle in hm_wt) */
-    /* The Mangler personality (src/dsp/mangle.c, modelled on PitchMonster): its controls in PitchMonster's units.
+    /* The Mangler personality (src/dsp/mangle.c, modelled on the reference): its controls in the reference's units.
      * The chord slots are not params: "mg_chords" in a saved state (text, see mangle.h). */
     VT_P_MG_FIRST,
     VT_P_MG_SHIFT = VT_P_MG_FIRST,   /* enum  Granular, Formant, Vocode: the shifter core */
@@ -98,7 +98,7 @@ typedef enum {
     VT_P_MG_DETUNE,     /* 0..12 st: Pitch Spread over the unison voices */
     VT_P_MG_TIME,       /* 0..1000 ms: Time Spread over the unison voices */
     VT_P_MG_GRAIN,      /* 1..100 Hz: Granular's grain rate */
-    VT_P_MG_MIX,        /* 0..1 dry/wet (PitchMonster's law) */
+    VT_P_MG_MIX,        /* 0..1 dry/wet (the reference's law) */
     VT_P_MG_NOTES,      /* enum  Normal, Pads, Chord: where the voices' notes come from */
     VT_P_MG_CHORD,      /* enum  1..8: the chord slot (Notes = Chord) */
     VT_P_MG_MONO,       /* enum  Off, On: Pads plays only the newest pad */
@@ -261,6 +261,14 @@ struct rsbank;
 int dsp_set_rs_bank(vt_t *vt, struct rsbank *bank);
 /* The same for Mangler's presets (the states that run Mangler): the Presets page lists this bank while the engine is Mangler. */
 int dsp_set_mg_bank(vt_t *vt, struct rsbank *bank);
+/* Replace a bank while the module runs (bankmgr.c: a bank was made, renamed, filled or removed). Returns the bank it
+ * replaces (NULL if none), which the caller must NOT free at once: the audio thread may be reading it. Keep it a few
+ * seconds, then free it. The Presets page keeps its place by the bank's and the preset's names. */
+struct rsbank *dsp_swap_rs_bank(vt_t *vt, struct rsbank *bank);
+/* A bank was renamed (call it BEFORE the swap of the lists): if the Presets page is on `old_name` of that engine's list, it
+ * follows to `new_name` instead of falling back to Default. */
+void dsp_bank_renamed(vt_t *vt, int mangler, const char *old_name, const char *new_name);
+struct rsbank *dsp_swap_mg_bank(vt_t *vt, struct rsbank *bank);
 
 /* The Demo's recorded phrase (demo.h, demo_pcm_load), handed over once like the preset bank: the instance owns it from
  * then on and frees it. A second handover is refused (-1). Until it arrives, and when the module has none, the Demo

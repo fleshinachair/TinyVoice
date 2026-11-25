@@ -2,13 +2,13 @@
 #define TINYVOICE_HM_H
 
 /* Resynth: a harmonic analysis / resynthesis voice processor modelled on the
- * measured behaviour of Baby Audio Humanoid (calibration/FINDINGS.md).
+ * measured behaviour of the reference plugin (calibration/FINDINGS.md).
  *
  * Every hop (256 samples) the input is analysed (pitch by MPM, then the
  * harmonics and the residual noise from a pitch-adaptive FFT frame), tuned
  * (Scale / Note / MIDI), reshaped (Robotify, Formant, Transform toward a
  * wavetable, Note Shift and Octave lines), and resynthesised by inverse FFT
- * (overlap-add) plus band-shaped noise. Parameters are in Humanoid's preset
+ * (overlap-add) plus band-shaped noise. Parameters are in the reference's preset
  * units (MIDI notes for frequencies, dB, seconds), so a .baby preset maps one
  * to one. Host-free, no allocation after hm_init. */
 
@@ -21,7 +21,7 @@
 #define HM_NFFT     4096          /* analysis FFT (zero-padded) */
 #define HM_RING     8192          /* input history (power of two) */
 #define HM_OUTRING  8192          /* output overlap-add ring (power of two) */
-#define HM_KMAX     256           /* harmonics per line: Humanoid plays exactly 256 (measured, a 4096 saw at 61.7 Hz) */
+#define HM_KMAX     256           /* harmonics per line: the reference plays exactly 256 (measured, a 4096 saw at 61.7 Hz) */
 #define HM_NB       24            /* residual noise bands */
 #define HM_NLINE    8             /* 2 targets x (main, note shift, octave down, octave up) */
 #define HM_WT_N     2048          /* wavetable cycle after resampling */
@@ -77,7 +77,7 @@ typedef struct {
     int ref_note;                     /* note the deviation is measured from */
     int midi_held[8], n_held;         /* MIDI mode: held notes, newest last */
     float tgt_hz;                     /* the main line's target note, Hz (0 none) */
-    int midi_idle_tune;               /* MIDI mode with no note held: 1 = correct to the scale (Scale mode), 0 = silence (Humanoid) */
+    int midi_idle_tune;               /* MIDI mode with no note held: 1 = correct to the scale (Scale mode), 0 = silence (the reference) */
     int fold_note[2], fold_off[2];    /* MIDI mode: a pad is moved by whole octaves to within one of the voice; what it was moved by */
     float warble_ph;
 
@@ -120,7 +120,7 @@ void  hm_reset(hm_t *h);
 void  hm_set(hm_t *h, int id, float v);
 float hm_get(const hm_t *h, int id);
 void  hm_set_mask(hm_t *h, unsigned mask12);
-/* One table as Humanoid holds it (any length up to HM_WT_SRC): zero-padded to max(256, the next power of two). */
+/* One table as the reference holds it (any length up to HM_WT_SRC): zero-padded to max(256, the next power of two). */
 void  hm_set_wavetable(hm_t *h, const float *cycle, int n);
 /* The cycle given to hm_set_wavetable was a table of `len` samples already padded (and resampled) by the caller:
  * the module's hm_wt, 512 samples whatever the table was. 0 = a full cycle (the built-in waves). */

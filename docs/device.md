@@ -29,7 +29,7 @@ GET_PARAM fx1:diag
 
 ## Open items / unverified
 
-- **Resynth is installed and smoke-tested on the Move (2026-11-24; 282 imported presets in My Presets) but unheard and unseen**: the five pages, the Remote UI panel (web_ui.html: never loaded in Schwung's manager yet), the help pages' pixel widths (`tests/host/test_help_content_width.sh`), and the imported presets through My Presets. Then judge by ear against Humanoid on a real voice.
+- **Resynth is installed and smoke-tested on the Move (2026-11-24; 282 imported presets in My Presets) but unheard and unseen**: the five pages, the Remote UI panel (web_ui.html: never loaded in Schwung's manager yet), the help pages' pixel widths (`tests/host/test_help_content_width.sh`), and the imported presets through My Presets. Then judge by ear against the reference on a real voice.
 
 - **Voice FX and the presets are unheard and unseen on the device** (built and tested natively, UBSan clean, `-Werror -pedantic` ARM build): the Mode page, the Presets browser and the one-page layout through `modes` / `mode_param`; whether the host's `get_param` buffer takes the served `chain_params` (now ~4.5 KB, was 3.5 KB; check that the widgets still mount); Voice FX's sound on a real voice (formant table, makeup, drive curve are tuned on synthetic tones and the Demo). `scripts/install.sh` now stages and `mv`s files in place instead of overwriting the loaded `.so`.
 

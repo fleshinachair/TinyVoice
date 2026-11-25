@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 /* ------------------------------------------------------------ a small JSON reader */
 
@@ -281,15 +282,92 @@ static void load_dir(rsbank_t *b, int bank, const char *dir, const char *engine)
     if (b->count[bank] > 1) qsort(b->e[bank], (size_t)b->count[bank], sizeof *b->e[bank], name_cmp);
 }
 
-rsbank_t *rsbank_load_engine(const char *engine, const char *default_dir, const char *imported_dir)
+/* ------------------------------------------------------------ your own banks */
+
+static int name_char_ok(unsigned char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ' || c == '.' || c == '_' ||
+           c == '-' || c == '(' || c == ')' || c == '&' || c == '+' || c == '\'' || c >= 0x80;
+}
+
+static int ieq_str(const char *a, const char *b)
+{
+    for (;; a++, b++) {
+        const int c = *a >= 'A' && *a <= 'Z' ? *a + 32 : (unsigned char)*a;
+        const int d = *b >= 'A' && *b <= 'Z' ? *b + 32 : (unsigned char)*b;
+        if (c != d) return 0;
+        if (!c) return 1;
+    }
+}
+
+int rsbank_bank_name_ok(const char *name)
+{
+    if (!name) return 0;
+    const size_t n = strlen(name);
+    if (n < 1 || n > 40 || name[0] == '.' || name[0] == ' ' || name[n - 1] == ' ' || name[n - 1] == '.') return 0;
+    for (size_t i = 0; i < n; i++) if (!name_char_ok((unsigned char)name[i])) return 0;
+    for (int k = 0; k < RSBANK_BANKS; k++) if (ieq_str(name, k_bank_names[k])) return 0;      /* (Default, Imported, ... are ours) */
+    return 1;
+}
+
+void rsbank_safe_name(const char *name, char *out, int out_len)
+{
+    int n = 0;
+    if (out_len <= 0) return;
+    for (const char *p = name ? name : ""; *p && n < 60 && n < out_len - 1; p++) out[n++] = name_char_ok((unsigned char)*p) ? *p : '_';
+    while (n > 0 && (out[n - 1] == ' ' || out[n - 1] == '.')) n--;
+    if (n == 0 && out_len > 7) { memcpy(out, "preset", 6); n = 6; }
+    out[n] = '\0';
+    if (out[0] == '.') out[0] = '_';
+}
+
+static int str_cmp_i(const void *a, const void *b)
+{
+    const char *x = (const char *)a, *y = (const char *)b;
+    for (;; x++, y++) {
+        const int c = *x >= 'A' && *x <= 'Z' ? *x + 32 : (unsigned char)*x;
+        const int d = *y >= 'A' && *y <= 'Z' ? *y + 32 : (unsigned char)*y;
+        if (c != d) return c - d;
+        if (!c) return 0;
+    }
+}
+
+/* the folders of banks_dir that are valid bank names, sorted; how many (at most RSBANK_USER_MAX) */
+static int list_user_banks(const char *banks_dir, char names[RSBANK_USER_MAX][RSBANK_NAME])
+{
+    DIR *d = banks_dir ? opendir(banks_dir) : NULL;
+    if (!d) return 0;
+    enum { CAP = 64 };
+    char (*all)[RSBANK_NAME] = (char (*)[RSBANK_NAME])malloc((size_t)CAP * RSBANK_NAME);
+    int n = 0;
+    struct dirent *de;
+    while (all && (de = readdir(d)) != NULL && n < CAP) {
+        char path[1024];
+        struct stat st;
+        if (strlen(de->d_name) >= RSBANK_NAME || !rsbank_bank_name_ok(de->d_name)) continue;
+        if (snprintf(path, sizeof path, "%s/%s", banks_dir, de->d_name) >= (int)sizeof path) continue;
+        if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) continue;
+        memcpy(all[n++], de->d_name, strlen(de->d_name) + 1);
+    }
+    closedir(d);
+    if (n > 1) qsort(all, (size_t)n, RSBANK_NAME, str_cmp_i);
+    if (n > RSBANK_USER_MAX) n = RSBANK_USER_MAX;
+    for (int i = 0; i < n; i++) memcpy(names[i], all[i], RSBANK_NAME);
+    free(all);
+    return n;
+}
+
+rsbank_t *rsbank_load_full(const char *engine, const char *default_dir, const char *imported_dir, const char *banks_dir)
 {
     rsbank_t *b = (rsbank_t *)calloc(1, sizeof *b);
     if (!b) return NULL;
+    const int resynth = strcmp(engine, "resynth") == 0;
     load_dir(b, RSBANK_DEFAULT, default_dir, engine);
     load_dir(b, RSBANK_IMPORTED, imported_dir, engine);
     /* the split banks: Imported's entries by kind, in Imported's order, sharing its states */
-    for (int k = RSBANK_TUNER; k < RSBANK_BANKS && strcmp(engine, "resynth") == 0; k++) {   /* (Resynth's list only) */
+    for (int k = RSBANK_TUNER; k < RSBANK_BANKS && resynth; k++) {   /* (Resynth's list only) */
         int n = 0;
+        b->borrowed[k] = 1;
         for (int i = 0; i < b->count[RSBANK_IMPORTED]; i++) n += b->e[RSBANK_IMPORTED][i].kind == k;
         if (!n) continue;
         b->e[k] = (rsbank_entry *)malloc((size_t)n * sizeof *b->e[k]);
@@ -297,7 +375,26 @@ rsbank_t *rsbank_load_engine(const char *engine, const char *default_dir, const 
         for (int i = 0; i < b->count[RSBANK_IMPORTED]; i++)
             if (b->e[RSBANK_IMPORTED][i].kind == k) b->e[k][b->count[k]++] = b->e[RSBANK_IMPORTED][i];
     }
+    /* the list: the fixed banks, then yours */
+    b->first_user = resynth ? RSBANK_BANKS : RSBANK_IMPORTED + 1;
+    for (int k = 0; k < b->first_user; k++) snprintf(b->name[k], RSBANK_NAME, "%s", k_bank_names[k]);
+    b->nbanks = b->first_user;
+    char names[RSBANK_USER_MAX][RSBANK_NAME];
+    const int nu = list_user_banks(banks_dir, names);
+    for (int u = 0; u < nu; u++) {
+        char path[1024];
+        const int slot = b->first_user + u;
+        if (snprintf(path, sizeof path, "%s/%s", banks_dir, names[u]) >= (int)sizeof path) continue;
+        snprintf(b->name[slot], RSBANK_NAME, "%s", names[u]);
+        load_dir(b, slot, path, engine);
+        b->nbanks = slot + 1;
+    }
     return b;
+}
+
+rsbank_t *rsbank_load_engine(const char *engine, const char *default_dir, const char *imported_dir)
+{
+    return rsbank_load_full(engine, default_dir, imported_dir, NULL);
 }
 
 rsbank_t *rsbank_load(const char *default_dir, const char *imported_dir)
@@ -308,8 +405,8 @@ rsbank_t *rsbank_load(const char *default_dir, const char *imported_dir)
 void rsbank_free(rsbank_t *b)
 {
     if (!b) return;
-    for (int k = 0; k < RSBANK_BANKS; k++) {
-        if (k <= RSBANK_IMPORTED)                                  /* the split banks only borrow Imported's states */
+    for (int k = 0; k < RSBANK_SLOTS; k++) {
+        if (!b->borrowed[k])                                       /* the split banks only borrow Imported's states */
             for (int i = 0; i < b->count[k]; i++) free(b->e[k][i].state);
         free(b->e[k]);
     }

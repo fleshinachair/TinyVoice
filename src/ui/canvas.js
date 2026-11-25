@@ -625,6 +625,25 @@ import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_p
         if (pos && y + TEXT_H <= H) ctx.print(Math.max(0, Math.floor((W - tw(pos)) / 2)), y, pos, 1);
     }
 
+    /* custom:tinyvoice_bank, the Bank page's knob: the bank's NAME (the list is the engine's own banks and yours, so it is
+     * not a fixed enum): up to two lines in the cell, each clipped. Until the DSP has answered, "--". */
+    function drawBank(ctx, payload) {
+        const values = (payload && payload.values) || {};
+        const W = ctx.width | 0, H = ctx.height | 0;
+        if (!(W > 8 && H > 0)) return;
+        const tw = (s) => (typeof ctx.textWidth === "function" ? ctx.textWidth(s) : s.length * 6);
+        const name = typeof values.rs_bank_name === "string" && values.rs_bank_name.length ? values.rs_bank_name : "--";
+        const lh = 7;                                              /* two lines of the display font in a 15 px cell */
+        const lines = H >= TEXT_H + lh ? wrapName(name, W - 2, tw, 2) : [name];
+        const clip = (s) => { while (tw(s) > W - 2 && s.length > 1) s = s.slice(0, -1); return s; };
+        let y = Math.max(0, Math.floor((H - ((lines.length - 1) * lh + TEXT_H)) / 2));
+        for (const l of lines) {
+            const t = clip(l);
+            ctx.print(Math.max(0, Math.floor((W - tw(t)) / 2)), y, t, 1);
+            y += lh;
+        }
+    }
+
     globalThis.canvas_overlay = {
         drawPage: drawPresetPage,
         widgetKinds: {
@@ -637,8 +656,9 @@ import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_p
             "custom:tinyvoice_freeze": { draw: drawFreeze, nominal: { w: 64, h: 15 } },
             "custom:tinyvoice_latch": { draw: drawLatch, nominal: { w: 32, h: 15 } },
             "custom:tinyvoice_rsna": { draw: drawRs, nominal: { w: 32, h: 15 } },
+            "custom:tinyvoice_bank": { draw: drawBank, nominal: { w: 32, h: 15 } },
         },
     };
     /* test seam (tests/canvas_test.mjs) */
-    globalThis.TINYVOICE_SCOPE_FOR_TEST = { draw, drawFreeze, drawLatch, drawBeauty, drawGated, GATED, parse, loopPhase, recFill, noteName, st, drawRs, RS_ACTS, RS_DEPS, RS_META, fmtValue, drawPresetPage, wrapName, drawStock };
+    globalThis.TINYVOICE_SCOPE_FOR_TEST = { draw, drawFreeze, drawLatch, drawBeauty, drawGated, GATED, parse, loopPhase, recFill, noteName, st, drawRs, RS_ACTS, RS_DEPS, RS_META, fmtValue, drawPresetPage, wrapName, drawStock, drawBank };
 })();

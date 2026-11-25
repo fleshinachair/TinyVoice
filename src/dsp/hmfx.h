@@ -1,9 +1,9 @@
 #ifndef TINYVOICE_HMFX_H
 #define TINYVOICE_HMFX_H
 
-/* Resynth's output effects, in Humanoid's order after the resynthesis:
+/* Resynth's output effects, in the reference's order after the resynthesis:
  * De-ess, Freeze (a short glitch loop, mono), Widen (chorus ensemble). The Filter
- * panel is spectral and lives in hm.c. Parameters are read from the engine's hm_t p[] (Humanoid units).
+ * panel is spectral and lives in hm.c. Parameters are read from the engine's hm_t p[] (the reference units).
  * Host-free, no allocation. */
 
 #define HMFX_CHORUS  2048            /* chorus delay line (power of two) */
