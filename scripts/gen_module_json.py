@@ -63,7 +63,7 @@ PARAMS = [
     flt("char5", "Char 5", 0, 1, 0.01, 0.5, "%"),
     # the personalities: the Mode selector page writes `engine`; the vf_* params are the Voice FX page,
     # the hm_* params (after vf_preset) the Resynth engine's
-    enum("engine", "Engine", ["Vocoder", "Synth Voice", "Resynth"], 0),
+    enum("engine", "Engine", ["Vocoder", "Synth Voice", "Resynth", "Mangler"], 0),
     flt("vf_vowel", "Vowel", 0, 1, 0.01, 0.0, "%"),         # A E I O U sweep
     flt("vf_tract", "Tract", 0, 1, 0.01, 0.5, "%"),         # formant scale / gender
     flt("vf_peak", "Peak", 0, 1, 0.01, 0.5, "%"),           # formant Q
@@ -102,7 +102,32 @@ HM_EXTRA = [
     flt("hm_mic_gate", "Mic Gate", -72, -24, 1, -42, "dB"),                    # the voice gate on the raw input (Resynth runs Auto): lower for a quiet voice
     enum("hm_wave", "Wave", ["Saw", "Square", "Triangle", "Sine", "Preset"], 0),  # Preset = the wavetable a preset carried (hm_wt)
 ]
-PARAMS += HM + HM_EXTRA + [
+# ---- Mangler (src/dsp/mangle.c, modelled on PitchMonster): its controls in PitchMonster's units.
+OFFON = ["Off", "On"]
+MG = [
+    enum("mg_shift", "Shifter", ["Granular", "Formant", "Vocode"], 0),     # the core: grains / PSOLA with formants / a monotone at an absolute note
+    flt("mg_pitch", "Pitch", -48, 24, 0.1, 0, "st"),
+    flt("mg_formant", "Formant", -24, 24, 0.1, 0, "st"),                    # Formant and Vocode
+    flt("mg_voices", "Voices", 1, 8, 1, 1),                                 # unison voices per note
+    flt("mg_detune", "Detune", 0, 12, 0.1, 0, "st"),                        # Pitch Spread over the voices
+    flt("mg_time", "Time", 0, 1000, 1, 0, "ms"),                            # Time Spread over the voices
+    flt("mg_grain", "Grain", 1, 100, 1, 10, "Hz"),                          # Granular's grain rate
+    flt("mg_mix", "Mix", 0, 1, 0.01, 1, "%"),
+    enum("mg_notes", "Notes", ["Normal", "Pads", "Chord"], 0),              # where the voices' notes come from
+    enum("mg_chord", "Chord", [str(i) for i in range(1, 9)], 0),            # the chord slot (Notes = Chord)
+    enum("mg_mono", "Mono", OFFON, 1),                                      # Pads: the newest pad only
+    enum("mg_fix", "Fix", OFFON, 1),                                        # Formant Fix: formants stay put as the pitch moves
+    enum("mg_snap", "Snap", OFFON, 1),                                      # Pitch rounds to a semitone
+    enum("mg_scatter", "Scatter", ["Spread", "Jitter"], 0),                 # Pitch Spread: fixed and even, or random per grain
+    enum("mg_smear", "Smear", ["Spread", "Jitter"], 0),                     # Time Spread: fixed and even, or random per grain
+    enum("mg_wide", "Wide", OFFON, 0),                                      # pan the voices across the field
+    enum("mg_gjitter", "Jitter", OFFON, 1),                                 # Granular: random grain lengths
+    enum("mg_filter", "Filter", OFFON, 0),
+    flt("mg_freq", "Freq", 20, 20000, 1, 1000, "Hz"),
+    flt("mg_width", "Width", 0.1, 10, 0.1, 10, "oct"),
+    flt("mg_volume", "Volume", -24, 12, 0.5, 0, "dB"),
+]
+PARAMS += HM + HM_EXTRA + MG + [
     # performance toggles (not saved in "state")
     enum("freeze", "Loop", ["Off", "On"], 0),                  # Freeze (src/dsp/freeze.h): play the kept take; never records
     enum("freeze_rec", "Rec", ["Off", "Rec"], 0),              # record a new take (the old loop is kept until it completes); never plays
@@ -136,7 +161,7 @@ for role, k in zip(["a", "b", "c"], LOOPER):
 
 # Latch (MORE knob 6) draws its own value: On / Off in the modes it acts in
 # (Robot, Chords, Prism, Nightcall, Harmony), a dimmed "---" in the others.
-next(x for x in PARAMS if x["key"] == "latch")["viz"] = {"kind": "custom:tinyvoice_latch", "group": "latch", "role": "a", "extra_keys": ["mode", "engine", "hm_tuning_mode"]}   # Resynth: MIDI mode
+next(x for x in PARAMS if x["key"] == "latch")["viz"] = {"kind": "custom:tinyvoice_latch", "group": "latch", "role": "a", "extra_keys": ["mode", "engine", "hm_tuning_mode", "mg_notes"]}   # Resynth: MIDI mode; Mangler: Pads
 
 # Knobs that do nothing in some modes draw their own value (a dimmed "N/A"
 # where they are inert): Key, Scale, Retune, Glide, Beauty (all on PITCH). Same
@@ -182,6 +207,11 @@ RS_SYNTH = ["hm_transform", "hm_wave", "hm_wavetable_shape", "hm_wavetable_stret
 RS_TONE  = ["hm_hpf_freq", "hm_lpf_freq", "hm_filter_freq", "hm_filter_gain", "hm_noisegate_threshold", "hm_deess", "hm_sharpen", "hm_output_gain"]
 RS_PLAY  = ["hm_freeze", "hm_lookahead", "hm_freeze_sync", "hm_freeze_synclength", "hm_input_gain", "hm_mic_gate", "demo"]
 RS_NOTES = ["hm_tuning_duophonic", "hm_pitch_mono", "hm_pitch_duo", "latch", "hm_midi_idle"]      # Duo and Note mode's two notes, and the pads (MIDI mode)
+# Mangler: Main (Shifter, Pitch, Formant, Voices, Detune, Time, Grain, Mix), More (where the notes come from, Fix, Snap, how the
+# spreads move), Filter (the band-pass, the grain jitter, Volume, and the live-play knobs), Looper, and the presets.
+MG_MAIN   = ["mg_shift", "mg_pitch", "mg_formant", "mg_voices", "mg_detune", "mg_time", "mg_grain", "mg_mix"]
+MG_MORE   = ["mg_notes", "mg_chord", "mg_mono", "mg_fix", "mg_snap", "mg_scatter", "mg_smear", "mg_wide"]
+MG_FILTER = ["mg_filter", "mg_freq", "mg_width", "mg_gjitter", "mg_volume", "hm_mic_gate", "latch", "demo"]
 MENU_ONLY = {}
 
 # Resynth's Presets page, drawn by canvas.js (drawPage) instead of the host's stock browser, so a long imported name
@@ -202,7 +232,7 @@ out = []
 a = out.append
 a("{")
 for k, v in [("id", "tinyvoice"), ("name", "TinyVoice"), ("abbrev", "TVO"), ("version", "1.0.1"),
-             ("description", "Three engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Synth Voice (a one-page talking formant filter with presets) and Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports Humanoid presets)"),
+             ("description", "Four engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Synth Voice (a one-page talking formant filter with presets) Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports Humanoid presets) and Mangler (a multi-voice pitch and formant shifter: unison, spread, chords from the pads, a filter)"),
              ("author", "Mat Taylor"), ("dsp", "tinyvoice.so"), ("api_version", 2), ("component_type", "audio_fx")]:
     a("    %s: %s," % (json.dumps(k), json.dumps(v)))
 a('    "capabilities": {')
@@ -213,7 +243,7 @@ a('        "midi_in": true,')
 a('        "ui_hierarchy": {')
 # `modes` + `mode_param`: the host adds its own Mode page (writes `engine`), and the
 # active mode's level is the walk root. Level names are the modes, lower case.
-a('            "modes": ["vocoder", "synth voice", "resynth"],')
+a('            "modes": ["vocoder", "synth voice", "resynth", "mangler"],')
 a('            "mode_param": "engine",')
 a('            "levels": {')
 a('                "vocoder": {')
@@ -264,7 +294,23 @@ a('                },')
 for name, label, keys, last in [("rs_pitch", "Pitch", RS_PITCH, False), ("rs_synth", "Synth", RS_SYNTH, False),
                                 ("rs_tone", "Tone", RS_TONE, False), ("rs_play", "Play", RS_PLAY, False),
                                 ("rs_notes", "Notes", RS_NOTES, False), ("rs_looper", "Looper", LOOPER, False),
-                                ("rs_bank", "Bank", RS_BANK, True)]:
+                                ("rs_bank", "Bank", RS_BANK, False)]:
+    a('                "%s": {' % name)
+    a('                    "label": "%s",' % label)
+    a('                    "knobs": %s,' % line(keys))
+    a('                    "params": %s' % line(keys))
+    a('                }%s' % ("" if last else ","))
+a('                "mangler": {')
+a('                    "name": "Mangler",')
+a('                    "list_param": "rs_preset",')           # the Presets page: the Mangler bank while the engine is Mangler (dsp.c rs_bank_of)
+a('                    "count_param": "rs_preset_count",')
+a('                    "name_param": "rs_preset_name",')
+a('                    "knobs": %s,' % line(MG_MAIN))
+a('                    "params": %s' % line(MG_MAIN + ["rs_presets_page", {"level": "mg_more", "label": "More"}, {"level": "mg_filter", "label": "Filter"},
+                                                      {"level": "mg_looper", "label": "Looper"}, {"level": "mg_bank", "label": "Bank"}]))
+a('                },')
+for name, label, keys, last in [("mg_more", "More", MG_MORE, False), ("mg_filter", "Filter", MG_FILTER, False),
+                                ("mg_looper", "Looper", LOOPER, False), ("mg_bank", "Bank", RS_BANK, True)]:
     a('                "%s": {' % name)
     a('                    "label": "%s",' % label)
     a('                    "knobs": %s,' % line(keys))
@@ -280,7 +326,7 @@ a('    }')
 a('}')
 text = "\n".join(out) + "\n"
 doc = json.loads(text)
-open(sys.argv[1] if len(sys.argv) > 1 else "module.json", "w").write(text)
+open(sys.argv[1] if len(sys.argv) > 1 else "module.json", "w", newline="\n").write(text)
 
 BS, DQ = chr(92), chr(34)
 def c_string(js):
@@ -295,7 +341,7 @@ cp = json.dumps(served, separators=(",", ":"))
 assert "@" not in json.dumps(doc["capabilities"]["chain_params"]), "an @ in the table would be read as a placeholder"
 uh = json.dumps(doc["capabilities"]["ui_hierarchy"], separators=(",", ":"))
 hdr = sys.argv[2] if len(sys.argv) > 2 else "src/dsp/module_meta.h"
-with open(hdr, "w") as f:
+with open(hdr, "w", newline="\n") as f:
     f.write("/* GENERATED by scripts/gen_module_json.py from the same table as module.json. Do not edit. */\n")
     f.write("#ifndef TINYVOICE_MODULE_META_H\n#define TINYVOICE_MODULE_META_H\n\n")
     f.write("/* chain_params with @1@ .. @5@ for the char1 / char2 / mod / char4 / char5 names (filled per mode by dsp.c) */\n")
@@ -304,5 +350,8 @@ with open(hdr, "w") as f:
     parts = ["[" + json.dumps(served[0], separators=(",", ":"))] + [("," + json.dumps(p, separators=(",", ":"))) for p in served[1:]] + ["]"]
     assert all(len(x) < 4000 for x in parts) and "".join(parts) == cp
     f.write("static const char *const VT_CHAIN_PARAMS_PARTS[] = {\n" + (",\n".join("    " + c_string(x) for x in parts)) + "\n};\n\n")
-    f.write("static const char VT_UI_HIERARCHY_JSON[] = " + c_string(uh) + ";\n\n#endif\n")
+    # the hierarchy is over 4095 characters too (a pedantic compiler's limit for one literal): in parts, joined by dsp.c
+    uparts = [uh[i:i + 3000] for i in range(0, len(uh), 3000)]
+    assert "".join(uparts) == uh
+    f.write("static const char *const VT_UI_HIERARCHY_PARTS[] = {\n" + (",\n".join("    " + c_string(x) for x in uparts)) + "\n};\n\n#endif\n")
 print("wrote", len(PARAMS), "params +", len(READOUTS), "readouts +", len(PAGES), "page;", hdr, "with", len(cp), "+", len(uh), "bytes of JSON")

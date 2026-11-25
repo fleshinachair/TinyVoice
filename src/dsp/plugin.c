@@ -32,6 +32,8 @@ static void *bank_loader(void *arg)
     vt_inst *in = (vt_inst *)arg;
     rsbank_t *b = rsbank_load(in->dflt, in->dir);
     if (b && dsp_set_rs_bank(in->vt, b) != 0) rsbank_free(b);
+    rsbank_t *m = rsbank_load_engine("mangler", in->dflt, in->dir);   /* the same folders, the presets that run Mangler */
+    if (m && dsp_set_mg_bank(in->vt, m) != 0) rsbank_free(m);
     demo_pcm_t *d = demo_pcm_load(in->voice);                /* the Demo's recorded phrase, if the module ships one */
     if (d && dsp_set_demo_pcm(in->vt, d) != 0) demo_pcm_free(d);
     return NULL;

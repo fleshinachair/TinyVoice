@@ -10,3 +10,7 @@ src/host/
 Humanoid*.zip
 Humanoid*.pdf
 *.baby
+
+# Devious Machines PitchMonster: presets are third-party; never commit them (scripts/import_pitchmonster.py writes to build/)
+*.preset
+PitchMonster*

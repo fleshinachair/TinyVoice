@@ -422,6 +422,10 @@ check(Object.entries(EXPECT).every(([k2, ex]) => JSON.stringify(T.GATED[k2].acts
     // Latch: in Resynth it acts in MIDI mode, whatever the vocoder's Mode is
     check(runLt({ engine: "Resynth", mode: "Snap", hm_tuning_mode: "MIDI", latch: "On" }).runs[0].t === "On", "latch: Resynth MIDI mode shows the value");
     check(runLt({ engine: "Resynth", mode: "Robot", hm_tuning_mode: "Scale", latch: "On" }).runs[0].t === "---", "latch: Resynth Scale mode is ---");
+    // and in Mangler it acts in Pads (it holds the pads), whatever the vocoder's Mode is
+    check(runLt({ engine: "Mangler", mode: "Snap", mg_notes: "Pads", latch: "On" }).runs[0].t === "On", "latch: Mangler Pads shows the value");
+    check(runLt({ engine: "Mangler", mode: "Robot", mg_notes: "Normal", latch: "On" }).runs[0].t === "---" &&
+          runLt({ engine: "Mangler", mode: "Robot", mg_notes: "Chord", latch: "Off" }).runs[0].t === "---", "latch: Mangler Normal and Chord are ---");
 
     // module.json: every gated knob carries the widget with the keys its rule reads; the formats match
     const mj = JSON.parse(readFileSync(join(root, "module.json"), "utf8"));
@@ -437,7 +441,7 @@ check(Object.entries(EXPECT).every(([k2, ex]) => JSON.stringify(T.GATED[k2].acts
         if (m.type === "float" && (m.step !== c2.step || (m.unit || null) !== (c2.unit || null))) { vizOk = false; console.log("    format", key); }
     }
     check(vizOk, "rsna: module.json's viz / extra_keys / formats match RS_DEPS, the rules and RS_META");
-    check(cp.latch.viz && ["engine", "hm_tuning_mode"].every((x) => cp.latch.viz.extra_keys.indexOf(x) >= 0), "latch: reads engine and hm_tuning_mode");
+    check(cp.latch.viz && ["engine", "hm_tuning_mode", "mg_notes"].every((x) => cp.latch.viz.extra_keys.indexOf(x) >= 0), "latch: reads engine and hm_tuning_mode");
 
     // the Remote UI dims with the very same rules
     const html = readFileSync(join(root, "src/ui/web_ui.html"), "utf8"), cj = readFileSync(join(root, "src/ui/canvas.js"), "utf8");

@@ -873,9 +873,9 @@ static void test_state_roundtrip(void)
     };
     /* every saved param (not freeze, freeze_rec, demo, the preset index or Resynth's Glitch) off its default: the list
      * above, then every Resynth param (hm_*) by rule */
-    CHECK(sizeof set / sizeof set[0] + (VT_P_HM_WAVE - VT_P_HM_FIRST + 1) - 1 == VT_P_COUNT - 7);
+    CHECK(sizeof set / sizeof set[0] + (VT_P_HM_WAVE - VT_P_HM_FIRST + 1) + (VT_P_MG_LAST - VT_P_MG_FIRST + 1) - 1 == VT_P_COUNT - 7);
     for (size_t i = 0; i < sizeof set / sizeof set[0]; i++) CHECK(dsp_set_param(a, set[i][0], set[i][1]) == 0);
-    for (int id = VT_P_HM_FIRST; id <= VT_P_HM_WAVE; id++) {
+    for (int id = VT_P_HM_FIRST; id <= VT_P_MG_LAST; id++) {       /* Resynth's, then Mangler's (the Move-side extras between are in the first range) */
         const vt_param_def *d = dsp_param_def(id);
         char v[32];
         if (d->transient) continue;
@@ -1008,7 +1008,7 @@ static int vt_ieq(const char *a, const char *b)
     return *a == *b;
 }
 
-static char g_module_json[32768];
+static char g_module_json[65536];
 
 static int load_module_json(void)
 {
@@ -1241,24 +1241,25 @@ static void test_module_json_matches_params(void)
     /* the two personalities: `modes` names the root levels, `mode_param` is the param the host's Mode page writes */
     const char *uih = js_get(caps, "ui_hierarchy");
     const char *modes_arr = js_get(uih, "modes");
-    CHECK(modes_arr && js_arr_len(modes_arr) == 3);
+    CHECK(modes_arr && js_arr_len(modes_arr) == 4);
     CHECK(js_str(js_get(uih, "mode_param"), s, sizeof s) && strcmp(s, "engine") == 0);
     CHECK(modes_arr && js_str(js_elem(modes_arr, 0), s, sizeof s) && strcmp(s, "vocoder") == 0);
     CHECK(modes_arr && js_str(js_elem(modes_arr, 1), s, sizeof s) && strcmp(s, "synth voice") == 0);
     CHECK(modes_arr && js_str(js_elem(modes_arr, 2), s, sizeof s) && strcmp(s, "resynth") == 0);
+    CHECK(modes_arr && js_str(js_elem(modes_arr, 3), s, sizeof s) && strcmp(s, "mangler") == 0);
     {   /* the engine param's options are those mode names in the host's own spelling (case aside), so its Mode page commits a value the DSP takes */
         const vt_param_def *ed = dsp_param_def(VT_P_ENGINE);
-        CHECK(ed && ed->type == VT_PTYPE_ENUM && ed->num_options == 3);
-        CHECK(ed && vt_ieq(ed->options[0], "vocoder") && vt_ieq(ed->options[1], "synth voice") && vt_ieq(ed->options[2], "resynth"));
+        CHECK(ed && ed->type == VT_PTYPE_ENUM && ed->num_options == 4);
+        CHECK(ed && vt_ieq(ed->options[0], "vocoder") && vt_ieq(ed->options[1], "synth voice") && vt_ieq(ed->options[2], "resynth") && vt_ieq(ed->options[3], "mangler"));
     }
     const char *rootlv = js_get(levels, "vocoder");
     CHECK(rootlv != NULL);
     if (!rootlv) return;
 
     int nlevels = 0;
-    char names[16][32];
-    while (js_nth_member(levels, nlevels, names[nlevels], sizeof names[0]) && nlevels < 16) nlevels++;
-    CHECK(nlevels == 15);
+    char names[24][32];
+    while (js_nth_member(levels, nlevels, names[nlevels], sizeof names[0]) && nlevels < 24) nlevels++;
+    CHECK(nlevels == 20);
     CHECK(strcmp(names[0], "vocoder") == 0);
     for (int l = 1; l < nlevels && l < 5; l++) CHECK(strcmp(names[l], page_names[l - 1]) == 0);
     CHECK(strcmp(names[5], "synth voice") == 0);
@@ -1266,6 +1267,10 @@ static void test_module_json_matches_params(void)
     {   /* Resynth: its root (the main controls) and its pages */
         static const char *const rs_names[8] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_notes", "rs_looper", "rs_bank" };
         for (int l = 0; l < 8; l++) CHECK(nlevels > 7 + l && strcmp(names[7 + l], rs_names[l]) == 0);
+    }
+    {   /* Mangler: its root and its pages */
+        static const char *const mg_names[5] = { "mangler", "mg_more", "mg_filter", "mg_looper", "mg_bank" };
+        for (int l = 0; l < 5; l++) CHECK(nlevels > 15 + l && strcmp(names[15 + l], mg_names[l]) == 0);
     }
 
     int listed_on[VT_P_COUNT] = {0}, referenced[16] = {0};
@@ -1321,7 +1326,7 @@ static void test_module_json_matches_params(void)
         CHECK(js_str(js_get(lv, "count_param"), s, sizeof s) && strcmp(s, "vf_preset_count") == 0);
         CHECK(js_str(js_get(lv, "name_param"), s, sizeof s) && strcmp(s, "vf_preset_name") == 0);
         for (int q = 0; q < nlevels; q++)                              /* (and Resynth's own, below) */
-            if (strcmp(names[q], "synth voice") != 0 && strcmp(names[q], "resynth") != 0) CHECK(js_get(js_get(levels, names[q]), "list_param") == NULL);
+            if (strcmp(names[q], "synth voice") != 0 && strcmp(names[q], "resynth") != 0 && strcmp(names[q], "mangler") != 0) CHECK(js_get(js_get(levels, names[q]), "list_param") == NULL);
         {   /* Resynth's browser: its presets from the preset folder (rsbank.c) */
             const char *rl = js_get(levels, "resynth");
             CHECK(js_str(js_get(rl, "list_param"), s, sizeof s) && strcmp(s, "rs_preset") == 0);
@@ -1361,10 +1366,31 @@ static void test_module_json_matches_params(void)
         CHECK(knobs && js_arr_len(knobs) == 1 && js_str(js_elem(knobs, 0), s, sizeof s) && strcmp(s, "rs_bank") == 0);
         listed_on[VT_P_RS_BANK]++;
     }
+    {   /* Mangler's pages: Main, More, Filter (every knob a param), Looper (the same three) and its Bank page (the same one) */
+        static const char *const mg_lv[4] = { "mangler", "mg_more", "mg_filter", "mg_looper" };
+        static const int mg_n[4] = { 8, 8, 8, 3 };
+        for (int l = 0; l < 4; l++) {
+            const char *knobs = js_get(js_get(levels, mg_lv[l]), "knobs");
+            CHECK(knobs && js_arr_len(knobs) == mg_n[l]);
+            for (int k = 0; k < mg_n[l] && knobs; k++) {
+                const int id = js_str(js_elem(knobs, k), s, sizeof s) ? dsp_param_index(s) : -1;
+                CHECK(id >= 0);
+                if (id >= 0) listed_on[id]++;
+            }
+        }
+        const char *kb = js_get(js_get(levels, "mg_bank"), "knobs");
+        CHECK(kb && js_arr_len(kb) == 1 && js_str(js_elem(kb, 0), s, sizeof s) && strcmp(s, "rs_bank") == 0);
+        listed_on[VT_P_RS_BANK]++;
+        const char *ml = js_get(levels, "mangler");              /* its Presets browser: the same triple, which lists the Mangler bank while the engine is Mangler */
+        CHECK(js_str(js_get(ml, "list_param"), s, sizeof s) && strcmp(s, "rs_preset") == 0);
+        CHECK(js_str(js_get(ml, "name_param"), s, sizeof s) && strcmp(s, "rs_preset_name") == 0);
+    }
     for (int i = 0; i < VT_P_COUNT; i++) {
         const int hm = i >= VT_P_HM_FIRST && i <= VT_P_HM_WAVE;
-        int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET || i == VT_P_RS_PRESET) ? 0 : (i == VT_P_DEMO ? 3 : i == VT_P_LATCH ? 2 : 1);
-        if (i == VT_P_FREEZE || i == VT_P_FREEZE_REC || i == VT_P_FREEZE_LEN) want_pages = 2;   /* the Looper page, on the Vocoder and on Resynth */
+        int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET || i == VT_P_RS_PRESET) ? 0 : (i == VT_P_DEMO ? 4 : i == VT_P_LATCH ? 3 : 1);
+        if (i == VT_P_FREEZE || i == VT_P_FREEZE_REC || i == VT_P_FREEZE_LEN) want_pages = 3;   /* the Looper page, on the Vocoder, Resynth and Mangler */
+        if (i == VT_P_RS_BANK) want_pages = 2;                        /* the Bank page, on Resynth and Mangler */
+        if (i == VT_P_HM_VGATE) want_pages = 2;                       /* Mic Gate: Resynth's Play page and Mangler's Filter page */
         if (i == dsp_param_index("hm_transform")) want_pages = 2;     /* Resynth's Main and Synth pages */   /* Demo: the vocoder's More page, Voice FX's Audition and Resynth's Play */   /* `engine` is the host's Mode page, `vf_preset` its preset browser: not knobs */
         if (hm && listed_on[i] == 0) want_pages = 0;                 /* a Resynth param on the Remote UI only */
         if (listed_on[i] != want_pages) printf("  param %s listed on %d pages\n", dsp_param_def(i)->key, listed_on[i]);
@@ -2317,7 +2343,7 @@ static void test_served_metadata(void)
     }
     CHECK(viz == 3);                                               /* survives the trip, unlike the host fallback */
 
-    static char hier[4096];
+    static char hier[8192];
     CHECK(dsp_get_param(vt, "ui_hierarchy", hier, sizeof hier) > 0);
     const char *lv = js_get(hier, "levels");
     CHECK(lv && js_get(lv, "vocoder") && js_get(lv, "VOICE") && js_get(lv, "PITCH") && js_get(lv, "MORE") && js_get(lv, "synth voice"));
@@ -4530,6 +4556,7 @@ static void test_snap_space_age(void)
 
 #include "voice_tests.inc"
 #include "resynth_tests.inc"
+#include "mangler_tests.inc"
 
 int main(void)
 {
@@ -4654,6 +4681,15 @@ int main(void)
     RUN(test_resynth_gate_rms);
     RUN(test_resynth_hold_scale);
     RUN(test_resynth_demo);
+    /* Mangler (tests/mangler_tests.inc) */
+    RUN(test_mangler_pitch);
+    RUN(test_mangler_notes);
+    RUN(test_mangler_state);
+    RUN(test_mangler_isolation);
+    RUN(test_mangler_numeric_safety);
+    RUN(test_mangler_cpu);
+    RUN(test_mangler_bank);
+    RUN(test_mangler_demo);
     RUN(test_demo_recording);
     RUN(test_midi_agnostic_modes);
     RUN(test_latency_budget);

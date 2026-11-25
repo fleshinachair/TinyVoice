@@ -19,6 +19,7 @@
 #include "tour.h"
 #include "presets.h"
 #include "hm.h"
+#include "mangle.h"
 #include "rsbank.h"
 #include "vt_floor.h"
 #include "module_meta.h"   /* generated: chain_params / ui_hierarchy JSON */
@@ -85,7 +86,7 @@ static const char *const k_gate_opts[VT_GATE_OPTS] = {
     "-30 dB", "-27 dB", "-24 dB", "-21 dB", "-18 dB", "-15 dB", "-12 dB", "-9 dB", "-6 dB", "-3 dB", "0 dB",
 };
 static const char *const k_onoff_opts[] = {"Off", "On"};
-static const char *const k_engine_opts[] = {"Vocoder", "Synth Voice", "Resynth"};   /* "Synth Voice" was "VoiceFX": a saved set's old name still loads (dsp_set_param) */
+static const char *const k_engine_opts[] = {"Vocoder", "Synth Voice", "Resynth", "Mangler"};   /* "Synth Voice" was "VoiceFX": a saved set's old name still loads (dsp_set_param) */
 /* Resynth's enum option lists, named after their hm_params.h macro (the table below pastes the name) */
 static const char *const k_hm_HM_OPTS_OFFON[] = {HM_OPTS_OFFON};
 static const char *const k_hm_HM_OPTS_LAT[]   = {HM_OPTS_LAT};
@@ -100,6 +101,12 @@ static const char *const k_hm_wave_opts[]  = {"Saw", "Square", "Triangle", "Sine
 #define HM_WAVE_PRESET 4
 #define VT_HM_WT_N 512                     /* hm_wt: one cycle, 512 int16 samples, base64 (684 x 2 chars) */
 #define VT_HM_WT_STR (4 * ((2 * VT_HM_WT_N + 2) / 3) + 6)   /* + ":<len>" (the table's own length, up to 4096) */
+/* Mangler's enum option lists */
+static const char *const k_mg_shift_opts[]  = {"Granular", "Formant", "Vocode"};
+static const char *const k_mg_notes_opts[]  = {"Normal", "Pads", "Chord"};
+static const char *const k_mg_chord_opts[]  = {"1", "2", "3", "4", "5", "6", "7", "8"};
+static const char *const k_mg_spread_opts[] = {"Spread", "Jitter"};
+#define MG_CHORDS_STR 384                 /* "mg_chords" text: 8 slots x 8 notes x 4 chars + separators */
 static const char *const k_freeze_rec_opts[] = {"Off", "Rec"};      /* Freeze's Rec control (freeze.h) */
 static const char *const k_freeze_len_opts[] = {"Free", "1 Bar", "2 Bars", "4 Bars"};
 static const int k_freeze_bars[] = { 0, 1, 2, 4 };
@@ -158,6 +165,28 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     [VT_P_HM_IDLE]   = ENUM_DEF("hm_midi_idle", k_hm_idle_opts, 0),    /* MIDI mode, no pad: Tune to the scale / Silent (Humanoid) */
     [VT_P_HM_VGATE]  = FLOAT_DEF("hm_mic_gate", -72.0f, -24.0f, -42.0f), /* the voice gate in Resynth, dBFS RMS of the raw input */
     [VT_P_HM_WAVE]   = ENUM_DEF("hm_wave",  k_hm_wave_opts,  0),       /* Saw */
+    /* Mangler (PitchMonster's units; defaults are PitchMonster's own plain-voice start) */
+    [VT_P_MG_SHIFT]   = ENUM_DEF("mg_shift",   k_mg_shift_opts,  MG_GRANULAR),
+    [VT_P_MG_PITCH]   = FLOAT_DEF("mg_pitch",   -48.0f, 24.0f,   0.0f),
+    [VT_P_MG_FORMANT] = FLOAT_DEF("mg_formant", -24.0f, 24.0f,   0.0f),
+    [VT_P_MG_VOICES]  = FLOAT_DEF("mg_voices",    1.0f,  8.0f,   1.0f),
+    [VT_P_MG_DETUNE]  = FLOAT_DEF("mg_detune",    0.0f, 12.0f,   0.0f),
+    [VT_P_MG_TIME]    = FLOAT_DEF("mg_time",      0.0f, MG_MAX_TIME_MS, 0.0f),
+    [VT_P_MG_GRAIN]   = FLOAT_DEF("mg_grain",     1.0f, 100.0f,  10.0f),
+    [VT_P_MG_MIX]     = FLOAT_DEF("mg_mix",       0.0f,  1.0f,   1.0f),
+    [VT_P_MG_NOTES]   = ENUM_DEF("mg_notes",   k_mg_notes_opts,  MG_NOTES_NORMAL),
+    [VT_P_MG_CHORD]   = ENUM_DEF("mg_chord",   k_mg_chord_opts,  0),
+    [VT_P_MG_MONO]    = ENUM_DEF("mg_mono",    k_onoff_opts,     1),
+    [VT_P_MG_FIX]     = ENUM_DEF("mg_fix",     k_onoff_opts,     1),
+    [VT_P_MG_SNAP]    = ENUM_DEF("mg_snap",    k_onoff_opts,     1),
+    [VT_P_MG_SCATTER] = ENUM_DEF("mg_scatter", k_mg_spread_opts, 0),
+    [VT_P_MG_SMEAR]   = ENUM_DEF("mg_smear",   k_mg_spread_opts, 0),
+    [VT_P_MG_WIDE]    = ENUM_DEF("mg_wide",    k_onoff_opts,     0),
+    [VT_P_MG_GJITTER] = ENUM_DEF("mg_gjitter", k_onoff_opts,     1),
+    [VT_P_MG_FILTER]  = ENUM_DEF("mg_filter",  k_onoff_opts,     0),
+    [VT_P_MG_FREQ]    = FLOAT_DEF("mg_freq",     20.0f, 20000.0f, 1000.0f),
+    [VT_P_MG_WIDTH]   = FLOAT_DEF("mg_width",     0.1f,  10.0f,   10.0f),
+    [VT_P_MG_VOLUME]  = FLOAT_DEF("mg_volume",  -24.0f,  12.0f,    0.0f),
     /* performance toggles: never saved in "state" */
     [VT_P_FREEZE]    = TOGGLE_DEF("freeze"),                             /* Loop: Off / On (plays the kept take) */
     [VT_P_FREEZE_REC] = TRANSIENT_ENUM_DEF("freeze_rec", k_freeze_rec_opts),   /* Rec: Off / Rec (records a new take) */
@@ -219,6 +248,12 @@ struct vt {
     vfx_t vfx;                  /* Voice FX: the formant engine of the second personality */
     groove_t groove;            /* Voice FX's audition source: what Demo plays there instead of the sung phrase */
     hm_t hm;                    /* Resynth: the third personality (harmonic analysis / resynthesis) */
+    mg_t mg;                    /* Mangler: the fourth (multi-voice pitch / formant shifter, modelled on PitchMonster) */
+    int   mg_fold;              /* Mangler Pads: octaves (x12 st) the held pads are moved by, to sit near C4 */
+    int   demo_mg_snap, demo_mg_step;       /* Mangler's Demo: a snapshot is held / the step last loaded */
+    float demo_mg_p[VT_P_MG_LAST - VT_P_MG_FIRST + 1];
+    char  demo_mg_chords[MG_CHORDS_STR];
+    _Atomic(rsbank_t *) mg_bank;  /* Mangler's presets (dsp_set_mg_bank) */
     float hm_wt[VT_HM_WT_N];    /* the cycle a preset carried (hm_wt), used when Wave is Preset */
     int   hm_wt_valid;
     int   hm_wt_len;            /* the Humanoid table's own length before padding (the ":<len>" suffix), 0 = a full cycle */
@@ -334,8 +369,12 @@ vt_t *dsp_init(int sample_rate)
     vfx_init(&vt->vfx, (float)vt->sample_rate);
     groove_init(&vt->groove, (float)vt->sample_rate);
     hm_init(&vt->hm, (float)vt->sample_rate);
+    mg_init(&vt->mg, (float)vt->sample_rate);
+    mg_default_chords(&vt->mg);
+    vt->demo_mg_step = -1;
     vt->hm_wave_set = -1;
     atomic_init(&vt->rs_bank, NULL);
+    atomic_init(&vt->mg_bank, NULL);
     atomic_init(&vt->demo_pcm, NULL);
     vt->label_mode = -1;
     vt->run_mode = -1;
@@ -368,6 +407,7 @@ void dsp_cleanup(vt_t *vt)
 {
     if (!vt) return;
     rsbank_free(atomic_load_explicit(&vt->rs_bank, memory_order_acquire));
+    rsbank_free(atomic_load_explicit(&vt->mg_bank, memory_order_acquire));
     demo_pcm_free(atomic_load_explicit(&vt->demo_pcm, memory_order_acquire));
     VT_FREE(vt);
 }
@@ -379,6 +419,13 @@ int dsp_set_rs_bank(vt_t *vt, struct rsbank *bank)
     return atomic_compare_exchange_strong_explicit(&vt->rs_bank, &none, bank, memory_order_release, memory_order_relaxed) ? 0 : -1;
 }
 
+int dsp_set_mg_bank(vt_t *vt, struct rsbank *bank)
+{
+    rsbank_t *none = NULL;
+    if (!vt || !bank) return -1;
+    return atomic_compare_exchange_strong_explicit(&vt->mg_bank, &none, bank, memory_order_release, memory_order_relaxed) ? 0 : -1;
+}
+
 int dsp_set_demo_pcm(vt_t *vt, struct demo_pcm *pcm)
 {
     demo_pcm_t *none = NULL;
@@ -386,9 +433,10 @@ int dsp_set_demo_pcm(vt_t *vt, struct demo_pcm *pcm)
     return atomic_compare_exchange_strong_explicit(&vt->demo_pcm, &none, pcm, memory_order_release, memory_order_relaxed) ? 0 : -1;
 }
 
+/* The preset list the Presets page shows: Mangler's while the engine is Mangler, else Resynth's. */
 static const rsbank_t *rs_bank_of(vt_t *vt)
 {
-    return atomic_load_explicit(&vt->rs_bank, memory_order_acquire);
+    return atomic_load_explicit((int)vt->p[VT_P_ENGINE] == VT_ENGINE_MANGLER ? &vt->mg_bank : &vt->rs_bank, memory_order_acquire);
 }
 
 /* the index of rs_name in bank bn, -1 if it isn't there */
@@ -749,6 +797,15 @@ static const char *const k_rs_demo[RS_DEMO_N] = { "Tune - Hard Snap", "Voco - Sa
 static void rs_load(vt_t *vt, const rsbank_t *bk, int bn, int i)
 {
     const int hold = (int)vt->p[VT_P_HM_HOLD] == 1;
+    if ((int)vt->p[VT_P_ENGINE] == VT_ENGINE_MANGLER) {                /* Mangler: nothing of the last preset carries over either */
+        for (int k = VT_P_MG_FIRST; k <= VT_P_MG_LAST; k++) vt->p[k] = k_params[k].def;
+        mg_default_chords(&vt->mg);
+        apply_state(vt, bk->e[bn][i].state);
+        vt->p[VT_P_RS_BANK] = (float)bn;
+        snprintf(vt->rs_name, sizeof vt->rs_name, "%s", bk->e[bn][i].name);
+        vt->rs_find = 0;
+        return;
+    }
     for (int k = VT_P_HM_FIRST; k <= VT_P_HM_WAVE; k++) {            /* nothing of the last preset carries over */
         if (k_params[k].transient || k == VT_P_HM_HOLD || k == VT_P_HM_LEVEL || k == VT_P_HM_IDLE || k == VT_P_HM_VGATE) continue;
         if (hold && (k == VT_P_HM_KEY || k == VT_P_HM_SCALE || k == VT_P_HM_MASK)) continue;
@@ -776,6 +833,7 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
         return r;
     }
     if (strcmp(key, "hm_wt") == 0) return set_hm_wt(vt, val, strlen(val));
+    if (strcmp(key, "mg_chords") == 0) return mg_chords_parse(&vt->mg, val);
     if (strcmp(key, "auto") == 0) {
         /* The old Auto switch (sets saved before Gate took it in, tests):
          * On = Gate Auto, Off = back to the last manual level. */
@@ -832,12 +890,13 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
     /* The screen shows the tour's values only while it runs: switching Demo or the engine ends that at once, so the
      * very next read of a knob is the user's own. */
     if (id == VT_P_DEMO || id == VT_P_ENGINE) vt->disp_on = 0;
+    if (id == VT_P_ENGINE) vt->rs_find = 1;      /* the Presets page lists the new engine's bank: point it at the preset of that name, if any */
     /* A hand on a knob the tour is turning (the host writes the knob it was turned from the value it was SHOWING, so
      * the player takes over from where the dial was) or on the preset browser: the tour steps aside. Demo goes Off,
      * the value written is the user's, and every other knob is back on the user's own value. A state restore is not
      * a hand; neither is a knob the tour leaves alone (Breath, Attack, Release). */
     /* A hand on Resynth (a knob, or the Presets page) pins its Demo tour on the preset it is playing. */
-    if (!vt->restoring && vt->demo_active && (id == VT_P_RS_PRESET || id == VT_P_RS_BANK || (id >= VT_P_HM_FIRST && id <= VT_P_HM_WAVE)))
+    if (!vt->restoring && vt->demo_active && (id == VT_P_RS_PRESET || id == VT_P_RS_BANK || (id >= VT_P_HM_FIRST && id <= VT_P_HM_WAVE) || (id >= VT_P_MG_FIRST && id <= VT_P_MG_LAST)))
         vt->demo_pinned = 1;
     if (!vt->restoring && vt->disp_on && vt->demo_active && tour_moves(id)) {
         vt->p[VT_P_DEMO] = 0.0f;
@@ -946,6 +1005,10 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
         }
         if (vt->hm_wt_valid && n >= 0 && n < buf_len)                /* a preset's wavetable */
             n += snprintf(buf + n, (size_t)(buf_len - n), ",\"hm_wt\":\"%s\"", vt->hm_wt_str);
+        if (n >= 0 && n < buf_len - MG_CHORDS_STR - 16) {            /* Mangler's chord slots */
+            char cs[MG_CHORDS_STR];
+            if (mg_chords_format(&vt->mg, cs, sizeof cs) >= 0) n += snprintf(buf + n, (size_t)(buf_len - n), ",\"mg_chords\":\"%s\"", cs);
+        }
         if (vt->rs_name[0] && n >= 0 && n < buf_len) {               /* the Presets page's place (rs_resolve) */
             n += snprintf(buf + n, (size_t)(buf_len - n), ",\"rs_bank\":\"%s\",\"rs_name\":\"", k_rs_bank_opts[(int)vt->p[VT_P_RS_BANK]]);
             for (const char *c = vt->rs_name; *c && n >= 0 && n < buf_len - 2; c++) {
@@ -957,6 +1020,8 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
         if (n >= 0 && n < buf_len) n += snprintf(buf + n, (size_t)(buf_len - n), "}");
     } else if (strcmp(key, "hm_wt") == 0) {
         n = snprintf(buf, (size_t)buf_len, "%s", vt->hm_wt_str);
+    } else if (strcmp(key, "mg_chords") == 0) {
+        n = mg_chords_format(&vt->mg, buf, buf_len);
     } else if (strcmp(key, "diag") == 0) {
         /* For checking a real mic on the device: input RMS (10 ms, max over
          * ~1 s), voice gate open share, Robot's own gate / AGC / leveller,
@@ -990,7 +1055,7 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
                /* the header's name: on the drawn Presets page (a canvas preset_browser) the host runs its knob rotation as
                 * well as the browser's, and that one reads `preset_name`; unanswered it cleared the name the browser had just
                 * set, and the header flickered between the preset and the module. So, in Resynth, the very same string. */
-               (strcmp(key, "preset_name") == 0 && (int)vt->p[VT_P_ENGINE] == VT_ENGINE_RESYNTH)) {
+               (strcmp(key, "preset_name") == 0 && ((int)vt->p[VT_P_ENGINE] == VT_ENGINE_RESYNTH || (int)vt->p[VT_P_ENGINE] == VT_ENGINE_MANGLER))) {
         const rsbank_t *bk = rs_bank_of(vt);
         const int i = (int)vt->p[VT_P_RS_PRESET];
         const int bn = (int)vt->p[VT_P_RS_BANK];
@@ -1005,7 +1070,14 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
          * host's fallback drops it), so the canvas.js widget can mount. */
         n = format_chain_params(vt, buf, buf_len);
     } else if (strcmp(key, "ui_hierarchy") == 0) {
-        n = snprintf(buf, (size_t)buf_len, "%s", VT_UI_HIERARCHY_JSON);
+        n = 0;
+        for (size_t part = 0; part < sizeof VT_UI_HIERARCHY_PARTS / sizeof VT_UI_HIERARCHY_PARTS[0]; part++) {
+            const int k = (int)strlen(VT_UI_HIERARCHY_PARTS[part]);
+            if (n + k >= buf_len) { n = -1; break; }
+            memcpy(buf + n, VT_UI_HIERARCHY_PARTS[part], (size_t)k);
+            n += k;
+        }
+        if (n >= 0) buf[n] = '\0';
     } else if (strcmp(key, "is_loading") == 0) {
         n = snprintf(buf, (size_t)buf_len, "%s", vt->loading_blocks > 0 ? "1" : "0");
     } else if (strcmp(key, "pitch") == 0) {                       /* read-only readouts under the scope */
@@ -1113,6 +1185,13 @@ static int apply_members(vt_t *vt, const char *json)
             p = skip_string(p);
             size_t vn = (size_t)(p - vs) - 1;
             if (strcmp(key, "hm_wt") == 0) { set_hm_wt(vt, vs, vn); continue; }   /* the one long value */
+            if (strcmp(key, "mg_chords") == 0) {                     /* Mangler's chord slots: the other long one */
+                char cs[MG_CHORDS_STR];
+                const size_t cn = vn < sizeof cs ? vn : sizeof cs - 1;
+                memcpy(cs, vs, cn); cs[cn] = '\0';
+                mg_chords_parse(&vt->mg, cs);
+                continue;
+            }
             if (strcmp(key, "rs_name") == 0) {                       /* the Presets page's place: looked up when the bank is in */
                 size_t o = 0;
                 for (size_t j = 0; j < vn && o + 1 < sizeof vt->rs_name; j++) {
@@ -1194,7 +1273,7 @@ static int latch_on(const vt_t *vt) { return vt->p[VT_P_LATCH] >= 0.5f; }
 static int latch_mode(int mode)
 {
     return mode == VT_MODE_ROBOT || mode == VT_MODE_CHORDS || mode == VT_MODE_PRISM ||
-           mode == VT_MODE_NIGHTCALL || mode == VT_MODE_HARMONY || mode == VT_MODE_RESYNTH;   /* Resynth: MIDI mode keeps the pads */
+           mode == VT_MODE_NIGHTCALL || mode == VT_MODE_HARMONY || mode == VT_MODE_RESYNTH || mode == VT_MODE_MANGLER;   /* Resynth: MIDI mode, Mangler: Pads keep the pads */
 }
 
 static void note_on(vt_t *vt, int note, int vel)
@@ -1370,6 +1449,73 @@ static inline float headroom(float x)
     return copysignf(knee + span * tanhf((a - knee) / span), x);
 }
 
+/* Mangler's pads: the notes held (the Demo's chord, the latched chord or the pads), oldest first, moved by whole octaves
+ * together until their mean is in C4's neighbourhood (Move's pads sit high; PitchMonster's notes are offsets from C4). */
+static int mg_pad_list(vt_t *vt, int demo_on, const int *demo_notes, int latched, int out[VT_MAX_VOICES])
+{
+    int n = 0;
+    if (demo_on) {
+        for (int s = 0; s < VT_MAX_VOICES; s++) if (demo_notes[s] >= 0) out[n++] = demo_notes[s];
+    } else if (latched) {
+        for (int s = 0; s < VT_MAX_VOICES; s++) if (vt->latch_note[s] >= 0) out[n++] = vt->latch_note[s];
+    } else {
+        for (uint32_t age = 0;;) {
+            int pick = -1;
+            for (int i = 0; i < VT_MAX_VOICES; i++)
+                if (vt->voices[i].note >= 0 && vt->voices[i].age > age && (pick < 0 || vt->voices[i].age < vt->voices[pick].age)) pick = i;
+            if (pick < 0) break;
+            out[n++] = vt->voices[pick].note;
+            age = vt->voices[pick].age;
+        }
+    }
+    if (n) {
+        int sum = 0;
+        for (int i = 0; i < n; i++) sum += out[i];
+        const float mean = (float)sum / (float)n;
+        if (mean + (float)vt->mg_fold < 50.0f || mean + (float)vt->mg_fold >= 70.0f) {
+            int f = 0;
+            while (mean + (float)f >= 66.0f) f -= 12;
+            while (mean + (float)f < 54.0f) f += 12;
+            vt->mg_fold = f;
+        }
+        for (int i = 0; i < n; i++) out[i] += vt->mg_fold;
+    }
+    return n;
+}
+
+/* Push Mangler's controls, chord slot and pads into the engine (once per block), and set the tracker it runs on. */
+static void mg_sync(vt_t *vt, const int *pads, int npads)
+{
+    mg_params q;
+    memset(&q, 0, sizeof q);
+    q.engine = (int)vt->p[VT_P_MG_SHIFT];
+    q.pitch = vt->p[VT_P_MG_PITCH];
+    q.snap = (int)vt->p[VT_P_MG_SNAP];
+    q.unison = (int)lroundf(vt->p[VT_P_MG_VOICES]);
+    q.detune = vt->p[VT_P_MG_DETUNE];
+    q.detune_jitter = (int)vt->p[VT_P_MG_SCATTER];
+    q.time_ms = vt->p[VT_P_MG_TIME];
+    q.time_jitter = (int)vt->p[VT_P_MG_SMEAR];
+    q.grain_hz = vt->p[VT_P_MG_GRAIN];
+    q.grain_jitter = (int)vt->p[VT_P_MG_GJITTER];
+    q.wide = (int)vt->p[VT_P_MG_WIDE];
+    q.formant = vt->p[VT_P_MG_FORMANT];
+    q.fix = (int)vt->p[VT_P_MG_FIX];
+    q.filter_on = (int)vt->p[VT_P_MG_FILTER];
+    q.filter_hz = vt->p[VT_P_MG_FREQ];
+    q.filter_oct = vt->p[VT_P_MG_WIDTH];
+    q.mix = vt->p[VT_P_MG_MIX];
+    q.volume_db = vt->p[VT_P_MG_VOLUME];
+    q.note_mode = (int)vt->p[VT_P_MG_NOTES];
+    q.mono = (int)vt->p[VT_P_MG_MONO];
+    mg_set_pads(&vt->mg, pads, npads);
+    mg_select_chord(&vt->mg, (int)vt->p[VT_P_MG_CHORD]);
+    mg_set(&vt->mg, &q);
+    cher_set_params(&vt->cher, 0, 0, 0.0f, -60.0f, -1, 0.0f);
+    cher_set_auto(&vt->cher, 1);
+    cher_set_clarity(&vt->cher, 0.65f);
+}
+
 void dsp_process_block_f(vt_t *vt, float *lr, int frames)
 {
     if (vt) rs_resolve(vt);
@@ -1401,6 +1547,16 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
             memcpy(vt->demo_rs_name, vt->rs_name, sizeof vt->demo_rs_name);
             vt->demo_rs_snap = 1;
         }
+        vt->demo_mg_snap = 0;
+        vt->demo_mg_step = -1;
+        if ((int)vt->p[VT_P_ENGINE] == VT_ENGINE_MANGLER) {          /* the player's own Mangler sound, to come back to */
+            memcpy(vt->demo_mg_p, &vt->p[VT_P_MG_FIRST], sizeof vt->demo_mg_p);
+            mg_chords_format(&vt->mg, vt->demo_mg_chords, sizeof vt->demo_mg_chords);
+            memcpy(vt->demo_rs_name, vt->rs_name, sizeof vt->demo_rs_name);
+            vt->demo_rs_bank = (int)vt->p[VT_P_RS_BANK];
+            vt->demo_rs_idx = (int)vt->p[VT_P_RS_PRESET];
+            vt->demo_mg_snap = 1;
+        }
     } else if (!demo_on && vt->demo_active) {
         vt->demo_active = 0;
         if (!vt->demo_pinned) vt->p[VT_P_MODE] = (float)vt->demo_saved_mode;
@@ -1412,6 +1568,14 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
             memcpy(vt->rs_name, vt->demo_rs_name, sizeof vt->rs_name);
         }
         vt->demo_rs_snap = 0;
+        if (vt->demo_mg_snap && !vt->demo_pinned) {
+            memcpy(&vt->p[VT_P_MG_FIRST], vt->demo_mg_p, sizeof vt->demo_mg_p);
+            mg_chords_parse(&vt->mg, vt->demo_mg_chords);
+            vt->p[VT_P_RS_BANK] = (float)vt->demo_rs_bank;
+            vt->p[VT_P_RS_PRESET] = (float)vt->demo_rs_idx;
+            memcpy(vt->rs_name, vt->demo_rs_name, sizeof vt->rs_name);
+        }
+        vt->demo_mg_snap = 0;
         vt->demo_pinned = 0;
     }
     int demo_chord_on = 0, demo_notes[VT_MAX_VOICES];
@@ -1434,8 +1598,20 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
                     }
             }
         }
+        if (!vt->demo_pinned && vt->demo_mg_snap && (int)vt->p[VT_P_ENGINE] == VT_ENGINE_MANGLER) {
+            /* Mangler: the first presets of the Default bank, four bars each */
+            const rsbank_t *bk = rs_bank_of(vt);
+            const int cnt = bk ? (bk->count[0] < 6 ? bk->count[0] : 6) : 0;
+            const int step = cnt ? (int)(vt->demo_time / (4.0 * bar)) % cnt : 0;
+            if (cnt && step != vt->demo_mg_step) {
+                vt->demo_mg_step = step;
+                rs_load(vt, bk, 0, step);
+                vt->p[VT_P_RS_BANK] = 0.0f;
+                vt->p[VT_P_RS_PRESET] = (float)step;
+            }
+        }
         int m = (int)vt->p[VT_P_MODE];
-        if (latch_mode(m)) {
+        if (latch_mode(m) || ((int)vt->p[VT_P_ENGINE] == VT_ENGINE_MANGLER && (int)vt->p[VT_P_MG_NOTES] == MG_NOTES_PADS)) {
             demo_chord((int)(vt->demo_time / bar), demo_notes);      /* virtual pads, one chord a bar */
             demo_chord_on = 1;
         }
@@ -1447,7 +1623,8 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
      * is_loading so the UI re-reads them. Not in the first second, when a set
      * is being restored (the host's restore waits while is_loading says "1"). */
     const int eng = (int)vt->p[VT_P_ENGINE];
-    const int want_mode = eng == VT_ENGINE_VOICEFX ? VT_MODE_VOICEFX : eng == VT_ENGINE_RESYNTH ? VT_MODE_RESYNTH : (int)vt->p[VT_P_MODE];
+    const int want_mode = eng == VT_ENGINE_VOICEFX ? VT_MODE_VOICEFX : eng == VT_ENGINE_RESYNTH ? VT_MODE_RESYNTH :
+                          eng == VT_ENGINE_MANGLER ? VT_MODE_MANGLER : (int)vt->p[VT_P_MODE];
     if (want_mode != vt->label_mode) {
         if (vt->label_mode >= 0 && vt->warm_samples >= vt->sample_rate)
             vt->loading_blocks = (int)(LABEL_PULSE_SEC * sr / (float)frames);
@@ -1470,6 +1647,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
     /* Resynth runs Humanoid's own front end (Input gain, Gate), Dry/Wet, Widen and Output: TinyVoice's
      * Auto, Tone, Spread, Mix and Level stay out of it (its pages do not show them). */
     const int rs = mode == VT_MODE_RESYNTH;
+    const int mg = mode == VT_MODE_MANGLER;     /* Mangler: its own Mix and Volume, with the same automatic front end */
     /* Voice FX's effective knobs. They are the stored ones, except under the Showcase Tour (Demo On in Voice FX:
      * Demo is the tour), when the ghost hands move Tract, Peak, Choir and Mix/Drv and pick the vowel along the
      * phrase's bars. Only these effective values change: nothing is ever written to vt->p, so what you set
@@ -1489,9 +1667,9 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         vt->disp_on = 0;
     }
     groove_set_bpm(&vt->groove, vt->bpm);                           /* the audition loop follows the host tempo */
-    const float mix  = vf ? clampf(vfp[7] / VFX_MIX_KNEE, 0.0f, 1.0f) : rs ? 1.0f : vt->p[VT_P_MIX];   /* Voice FX: wet/dry up to the knee, drive above */
+    const float mix  = vf ? clampf(vfp[7] / VFX_MIX_KNEE, 0.0f, 1.0f) : (rs || mg) ? 1.0f : vt->p[VT_P_MIX];   /* Voice FX: wet/dry up to the knee, drive above */
     const float dry_g = mix >= 0.999f ? 0.0f : 1.0f - mix;          /* 100% wet: no dry at all */
-    const float gain = (vf || rs) ? 1.0f : powf(10.0f, vt->p[VT_P_GAIN] / 20.0f);
+    const float gain = (vf || rs || mg) ? 1.0f : powf(10.0f, vt->p[VT_P_GAIN] / 20.0f);
     const float sw_goal = mode == want_mode ? 1.0f : 0.0f;
     const int freeze_rec = (int)vt->p[VT_P_FREEZE_REC], freeze_loop = (int)vt->p[VT_P_FREEZE];   /* Rec, Loop (freeze.h) */
     {   /* Freeze Len: bars at the host tempo (4 beats a bar), 0 = free punch-out */
@@ -1505,7 +1683,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         }
         freeze_set_clock(&vt->freeze, to_db);
     }
-    const int auto_on = (int)vt->p[VT_P_GATE] == 0 || vf || rs;     /* Gate = Auto (always, in Voice FX and Resynth: the presets' gates and tracker expect a DAW-level voice) */
+    const int auto_on = (int)vt->p[VT_P_GATE] == 0 || vf || rs || mg;     /* Gate = Auto (always, in Voice FX and Resynth: the presets' gates and tracker expect a DAW-level voice) */
     const float gate_manual_db = gate_db_of((int)vt->p[VT_P_GATE] ? (int)vt->p[VT_P_GATE] : vt->gate_mem);
     const int root = (int)vt->p[VT_P_KEY];        /* 0 = C */
     const float c1 = vt->p[VT_P_CHAR1], c2 = vt->p[VT_P_CHAR2], md = vt->p[VT_P_MOD];
@@ -1515,13 +1693,13 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
     const float gate_db = auto_on ? -60.0f : gate_manual_db;
 
     /* Tone: 2 x 1-pole lowpass, 400 Hz (0) .. 20 kHz (1); fully open = bypassed. */
-    const int tone_on = vt->p[VT_P_TONE] < 0.999f && !vf && !rs;
+    const int tone_on = vt->p[VT_P_TONE] < 0.999f && !vf && !rs && !mg;
     const float tone_a = 1.0f - expf(-2.0f * 3.14159265f * 400.0f * powf(50.0f, vt->p[VT_P_TONE]) / sr);
 
     /* Spread: two modulated taps (quadrature LFO) widen the wet signal. In
      * Robot, Spread pans the vocoder's odd/even bands instead. */
     const float spread = vt->p[VT_P_SPREAD];
-    const float ch_amt = (has_bands(mode) || rs) ? 0.0f : (vf ? vfp[3] : spread) * 0.7f;
+    const float ch_amt = (has_bands(mode) || rs || mg) ? 0.0f : (vf ? vfp[3] : spread) * 0.7f;
     const float ch_base = CHORUS_BASE_MS * 0.001f * sr, ch_depth = CHORUS_DEPTH_MS * 0.001f * sr;
     const float ch_inc = CHORUS_RATE_HZ / sr;
     const float k_ch = 1.0f - expf(-1.0f / (0.010f * sr));      /* 10 ms: the amount never steps */
@@ -1578,6 +1756,10 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         assign_carriers(vt, &vt->nc, held, vel);
     } else if (rs) {
         hm_sync(vt);
+    } else if (mg) {
+        int pads[VT_MAX_VOICES];
+        const int np = mg_pad_list(vt, demo_chord_on, demo_notes, latched, pads);
+        mg_sync(vt, pads, np);
     } else if (vf) {
         if (tour_on) vfx_vowel_pair(&vt->vfx, tour.v0, tour.v1, tour.vt);
         else vfx_vowel_knob(&vt->vfx);
@@ -1614,7 +1796,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
             imogen_set_character(&vt->imogen, 2.0f * c1, md);
         }
     }
-    if (!has_bands(mode) && !is_vox(mode) && !vf && !rs && mode != VT_MODE_CHORDS) {
+    if (!has_bands(mode) && !is_vox(mode) && !vf && !rs && !mg && mode != VT_MODE_CHORDS) {
         fx_set(&vt->fx, &vt->cher, mode, c1, c2, md, spread, vt->p[VT_P_GLIDE], auto_on, root, scale, held);
         fx_set_extra(&vt->fx, c4, c5);
         fx_set_beauty(&vt->fx, beauty);
@@ -1622,7 +1804,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
     const int head = vt_mode_headroom(mode);
     /* the voice gate's threshold (RMS): Resynth's Mic Gate, Auto's, or the Gate knob. Resynth always runs Auto (its
      * presets expect a DAW-level voice) but a quiet singer under -42 dBFS was cut with no knob to fix it. */
-    const float vg_thr = rs ? powf(10.0f, vt->p[VT_P_HM_VGATE] / 20.0f) : auto_on ? SG_THR : powf(10.0f, gate_manual_db / 20.0f);
+    const float vg_thr = (rs || mg) ? powf(10.0f, vt->p[VT_P_HM_VGATE] / 20.0f) : auto_on ? SG_THR : powf(10.0f, gate_manual_db / 20.0f);
 
     for (int i = 0; i < frames; i++) {
         float in_l = lr[2 * i], in_r = lr[2 * i + 1];
@@ -1702,6 +1884,10 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
             hm_tick(&vt->hm, mono, &wet_l, &wet_r);
             cher_listen(&vt->cher, mono);                    /* a switch back to a pitch mode finds the live voice */
             dry_follow(vt, 0.0f);                            /* Resynth mixes its own dry (Dry/Wet) */
+        } else if (mg) {
+            cher_push(&vt->cher, mono);                      /* the period it follows */
+            mg_tick(&vt->mg, mono, vt->cher.f0 > 0.0f ? sr / vt->cher.f0 : 0.0f, &wet_l, &wet_r);
+            dry_follow(vt, 0.0f);                            /* Mangler mixes its own dry (Mix) */
         } else if (vf) {
             vfx_process(&vt->vfx, mono, &wet_l, &wet_r);
             cher_listen(&vt->cher, mono);                    /* a switch back to a pitch mode finds the live voice */
@@ -1787,6 +1973,10 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         vt->viz_f0 = hm_f0(&vt->hm);
         vt->viz_target = hm_target(&vt->hm);
         vt->viz_cents = vt->viz_f0 > 0.0f && vt->viz_target > 0.0f ? 1200.0f * log2f(vt->viz_f0 / vt->viz_target) : 0.0f;
+    } else if (mg) {
+        vt->viz_f0 = vt->cher.f0;
+        vt->viz_target = vt->cher.f0 > 0.0f && (int)vt->p[VT_P_MG_SHIFT] != MG_VOCODE ? vt->cher.f0 * exp2f(vt->p[VT_P_MG_PITCH] / 12.0f) : 0.0f;
+        vt->viz_cents = 0.0f;
     } else if (is_vox(mode) && mode != VT_MODE_HARMONY) {
         vt->viz_f0 = vt->viz_target = vt->viz_cents = 0.0f;           /* nothing is tracked */
     } else {

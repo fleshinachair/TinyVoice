@@ -3,7 +3,7 @@
     "name": "TinyVoice",
     "abbrev": "TVO",
     "version": "1.0.1",
-    "description": "Three engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Synth Voice (a one-page talking formant filter with presets) and Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports Humanoid presets)",
+    "description": "Four engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Synth Voice (a one-page talking formant filter with presets) Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports Humanoid presets) and Mangler (a multi-voice pitch and formant shifter: unison, spread, chords from the pads, a filter)",
     "author": "Mat Taylor",
     "dsp": "tinyvoice.so",
     "api_version": 2,
@@ -14,7 +14,7 @@
         "audio_in": true,
         "midi_in": true,
         "ui_hierarchy": {
-            "modes": ["vocoder", "synth voice", "resynth"],
+            "modes": ["vocoder", "synth voice", "resynth", "mangler"],
             "mode_param": "engine",
             "levels": {
                 "vocoder": {
@@ -102,6 +102,34 @@
                     "label": "Bank",
                     "knobs": ["rs_bank"],
                     "params": ["rs_bank"]
+                },
+                "mangler": {
+                    "name": "Mangler",
+                    "list_param": "rs_preset",
+                    "count_param": "rs_preset_count",
+                    "name_param": "rs_preset_name",
+                    "knobs": ["mg_shift", "mg_pitch", "mg_formant", "mg_voices", "mg_detune", "mg_time", "mg_grain", "mg_mix"],
+                    "params": ["mg_shift", "mg_pitch", "mg_formant", "mg_voices", "mg_detune", "mg_time", "mg_grain", "mg_mix", "rs_presets_page", {"level": "mg_more", "label": "More"}, {"level": "mg_filter", "label": "Filter"}, {"level": "mg_looper", "label": "Looper"}, {"level": "mg_bank", "label": "Bank"}]
+                },
+                "mg_more": {
+                    "label": "More",
+                    "knobs": ["mg_notes", "mg_chord", "mg_mono", "mg_fix", "mg_snap", "mg_scatter", "mg_smear", "mg_wide"],
+                    "params": ["mg_notes", "mg_chord", "mg_mono", "mg_fix", "mg_snap", "mg_scatter", "mg_smear", "mg_wide"]
+                },
+                "mg_filter": {
+                    "label": "Filter",
+                    "knobs": ["mg_filter", "mg_freq", "mg_width", "mg_gjitter", "mg_volume", "hm_mic_gate", "latch", "demo"],
+                    "params": ["mg_filter", "mg_freq", "mg_width", "mg_gjitter", "mg_volume", "hm_mic_gate", "latch", "demo"]
+                },
+                "mg_looper": {
+                    "label": "Looper",
+                    "knobs": ["freeze_rec", "freeze", "freeze_len"],
+                    "params": ["freeze_rec", "freeze", "freeze_len"]
+                },
+                "mg_bank": {
+                    "label": "Bank",
+                    "knobs": ["rs_bank"],
+                    "params": ["rs_bank"]
                 }
             }
         },
@@ -121,10 +149,10 @@
             {"key": "mod", "name": "Mod", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0},
             {"key": "freeze_len", "name": "Length", "type": "enum", "options": ["Free", "1 Bar", "2 Bars", "4 Bars"], "default": 2, "viz": {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": "c", "extra_keys": ["scope"]}},
             {"key": "beauty", "name": "Beauty", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.5, "viz": {"kind": "custom:tinyvoice_beauty", "group": "beauty", "role": "a", "extra_keys": ["mode"]}},
-            {"key": "latch", "name": "Latch", "type": "enum", "options": ["Off", "On"], "default": 0, "viz": {"kind": "custom:tinyvoice_latch", "group": "latch", "role": "a", "extra_keys": ["mode", "engine", "hm_tuning_mode"]}},
+            {"key": "latch", "name": "Latch", "type": "enum", "options": ["Off", "On"], "default": 0, "viz": {"kind": "custom:tinyvoice_latch", "group": "latch", "role": "a", "extra_keys": ["mode", "engine", "hm_tuning_mode", "mg_notes"]}},
             {"key": "char4", "name": "Char 4", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.5},
             {"key": "char5", "name": "Char 5", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.5},
-            {"key": "engine", "name": "Engine", "type": "enum", "options": ["Vocoder", "Synth Voice", "Resynth"], "default": 0},
+            {"key": "engine", "name": "Engine", "type": "enum", "options": ["Vocoder", "Synth Voice", "Resynth", "Mangler"], "default": 0},
             {"key": "vf_vowel", "name": "Vowel", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.0},
             {"key": "vf_tract", "name": "Tract", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.5},
             {"key": "vf_peak", "name": "Peak", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 0.5},
@@ -208,6 +236,27 @@
             {"key": "hm_midi_idle", "name": "No Pad", "type": "enum", "options": ["Tune", "Silent"], "default": 0, "viz": {"kind": "custom:tinyvoice_rsna", "group": "hm_midi_idle", "role": "a", "extra_keys": ["hm_tuning_mode"]}},
             {"key": "hm_mic_gate", "name": "Mic Gate", "type": "float", "min": -72, "max": -24, "step": 1, "unit": "dB", "default": -42},
             {"key": "hm_wave", "name": "Wave", "type": "enum", "options": ["Saw", "Square", "Triangle", "Sine", "Preset"], "default": 0, "viz": {"kind": "custom:tinyvoice_rsna", "group": "hm_wave", "role": "a", "extra_keys": ["hm_synth_mix", "hm_transform"]}},
+            {"key": "mg_shift", "name": "Shifter", "type": "enum", "options": ["Granular", "Formant", "Vocode"], "default": 0},
+            {"key": "mg_pitch", "name": "Pitch", "type": "float", "min": -48, "max": 24, "step": 0.1, "unit": "st", "default": 0},
+            {"key": "mg_formant", "name": "Formant", "type": "float", "min": -24, "max": 24, "step": 0.1, "unit": "st", "default": 0},
+            {"key": "mg_voices", "name": "Voices", "type": "float", "min": 1, "max": 8, "step": 1, "default": 1},
+            {"key": "mg_detune", "name": "Detune", "type": "float", "min": 0, "max": 12, "step": 0.1, "unit": "st", "default": 0},
+            {"key": "mg_time", "name": "Time", "type": "float", "min": 0, "max": 1000, "step": 1, "unit": "ms", "default": 0},
+            {"key": "mg_grain", "name": "Grain", "type": "float", "min": 1, "max": 100, "step": 1, "unit": "Hz", "default": 10},
+            {"key": "mg_mix", "name": "Mix", "type": "float", "min": 0, "max": 1, "step": 0.01, "unit": "%", "default": 1},
+            {"key": "mg_notes", "name": "Notes", "type": "enum", "options": ["Normal", "Pads", "Chord"], "default": 0},
+            {"key": "mg_chord", "name": "Chord", "type": "enum", "options": ["1", "2", "3", "4", "5", "6", "7", "8"], "default": 0},
+            {"key": "mg_mono", "name": "Mono", "type": "enum", "options": ["Off", "On"], "default": 1},
+            {"key": "mg_fix", "name": "Fix", "type": "enum", "options": ["Off", "On"], "default": 1},
+            {"key": "mg_snap", "name": "Snap", "type": "enum", "options": ["Off", "On"], "default": 1},
+            {"key": "mg_scatter", "name": "Scatter", "type": "enum", "options": ["Spread", "Jitter"], "default": 0},
+            {"key": "mg_smear", "name": "Smear", "type": "enum", "options": ["Spread", "Jitter"], "default": 0},
+            {"key": "mg_wide", "name": "Wide", "type": "enum", "options": ["Off", "On"], "default": 0},
+            {"key": "mg_gjitter", "name": "Jitter", "type": "enum", "options": ["Off", "On"], "default": 1},
+            {"key": "mg_filter", "name": "Filter", "type": "enum", "options": ["Off", "On"], "default": 0},
+            {"key": "mg_freq", "name": "Freq", "type": "float", "min": 20, "max": 20000, "step": 1, "unit": "Hz", "default": 1000},
+            {"key": "mg_width", "name": "Width", "type": "float", "min": 0.1, "max": 10, "step": 0.1, "unit": "oct", "default": 10},
+            {"key": "mg_volume", "name": "Volume", "type": "float", "min": -24, "max": 12, "step": 0.5, "unit": "dB", "default": 0},
             {"key": "freeze", "name": "Loop", "type": "enum", "options": ["Off", "On"], "default": 0, "viz": {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": "b", "extra_keys": ["scope"]}},
             {"key": "freeze_rec", "name": "Rec", "type": "enum", "options": ["Off", "Rec"], "default": 0, "viz": {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": "a", "extra_keys": ["scope"]}},
             {"key": "demo", "name": "Demo", "type": "enum", "options": ["Off", "On"], "default": 0},

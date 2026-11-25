@@ -88,6 +88,31 @@ typedef enum {
     VT_P_HM_IDLE,       /* enum  Tune, Silent: MIDI mode with no pad held (Tune = keep correcting to the scale) */
     VT_P_HM_VGATE,      /* -72..-24 dB: Mic Gate, the voice gate's threshold on the raw input in Resynth (-42 = the vocoder's Auto) */
     VT_P_HM_WAVE,       /* enum  Saw, Square, Triangle, Sine, Preset (Preset = the cycle in hm_wt) */
+    /* The Mangler personality (src/dsp/mangle.c, modelled on PitchMonster): its controls in PitchMonster's units.
+     * The chord slots are not params: "mg_chords" in a saved state (text, see mangle.h). */
+    VT_P_MG_FIRST,
+    VT_P_MG_SHIFT = VT_P_MG_FIRST,   /* enum  Granular, Formant, Vocode: the shifter core */
+    VT_P_MG_PITCH,      /* -48..+24 st */
+    VT_P_MG_FORMANT,    /* -24..+24 st (Formant and Vocode) */
+    VT_P_MG_VOICES,     /* 1..8 unison voices per note */
+    VT_P_MG_DETUNE,     /* 0..12 st: Pitch Spread over the unison voices */
+    VT_P_MG_TIME,       /* 0..1000 ms: Time Spread over the unison voices */
+    VT_P_MG_GRAIN,      /* 1..100 Hz: Granular's grain rate */
+    VT_P_MG_MIX,        /* 0..1 dry/wet (PitchMonster's law) */
+    VT_P_MG_NOTES,      /* enum  Normal, Pads, Chord: where the voices' notes come from */
+    VT_P_MG_CHORD,      /* enum  1..8: the chord slot (Notes = Chord) */
+    VT_P_MG_MONO,       /* enum  Off, On: Pads plays only the newest pad */
+    VT_P_MG_FIX,        /* enum  Off, On: Formant Fix (formants stay put when the pitch moves) */
+    VT_P_MG_SNAP,       /* enum  Off, On: Pitch rounds to a semitone */
+    VT_P_MG_SCATTER,    /* enum  Spread, Jitter: the pitch spread fixed, or random per grain */
+    VT_P_MG_SMEAR,      /* enum  Spread, Jitter: the time spread fixed, or random per grain */
+    VT_P_MG_WIDE,       /* enum  Off, On: pan the voices across the field */
+    VT_P_MG_GJITTER,    /* enum  Off, On: Granular's grains get random lengths */
+    VT_P_MG_FILTER,     /* enum  Off, On: band-pass on the wet */
+    VT_P_MG_FREQ,       /* 20..20000 Hz */
+    VT_P_MG_WIDTH,      /* 0.1..10 octaves */
+    VT_P_MG_VOLUME,     /* -24..+12 dB */
+    VT_P_MG_LAST = VT_P_MG_VOLUME,
     /* Performance toggles (knobs on MORE), not saved in "state" */
     VT_P_FREEZE,        /* enum  Off, On: Loop - play the kept Freeze take instead of the live input (never records) */
     VT_P_FREEZE_REC,    /* enum  Off, Rec: Rec - record a new take into the spare buffer (freeze.h; never plays) */
@@ -130,13 +155,14 @@ typedef enum {
  * stays 13 for every table indexed by it). */
 #define VT_MODE_VOICEFX VT_MODE_COUNT
 #define VT_MODE_RESYNTH (VT_MODE_COUNT + 1)    /* the third personality's engine (hm.c) */
-typedef enum { VT_ENGINE_VOCODER = 0, VT_ENGINE_VOICEFX, VT_ENGINE_RESYNTH } vt_engine;
+#define VT_MODE_MANGLER (VT_MODE_COUNT + 2)    /* the fourth (mangle.c) */
+typedef enum { VT_ENGINE_VOCODER = 0, VT_ENGINE_VOICEFX, VT_ENGINE_RESYNTH, VT_ENGINE_MANGLER } vt_engine;
 
 /* Modes whose output stage keeps its peaks under TINYVOICE_OUTPUT_HEADROOM. */
 static inline int vt_mode_headroom(int mode)
 {
     return mode == VT_MODE_NIGHTCALL || (mode >= VT_MODE_SCREAM && mode <= VT_MODE_WALKIE) || mode == VT_MODE_VOICEFX ||
-           mode == VT_MODE_RESYNTH;
+           mode == VT_MODE_RESYNTH || mode == VT_MODE_MANGLER;
 }
 /* The ceiling those modes keep into the master buffer: -6.1 dBFS (10^(-6.1/20)).
  * Applied after Spread and before Level, so at Level 0 dB no
@@ -233,6 +259,8 @@ void dsp_set_transport(vt_t *vt, double beat);
  * second is refused (returns -1) and the caller keeps and frees its bank. NULL = none (0 presets). */
 struct rsbank;
 int dsp_set_rs_bank(vt_t *vt, struct rsbank *bank);
+/* The same for Mangler's presets (the states that run Mangler): the Presets page lists this bank while the engine is Mangler. */
+int dsp_set_mg_bank(vt_t *vt, struct rsbank *bank);
 
 /* The Demo's recorded phrase (demo.h, demo_pcm_load), handed over once like the preset bank: the instance owns it from
  * then on and frees it. A second handover is refused (-1). Until it arrives, and when the module has none, the Demo

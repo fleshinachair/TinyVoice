@@ -6,7 +6,7 @@
 <title>TinyVoice</title>
 <style>
 /* TinyVoice: the Remote UI panel (move.local:7700/remote-ui), one set of panels per engine (the tabs
- * switch the engine): Vocoder (Voice, Pitch, Space / Gate / Freeze), Synth Voice (Vowel, Character) and Resynth
+ * switch the engine): Vocoder (Voice, Pitch, Space / Gate / Freeze), Synth Voice (Vowel, Character), Mangler and Resynth
  * (Pitch, Synthesize, Filter, Utility, Effects, Output, laid out by the plugin it is modelled on). Built from the module's own chain_params
  * (range, options): floats are dials (drag up/down, Shift for fine, wheel, arrow keys,
  * double-click = default), Off/On params are switches, short option lists are segmented
@@ -100,6 +100,11 @@ canvas{width:100%;height:96px;background:linear-gradient(#0b0d11,#07080a);border
 #toast.show{opacity:1}
 .err{color:var(--warn);padding:12px}
 .foot{margin-top:6px;color:var(--faint);font-size:11px}
+.chords{display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;margin-top:4px}
+.chords label{color:var(--faint);font-size:11px;text-align:right}
+.chords input{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:12px ui-monospace,Consolas,monospace;min-width:0}
+.chords input.cur{border-color:var(--a)}
+.chords input.bad{border-color:var(--warn)}
 </style>
 </head>
 <body>
@@ -112,7 +117,7 @@ canvas{width:100%;height:96px;background:linear-gradient(#0b0d11,#07080a);border
   <span class="hint" id="hint">connecting…</span>
   <div class="sp"></div>
   <div class="seg tabs" id="tabs" title="The engine TinyVoice runs">
-    <button data-e="Vocoder">Vocoder</button><button data-e="Synth Voice">Synth Voice</button><button data-e="Resynth">Resynth</button>
+    <button data-e="Vocoder">Vocoder</button><button data-e="Synth Voice">Synth Voice</button><button data-e="Resynth">Resynth</button><button data-e="Mangler">Mangler</button>
   </div>
   <select class="bank" id="bankSeg" aria-label="Preset bank" title="Default: presets shipped with TinyVoice. Imported: all of yours (imported Humanoid presets, and anything you saved on the Move), then the same split by kind; Mine: your own saves">
     <option>Default</option><option>Imported</option><option>Tuner</option><option>Voco</option><option>Harmony</option>
@@ -128,6 +133,7 @@ canvas{width:100%;height:96px;background:linear-gradient(#0b0d11,#07080a);border
 <div class="grid hide" id="gridV"></div>
 <div class="grid hide" id="gridF"></div>
 <div class="grid hide" id="gridR"></div>
+<div class="grid hide" id="gridM"></div>
 </div>
 <div id="toast"></div>
 
@@ -193,6 +199,14 @@ var FMT = {
   hm_warble_rate: function (v) { return v < 0 ? "sync" : (10.1 * v).toFixed(1) + " Hz"; },
   hm_noisegate_threshold: function (v) { return v <= -79.5 ? "off" : v.toFixed(0) + " dB"; },
   hm_mask: function (v) { return String(Math.round(v)); },
+  mg_voices: function (v) { return String(Math.round(v)); },
+  mg_pitch: function (v) { return (v > 0 ? "+" : "") + v.toFixed(1) + " st"; },
+  mg_formant: function (v) { return (v > 0 ? "+" : "") + v.toFixed(1) + " st"; },
+  mg_detune: function (v) { return v.toFixed(2) + " st"; },
+  mg_time: function (v) { return Math.round(v) + " ms"; },
+  mg_grain: function (v) { return Math.round(v) + " Hz"; },
+  mg_freq: function (v) { return fmtHz(v); },
+  mg_width: function (v) { return v.toFixed(1) + " oct"; },
   vf_vowel: function (v) { var L = ["A", "E", "I", "O", "U"], q = v * 4, i = Math.min(3, Math.floor(q)), t = q - i; return t < 0.12 ? L[i] : t > 0.88 ? L[i + 1] : L[i] + "\u00b7" + L[i + 1]; }
 };
 function fmt(key, v) {
@@ -531,6 +545,7 @@ function after(key) {
   if (/hpf|lpf|filter_/.test(key)) drawFilter();
   if (key === "hm_mask" || key === "hm_scale" || key === "hm_key") drawKeys();
   if (/^hm_|^latch$/.test(key)) applyNA();
+  if (/^mg_|^latch$/.test(key)) applyMgNA();
   if (key === "engine") showEngine();
   if (key === "mode") modeChanged();
   if (key === "vf_vowel" || key === "vf_tract" || key === "vf_peak") drawVowel();
@@ -581,6 +596,92 @@ function buildResynth() {
   drawWave(); drawFilter(); drawKeys(); applyNA();
 }
 
+/* ---------- Mangler: its controls in PitchMonster's units; the chord slots as note names */
+/* which Mangler controls do something now (dimmed ones still turn), as on the Move */
+var MG_ACTS = {
+  mg_formant: function (g) { return g("mg_shift") !== 0; }, mg_fix: function (g) { return g("mg_shift") !== 0; },
+  mg_grain: function (g) { return g("mg_shift") === 0; }, mg_gjitter: function (g) { return g("mg_shift") === 0; },
+  mg_chord: function (g) { return g("mg_notes") === 2; },
+  mg_mono: function (g) { return g("mg_notes") === 1; }, latch: function (g) { return g("mg_notes") === 1; },
+  mg_detune: function (g) { return g("mg_voices") > 1.5; }, mg_scatter: function (g) { return g("mg_voices") > 1.5; },
+  mg_time: function (g) { return g("mg_voices") > 1.5; }, mg_smear: function (g) { return g("mg_voices") > 1.5; },
+  mg_freq: function (g) { return g("mg_filter") === 1; }, mg_width: function (g) { return g("mg_filter") === 1; }
+};
+function applyMgNA() {
+  var get = function (k) { return VAL[k]; };
+  Object.keys(MG_ACTS).forEach(function (k) {
+    var c = CTL[k];
+    var off = VAL[k] === undefined ? false : MG_ACTS[k](get) === false;
+    (c && c.boxes || []).forEach(function (bx) { if (bx && bx.closest && bx.closest("#gridM")) { bx.classList.toggle("dim", off); bx.title = off ? "Does nothing with the current settings (it still turns)" : ""; } });
+  });
+  var ci = VAL.mg_chord | 0;
+  CHORD_IN.forEach(function (inp, i) { inp.classList.toggle("cur", i === ci); });
+}
+var CHORD_IN = [];
+/* "C4 E4 G4", "c#3, g3" or "60 64 67" -> [notes], null if a word is not a note */
+function parseNotes(str) {
+  var out = [], w = String(str).split(/[\s,;]+/).filter(function (x) { return x.length; });
+  for (var i = 0; i < w.length; i++) {
+    var m = /^([A-Ga-g])([#b]?)(-?\d+)$/.exec(w[i]), n;
+    if (m) { n = {C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11}[m[1].toUpperCase()] + (m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0) + 12 * (parseInt(m[3], 10) + 1); }
+    else if (/^\d+$/.test(w[i])) n = parseInt(w[i], 10);
+    else return null;
+    if (n < 0 || n > 127) return null;
+    out.push(n);
+  }
+  return out.slice(0, 8);
+}
+function chordsToText(text) {      /* "60,64,67;;..." -> the eight fields */
+  var slots = String(text).split(";");
+  CHORD_IN.forEach(function (inp, i) {
+    if (document.activeElement === inp) return;
+    var ns = (slots[i] || "").split(",").filter(function (x) { return x.length; }).map(function (x) { return noteName(parseInt(x, 10)); });
+    inp.value = ns.join(" ");
+    inp.classList.remove("bad");
+  });
+}
+function sendChords() {
+  var parts = CHORD_IN.map(function (inp) { var n = parseNotes(inp.value); inp.classList.toggle("bad", n === null); return (n || []).join(","); });
+  send("mg_chords", parts.join(";"));
+}
+function buildMangler() {
+  var grid = document.getElementById("gridM"), p;
+  p = panel(grid, "p-pitch", "SHIFT");
+  group(p, "", ["mg_shift"]);
+  group(p, "PITCH  ·  FORMANT", ["mg_pitch", "mg_formant"], true);
+  group(p, "", ["mg_snap", "mg_fix"]);
+  group(p, "GRAIN  (GRANULAR)", ["mg_grain", "mg_gjitter"], true);
+  p = panel(grid, "p-synth", "VOICES");
+  group(p, "UNISON", ["mg_voices", "mg_detune", "mg_time"], true);
+  group(p, "", ["mg_scatter", "mg_smear", "mg_wide"]);
+  p = panel(grid, "p-util", "NOTES");
+  group(p, "", ["mg_notes", "mg_chord", "mg_mono", "latch"]);
+  var sec = el("div", "sec", p);
+  el("h3", "", sec, "CHORD SLOTS  ·  NOTES");
+  var box = el("div", "chords", sec);
+  CHORD_IN = [];
+  for (var i = 0; i < 8; i++) {
+    (function (i) {
+      el("label", "", box, String(i + 1));
+      var inp = el("input", "", box);
+      inp.type = "text"; inp.placeholder = "C4 E4 G4"; inp.spellcheck = false;
+      inp.title = "Up to 8 notes, as names (C4 F#3) or MIDI numbers. Notes are offsets from C4.";
+      inp.onchange = sendChords;
+      inp.onkeydown = function (e) { if (e.key === "Enter") { inp.blur(); } };
+      CHORD_IN.push(inp);
+    })(i);
+  }
+  el("div", "foot", p, "Chord: the slot picked above gives the voices' notes. Pads: the pads you hold (Mono: the newest). Notes are offsets from C4.");
+  p = panel(grid, "p-filter", "FILTER  ·  OUTPUT");
+  group(p, "", ["mg_filter"]);
+  group(p, "BAND-PASS", ["mg_freq", "mg_width"], true);
+  group(p, "", ["mg_mix", "mg_volume", "hm_mic_gate"], true);
+  group(p, "LOOPER", ["freeze_rec", "freeze", "freeze_len"]);
+  group(p, "AUDITION", ["demo"]);
+  el("div", "foot", p, "Modelled on PitchMonster. Presets: the strip above (Default: ours; Imported: converted from your PitchMonster install with scripts/import_pitchmonster.py).");
+  applyMgNA();
+}
+
 /* ---------- Vocoder: Voice, Pitch, Space / Gate / Freeze. The five mode knobs are named per mode, as on the Move. */
 var MACROS = {
   Robot: ["Shift", "Noise", "Ensemble", "Beauty", "Glide"], Snap: ["Formant", "Sens", "Vibrato", "Retune", "Beauty"],
@@ -609,7 +710,7 @@ function modeChanged() {
     if (!CTL[k]) return;
     var on = ACTS[k].indexOf(mode) >= 0;
     CTL[k].boxes.forEach(function (b) {
-      if (!b || b.closest("#gridR")) return;                /* (Latch also sits on Resynth's Notes panel) */
+      if (!b || b.closest("#gridR") || b.closest("#gridM")) return;     /* (Latch also sits on Resynth's and Mangler's panels) */
       b.classList.toggle("dim", !on);
       b.title = on ? "" : "Does nothing in " + mode;
     });
@@ -670,12 +771,12 @@ function buildVoiceFX() {
 /* ---------- the engine tabs: which panels and header items show */
 function showEngine() {
   var e = VAL.engine | 0;
-  ["gridV", "gridF", "gridR"].forEach(function (id, i) { document.getElementById(id).classList.toggle("hide", i !== e); });
+  ["gridV", "gridF", "gridR", "gridM"].forEach(function (id, i) { document.getElementById(id).classList.toggle("hide", i !== e); });
   [].forEach.call(document.querySelectorAll("#tabs button"), function (b) { b.classList.toggle("on", b.getAttribute("data-e") === (META.engine ? META.engine.options[e] : "")); });
   var be = document.getElementById("brandE");
-  be.textContent = ["VOCODER", "SYNTH VOICE", "RESYNTH"][e] || "";
-  be.style.color = ["#ffb454", "#ff86bf", "#7cc7ff"][e] || "";
-  document.getElementById("bankSeg").classList.toggle("hide", e !== 2);
+  be.textContent = ["VOCODER", "SYNTH VOICE", "RESYNTH", "MANGLER"][e] || "";
+  be.style.color = ["#ffb454", "#ff86bf", "#7cc7ff", "#9be28a"][e] || "";
+  document.getElementById("bankSeg").classList.toggle("hide", e !== 2 && e !== 3);
   document.getElementById("drop").classList.toggle("hide", e !== 2);
   document.querySelector(".preset").classList.toggle("hide", e === 0);
   if (e !== 0 && R) readPreset();
@@ -708,7 +809,7 @@ function stepPreset(d) {
   setTimeout(function () { readPreset().then(refreshAll); }, 120);
 }
 function refreshAll() {
-  Object.keys(META).concat(["hm_wt", "engine"]).forEach(function (k) {
+  Object.keys(META).concat(["hm_wt", "mg_chords", "engine"]).forEach(function (k) {
     get(k).then(function (v) {
       if (v === "") return;
       if (k === "engine") { VAL.engine = parseVal("engine", v); after("engine"); } else incoming(k, v);
@@ -779,13 +880,14 @@ function readFiles(files) {
 /* ---------- start */
 function incoming(key, v) {
   if (key === "hm_wt") { wtCycle = v ? b64ToCycle(v) : null; drawWave(); return; }
+  if (key === "mg_chords") { chordsToText(v); return; }
   if (key === HELD || !CTL[key]) return;
   var x = parseVal(key, v);
   if (!isNaN(x)) CTL[key].set(x);
 }
 function start(cp) {
   cp.forEach(function (c) { if (c && c.key) META[c.key] = c; });
-  buildResynth(); buildVocoder(); buildVoiceFX();
+  buildResynth(); buildVocoder(); buildVoiceFX(); buildMangler();
   if (META.engine) VAL.engine = META.engine.default | 0;
   if (META.mode) VAL.mode = META.mode.default | 0;
   after("engine"); modeChanged();

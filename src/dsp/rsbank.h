@@ -49,6 +49,11 @@ typedef struct rsbank {
 rsbank_t *rsbank_load(const char *default_dir, const char *imported_dir);
 void rsbank_free(rsbank_t *b);
 
+/* The same for another engine's presets (Mangler: engine "mangler", lower case): the Default / Imported banks hold only
+ * the presets whose state runs it. The Mangler's list is not split by kind. */
+rsbank_t *rsbank_load_engine(const char *engine, const char *default_dir, const char *imported_dir);
+int rsbank_parse_engine(const char *text, const char *engine, char *name, int name_len, char **state);
+
 /* Exposed for the tests: one preset file's text -> name and state (state malloc'd; the caller frees it).
  * 0 if it is a TinyVoice Resynth preset, -1 otherwise. */
 int rsbank_parse(const char *text, char *name, int name_len, char **state);

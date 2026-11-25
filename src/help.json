@@ -7,7 +7,7 @@
         "A vocal processor",
         "for your voice.",
         "",
-        "Three engines:",
+        "Four engines:",
         " Vocoder: 13 voice",
         " modes",
         " Synth Voice: a vowel",
@@ -16,6 +16,9 @@
         " Resynth: hard tune",
         " and resynthesis",
         " into a synth",
+        " Mangler: a pitch and",
+        " formant shifter with",
+        " unison and chords",
         "",
         "Pick one on the",
         "Mode page.",
@@ -89,6 +92,27 @@
             "Every control is on",
             "the Remote UI:",
             "move.local:7700"
+          ]
+        },
+        {
+          "title": "Mangler setup",
+          "lines": [
+            "Source: your voice.",
+            "",
+            "Put TinyVoice after",
+            "Line In and pick",
+            "Mangler on the Mode",
+            "page. Sing: Pitch",
+            "moves it, Voices and",
+            "Detune stack it.",
+            "",
+            "Notes = Pads: the",
+            "pads you hold are the",
+            "notes. Chord: one of",
+            "eight chords.",
+            "",
+            "Looper records the",
+            "result: Rec, Loop."
           ]
         }
       ]
@@ -581,6 +605,88 @@
             "drawn, a scale",
             "keyboard, and Import",
             "for .baby files."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Mangler",
+      "children": [
+        {
+          "title": "Pages",
+          "lines": [
+            "Main: Shifter, Pitch,",
+            "Formant, Voices,",
+            "Detune, Time, Grain,",
+            "Mix.",
+            "More: Notes, Chord,",
+            "Mono, Fix, Snap,",
+            "Scatter, Smear,",
+            "Wide.",
+            "Filter: band-pass",
+            "On, Freq, Width,",
+            "Jitter, Volume, Mic",
+            "Gate, Latch, Demo.",
+            "Looper: Rec, Loop,",
+            "Length.",
+            "Presets: first page.",
+            "Bank: last page."
+          ]
+        },
+        {
+          "title": "Shifters",
+          "lines": [
+            "Granular: grains,",
+            "formants move with",
+            "the pitch. Grain is",
+            "its rate: low is",
+            "a smear, high is",
+            "smooth.",
+            "Formant: the pitch",
+            "moves, the voice",
+            "stays natural. Fix",
+            "off lets the throat",
+            "follow (chipmunk).",
+            "Vocode: one fixed",
+            "note, whatever you",
+            "sing: a robot. Pitch",
+            "is the note from C4."
+          ]
+        },
+        {
+          "title": "Voices",
+          "lines": [
+            "Voices stacks copies.",
+            "Detune spreads their",
+            "pitch (Scatter:",
+            "random each grain).",
+            "Time delays them",
+            "(Smear: random).",
+            "Wide pans them.",
+            "Notes: Normal sings",
+            "at Pitch. Pads: each",
+            "pad held adds a note",
+            "(Mono: newest only,",
+            "none held: silent).",
+            "Chord: slot 1-8.",
+            "Latch holds the pads.",
+            "Most notes x voices:",
+            "16."
+          ]
+        },
+        {
+          "title": "Presets",
+          "lines": [
+            "Default: 14 of ours.",
+            "Imported: presets",
+            "converted on your",
+            "computer (the repo's",
+            "PitchMonster import",
+            "script) and sent to",
+            "the Move, chord",
+            "slots included.",
+            "Demo plays Default",
+            "presets, 4 bars each."
           ]
         }
       ]

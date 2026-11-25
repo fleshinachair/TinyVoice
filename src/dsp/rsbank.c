@@ -116,21 +116,20 @@ static int unescape(const char *p, char *dst, int cap)
     return n;
 }
 
-/* Does the state object run Resynth ("engine": "Resynth", any case)? */
-static int runs_resynth(const char *state)
+/* Does the state object run `want` ("engine": "Resynth" / "Mangler", any case; want is lower case)? */
+static int runs_engine(const char *state, const char *want)
 {
     const char *v = member(state, "engine");
     char eng[16];
     if (!v || *v != '"' || unescape(v, eng, sizeof eng) < 0) return 0;
-    static const char want[] = "resynth";
-    for (int i = 0; i < (int)sizeof want; i++) {
+    for (int i = 0;; i++) {
         const char c = eng[i] >= 'A' && eng[i] <= 'Z' ? (char)(eng[i] + 32) : eng[i];
         if (c != want[i]) return 0;
+        if (!want[i]) return 1;
     }
-    return 1;
 }
 
-int rsbank_parse(const char *text, char *name, int name_len, char **state)
+int rsbank_parse_engine(const char *text, const char *engine, char *name, int name_len, char **state)
 {
     *state = NULL;
     if (name_len > 0) name[0] = '\0';
@@ -160,11 +159,16 @@ int rsbank_parse(const char *text, char *name, int name_len, char **state)
     } else {
         return -1;
     }
-    if (!runs_resynth(s)) { free(s); return -1; }
+    if (!runs_engine(s, engine)) { free(s); return -1; }
     const char *nm = member(text, "name");
     if (nm && *nm == '"' && name_len > 0) unescape(nm, name, name_len);
     *state = s;
     return 0;
+}
+
+int rsbank_parse(const char *text, char *name, int name_len, char **state)
+{
+    return rsbank_parse_engine(text, "resynth", name, name_len, state);
 }
 
 /* ------------------------------------------------------------ kinds */
@@ -236,7 +240,7 @@ static char *read_file(const char *path)
     return buf;
 }
 
-static void load_dir(rsbank_t *b, int bank, const char *dir)
+static void load_dir(rsbank_t *b, int bank, const char *dir, const char *engine)
 {
     DIR *d = dir ? opendir(dir) : NULL;
     if (!d) return;
@@ -251,7 +255,7 @@ static void load_dir(rsbank_t *b, int bank, const char *dir)
         char *text = read_file(path);
         if (!text) continue;
         char name[RSBANK_NAME], cat[32], *state;
-        const int ok = rsbank_parse(text, name, sizeof name, &state) == 0;
+        const int ok = rsbank_parse_engine(text, engine, name, sizeof name, &state) == 0;
         const char *cv = ok ? member(text, "category") : NULL;
         const int has_cat = cv && *cv == '"' && unescape(cv, cat, sizeof cat) >= 0;
         free(text);
@@ -277,14 +281,14 @@ static void load_dir(rsbank_t *b, int bank, const char *dir)
     if (b->count[bank] > 1) qsort(b->e[bank], (size_t)b->count[bank], sizeof *b->e[bank], name_cmp);
 }
 
-rsbank_t *rsbank_load(const char *default_dir, const char *imported_dir)
+rsbank_t *rsbank_load_engine(const char *engine, const char *default_dir, const char *imported_dir)
 {
     rsbank_t *b = (rsbank_t *)calloc(1, sizeof *b);
     if (!b) return NULL;
-    load_dir(b, RSBANK_DEFAULT, default_dir);
-    load_dir(b, RSBANK_IMPORTED, imported_dir);
+    load_dir(b, RSBANK_DEFAULT, default_dir, engine);
+    load_dir(b, RSBANK_IMPORTED, imported_dir, engine);
     /* the split banks: Imported's entries by kind, in Imported's order, sharing its states */
-    for (int k = RSBANK_TUNER; k < RSBANK_BANKS; k++) {
+    for (int k = RSBANK_TUNER; k < RSBANK_BANKS && strcmp(engine, "resynth") == 0; k++) {   /* (Resynth's list only) */
         int n = 0;
         for (int i = 0; i < b->count[RSBANK_IMPORTED]; i++) n += b->e[RSBANK_IMPORTED][i].kind == k;
         if (!n) continue;
@@ -294,6 +298,11 @@ rsbank_t *rsbank_load(const char *default_dir, const char *imported_dir)
             if (b->e[RSBANK_IMPORTED][i].kind == k) b->e[k][b->count[k]++] = b->e[RSBANK_IMPORTED][i];
     }
     return b;
+}
+
+rsbank_t *rsbank_load(const char *default_dir, const char *imported_dir)
+{
+    return rsbank_load_engine("resynth", default_dir, imported_dir);
 }
 
 void rsbank_free(rsbank_t *b)

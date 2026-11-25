@@ -319,9 +319,11 @@ import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_p
         const W = ctx.width, H = ctx.height;
         const tw = (s) => (typeof ctx.textWidth === "function" ? ctx.textWidth(s) : s.length * 6);
         const ty = Math.max(0, Math.min(H - TEXT_H, Math.floor((H - TEXT_H - 3) / 2)));
-        const engine = optName(values.engine, ["Vocoder", "Synth Voice", "Resynth"], null);
+        const engine = optName(values.engine, ["Vocoder", "Synth Voice", "Resynth", "Mangler"], null);
         const mode = optName(values.mode, MODES, null);
-        const na = engine === "Resynth" ? RS_ACTS.latch((k) => values[k]) === false : !!mode && LATCH_MODES.indexOf(mode) < 0;
+        const notes = optName(values.mg_notes, ["Normal", "Pads", "Chord"], null);     /* Mangler: Latch holds the pads, so it acts in Pads */
+        const na = engine === "Resynth" ? RS_ACTS.latch((k) => values[k]) === false :
+                   engine === "Mangler" ? !!notes && notes !== "Pads" : !!mode && LATCH_MODES.indexOf(mode) < 0;
         if (na) {
             const txt = "---", x = Math.max(0, Math.floor((W - tw(txt)) / 2));
             ctx.print(x, ty, txt, 1);

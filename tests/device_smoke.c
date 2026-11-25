@@ -438,6 +438,49 @@ int main(int argc, char **argv)
             CHECK(worst < 1.0);
         }
     }
+    {   /* Mangler: its banks (the shipped Default, and the imported ones if any are installed), every preset loads and runs,
+         * and what the heaviest setting costs on this CPU (16 voices, Formant core, Jitter, Wide, Filter) */
+        char cnt[16], name[64];
+        struct timespec t0, t1;
+        api->set_param(inst, "engine", "Mangler");
+        api->set_param(inst, "rs_bank", "Default");
+        api->get_param(inst, "rs_preset_count", cnt, sizeof cnt);
+        printf("  Mangler Default bank: %s presets\n", cnt);
+        CHECK(atoi(cnt) == 14);
+        for (int k = 0; k < atoi(cnt); k++) {
+            char idx[16];
+            snprintf(idx, sizeof idx, "%d", k);
+            api->set_param(inst, "rs_preset", idx);
+            api->get_param(inst, "engine", name, sizeof name);
+            CHECK(strcmp(name, "Mangler") == 0);
+            run_audio(api, inst, 220.0, 60, &nonzero, &bad);
+            CHECK(!bad);
+        }
+        api->set_param(inst, "rs_bank", "Imported");
+        api->get_param(inst, "rs_preset_count", cnt, sizeof cnt);
+        printf("  Mangler Imported bank: %s presets\n", cnt);
+        const int imported = atoi(cnt);
+        for (int k = 0; k < imported && k < 200; k++) {
+            char idx[16];
+            snprintf(idx, sizeof idx, "%d", k);
+            api->set_param(inst, "rs_preset", idx);
+            run_audio(api, inst, 180.0, 40, &nonzero, &bad);
+            CHECK(!bad);
+        }
+        api->set_param(inst, "rs_bank", "Default");
+        api->set_param(inst, "rs_preset", "0");
+        api->set_param(inst, "mg_shift", "Formant"); api->set_param(inst, "mg_voices", "8"); api->set_param(inst, "mg_detune", "6");
+        api->set_param(inst, "mg_time", "300"); api->set_param(inst, "mg_scatter", "Jitter"); api->set_param(inst, "mg_smear", "Jitter");
+        api->set_param(inst, "mg_wide", "On"); api->set_param(inst, "mg_filter", "On"); api->set_param(inst, "mg_notes", "Chord");
+        api->set_param(inst, "mg_chords", "60,67;;;;;;;");
+        run_audio(api, inst, 150.0, 100, &nonzero, &bad);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        run_audio(api, inst, 150.0, 500, &nonzero, &bad);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        const double ms = ((t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6) / 500.0;
+        printf("  Mangler, 16 voices Formant: %.3f ms per 128-frame block (the block is 2.9 ms; the host allows ~2.3)\n", ms);
+        CHECK(!bad && ms < 1.2);
+    }
     api->set_param(inst, "engine", "Vocoder");
     api->set_param(inst, "demo", "Off");
     api->set_param(inst, "freeze", "Off");
