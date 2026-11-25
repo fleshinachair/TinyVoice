@@ -871,9 +871,9 @@ static void test_state_roundtrip(void)
         {"engine", "Synth Voice"}, {"vf_vowel", "0.62"}, {"vf_tract", "0.31"}, {"vf_peak", "0.88"}, {"vf_choir", "0.73"},
         {"vf_breath", "0.44"}, {"vf_attack", "0.57"}, {"vf_release", "0.91"}, {"vf_mix", "0.38"},
     };
-    /* every saved param (not freeze, demo, the preset index or Resynth's Glitch) off its default: the list
+    /* every saved param (not freeze, freeze_rec, demo, the preset index or Resynth's Glitch) off its default: the list
      * above, then every Resynth param (hm_*) by rule */
-    CHECK(sizeof set / sizeof set[0] + (VT_P_HM_WAVE - VT_P_HM_FIRST + 1) - 1 == VT_P_COUNT - 6);
+    CHECK(sizeof set / sizeof set[0] + (VT_P_HM_WAVE - VT_P_HM_FIRST + 1) - 1 == VT_P_COUNT - 7);
     for (size_t i = 0; i < sizeof set / sizeof set[0]; i++) CHECK(dsp_set_param(a, set[i][0], set[i][1]) == 0);
     for (int id = VT_P_HM_FIRST; id <= VT_P_HM_WAVE; id++) {
         const vt_param_def *d = dsp_param_def(id);
@@ -1158,7 +1158,7 @@ static void test_module_json_matches_params(void)
             const char *o = js_elem(cp, i);
             if (o && js_get(o, "viz")) declared++;
         }
-        CHECK(declared == 11 + 17);                              /* the scope's 3, Freeze banner's 2, Latch's 1, Key/Scale/Retune/Glide/Beauty 5;
+        CHECK(declared == 12 + 17);                              /* the scope's 3, Freeze banner's 3 (Rec, Loop, Length), Latch's 1, Key/Scale/Retune/Glide/Beauty 5;
                                                                     Resynth's N/A knobs 17 (custom:tinyvoice_rsna: tests/canvas_test.mjs) */
         /* Nothing disappears: no param is conditionally hidden. Gate holds
          * Auto as its lowest setting, then -60..0 dB. */
@@ -1228,12 +1228,13 @@ static void test_module_json_matches_params(void)
      * knobs; each page lists its params as key strings (or {"key": ...}).
      * Knobs are exactly the agreed layout, every knob is listed on its page,
      * and every param is on exactly one page. */
-    static const char *const want[3][8] = {
+    static const char *const want[4][8] = {
         { "mode", "char1", "char2", "mod", "char4", "char5", "mix", "gain" },       /* VOICE: Mode, five contextual knobs, Mix, Level */
         { "key", "scale", "retune", "glide", "pitch", "target", "cents" },           /* PITCH: scope on 5-7 */
-        { "spread", "tone", "freeze", "freeze_len", "gate", "latch", "beauty", "demo" }, /* MORE: Freeze + its length side by side (top row), Gate (with Auto), Latch, Beauty, Demo bottom right */
+        { "spread", "tone", "gate", "latch", "beauty", "demo" },                     /* MORE: Spread, Tone, Gate (with Auto), Latch, Beauty, Demo */
+        { "freeze_rec", "freeze", "freeze_len" },                                    /* LOOPER: Rec, Loop, Length (the banner spans them) */
     };
-    static const char *const page_names[3] = { "VOICE", "PITCH", "MORE" };
+    static const char *const page_names[4] = { "VOICE", "PITCH", "MORE", "LOOPER" };
     const char *levels = js_get(js_get(caps, "ui_hierarchy"), "levels");
     CHECK(levels != NULL);
     if (!levels) return;
@@ -1257,18 +1258,18 @@ static void test_module_json_matches_params(void)
     int nlevels = 0;
     char names[16][32];
     while (js_nth_member(levels, nlevels, names[nlevels], sizeof names[0]) && nlevels < 16) nlevels++;
-    CHECK(nlevels == 13);
+    CHECK(nlevels == 15);
     CHECK(strcmp(names[0], "vocoder") == 0);
-    for (int l = 1; l < nlevels && l < 4; l++) CHECK(strcmp(names[l], page_names[l - 1]) == 0);
-    CHECK(strcmp(names[4], "synth voice") == 0);
-    CHECK(strcmp(names[5], "audition") == 0);
-    {   /* Resynth: its root (the main controls) and four pages */
-        static const char *const rs_names[7] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_notes", "rs_bank" };
-        for (int l = 0; l < 7; l++) CHECK(nlevels > 6 + l && strcmp(names[6 + l], rs_names[l]) == 0);
+    for (int l = 1; l < nlevels && l < 5; l++) CHECK(strcmp(names[l], page_names[l - 1]) == 0);
+    CHECK(strcmp(names[5], "synth voice") == 0);
+    CHECK(strcmp(names[6], "audition") == 0);
+    {   /* Resynth: its root (the main controls) and its pages */
+        static const char *const rs_names[8] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_notes", "rs_looper", "rs_bank" };
+        for (int l = 0; l < 8; l++) CHECK(nlevels > 7 + l && strcmp(names[7 + l], rs_names[l]) == 0);
     }
 
     int listed_on[VT_P_COUNT] = {0}, referenced[16] = {0};
-    for (int l = 0; l < nlevels && l < 4; l++) {
+    for (int l = 0; l < nlevels && l < 5; l++) {
         const char *lv = js_get(levels, names[l]);
         const int is_root = l == 0;
         const int pg = is_root ? 0 : l - 1;
@@ -1343,9 +1344,9 @@ static void test_module_json_matches_params(void)
     }
     /* Resynth's pages: the knobs they hold (the rest of its params are on the Remote UI only: web_ui.html) */
     {
-        static const char *const rs_lv[6] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_notes" };
-        static const int rs_n[6] = { 8, 8, 8, 8, 7, 5 };            /* Play: 7 knobs (Mic Gate the 6th); Notes (Duo, Note mode's notes, Latch, No Pad): 5 */
-        for (int l = 0; l < 6; l++) {
+        static const char *const rs_lv[7] = { "resynth", "rs_pitch", "rs_synth", "rs_tone", "rs_play", "rs_notes", "rs_looper" };
+        static const int rs_n[7] = { 8, 8, 8, 8, 7, 5, 3 };         /* Play: 7 knobs (Mic Gate the 6th); Notes (Duo, Note mode's notes, Latch, No Pad): 5; Looper: Rec, Loop, Length */
+        for (int l = 0; l < 7; l++) {
             const char *knobs = js_get(js_get(levels, rs_lv[l]), "knobs");
             CHECK(knobs && js_arr_len(knobs) == rs_n[l]);
             for (int k = 0; k < rs_n[l] && knobs; k++) {
@@ -1363,12 +1364,13 @@ static void test_module_json_matches_params(void)
     for (int i = 0; i < VT_P_COUNT; i++) {
         const int hm = i >= VT_P_HM_FIRST && i <= VT_P_HM_WAVE;
         int want_pages = (i == VT_P_ENGINE || i == VT_P_VF_PRESET || i == VT_P_RS_PRESET) ? 0 : (i == VT_P_DEMO ? 3 : i == VT_P_LATCH ? 2 : 1);
+        if (i == VT_P_FREEZE || i == VT_P_FREEZE_REC || i == VT_P_FREEZE_LEN) want_pages = 2;   /* the Looper page, on the Vocoder and on Resynth */
         if (i == dsp_param_index("hm_transform")) want_pages = 2;     /* Resynth's Main and Synth pages */   /* Demo: the vocoder's More page, Voice FX's Audition and Resynth's Play */   /* `engine` is the host's Mode page, `vf_preset` its preset browser: not knobs */
         if (hm && listed_on[i] == 0) want_pages = 0;                 /* a Resynth param on the Remote UI only */
         if (listed_on[i] != want_pages) printf("  param %s listed on %d pages\n", dsp_param_def(i)->key, listed_on[i]);
         CHECK(listed_on[i] == want_pages);
     }
-    for (int l = 1; l < 4; l++) CHECK(referenced[l]);                 /* every vocoder page reachable from its root (Voice FX is reached by the Mode page) */
+    for (int l = 1; l < 5; l++) CHECK(referenced[l]);                 /* every vocoder page reachable from its root (Voice FX is reached by the Mode page) */
 }
 
 
@@ -1888,7 +1890,7 @@ static void run_sine_cap(vt_t *vt, double f, float amp, double seconds, long *po
 }
 
 /* The scope feed, parsed (read_scope is below, with the scope tests). */
-typedef struct { int mode, frozen; float phase, loop_s, f0, target, cents; int bands[16]; int fields; } scope_t;
+typedef struct { int mode, frozen; float phase, loop_s, f0, target, cents; int bands[16]; int fields; float bar_s; } scope_t;
 static scope_t read_scope(vt_t *vt);
 
 static void test_freeze_looper(void)
@@ -1905,13 +1907,15 @@ static void test_freeze_looper(void)
     char v[16];
     const int tail = VT_SAMPLE_RATE;
 
-    /* Punch in: only what is sung between Rec and Loop is the take. */
+    /* Rec on .. Rec off (Free): only what is sung in between is the take, and it then plays by itself. */
     run_sine_cap(vt, 330.0, 0.5f, 0.5, &pos, NULL, &n);            /* before Rec: not recorded */
-    CHECK(dsp_set_param(vt, "freeze", "Rec") == 0);
+    CHECK(dsp_set_param(vt, "freeze_rec", "Rec") == 0);
     run_sine_cap(vt, 440.0, 0.5f, 2.0, &pos, cap, &n);             /* the take: 2 s of A4, heard live */
     CHECK(band_at(cap + n - tail, tail, 440.0) > 0.01);
-    CHECK(dsp_set_param(vt, "freeze", "Loop") == 0);
+    CHECK(dsp_set_param(vt, "freeze_rec", "Off") == 0);
     run_sine_cap(vt, 880.0, 0.5f, 5.0, &pos, cap, &n);             /* sing A5 at it: ignored */
+    dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "On") == 0);       /* Loop turned itself on */
+    dsp_get_param(vt, "freeze_rec", v, sizeof v); CHECK(strcmp(v, "Off") == 0);
     double a4 = band_at(cap + n - tail, tail, 440.0), a5 = band_at(cap + n - tail, tail, 880.0);
     double e3 = band_at(cap + n - tail, tail, 330.0);
     if (!(a4 > 100.0 * a5 && a4 > 100.0 * e3)) printf("  loop: 440 %.2e vs live 880 %.2e, pre-roll 330 %.2e\n", a4, a5, e3);
@@ -1933,54 +1937,81 @@ static void test_freeze_looper(void)
     CHECK(worst < 0.06f);
     for (int i = 0; i < n; i++) CHECK(fabsf(cap[i]) < 0.75f);
 
-    /* Off: live again, take kept. Loop again: the kept take, from its start. */
+    /* Loop Off: live again, take kept. Loop On: the kept take, from its start. */
     CHECK(dsp_set_param(vt, "freeze", "Off") == 0);
     run_sine_cap(vt, 880.0, 0.5f, 0.5, &pos, cap, &n);
     CHECK(band_at(cap + n - 8192, 8192, 880.0) > 100.0 * band_at(cap + n - 8192, 8192, 440.0));
-    CHECK(dsp_set_param(vt, "freeze", "Loop") == 0);
+    CHECK(dsp_set_param(vt, "freeze", "On") == 0);
     run_sine_cap(vt, 880.0, 0.5f, 0.5, &pos, cap, &n);
     CHECK(band_at(cap + n - 8192, 8192, 440.0) > 100.0 * band_at(cap + n - 8192, 8192, 880.0));
 
-    /* Loop -> Rec: a new take replaces it; Rec -> Off keeps it for later. */
-    CHECK(dsp_set_param(vt, "freeze", "Rec") == 0);
-    run_sine_cap(vt, 660.0, 0.5f, 1.0, &pos, NULL, &n);
-    CHECK(dsp_set_param(vt, "freeze", "Off") == 0);
-    run_sine_cap(vt, 880.0, 0.5f, 0.3, &pos, NULL, &n);
-    CHECK(dsp_set_param(vt, "freeze", "Loop") == 0);
+    /* The old trap: Off <-> Loop used to pass through Rec. Loop never records, however it is turned. */
+    for (int k = 0; k < 6; k++) {
+        dsp_set_param(vt, "freeze", "Off");
+        run_sine_cap(vt, 880.0, 0.5f, 0.05, &pos, NULL, &n);
+        dsp_set_param(vt, "freeze", "On");
+        run_sine_cap(vt, 880.0, 0.5f, 0.05, &pos, NULL, &n);
+    }
     run_sine_cap(vt, 880.0, 0.5f, 0.5, &pos, cap, &n);
+    CHECK(band_at(cap + n - 8192, 8192, 440.0) > 100.0 * band_at(cap + n - 8192, 8192, 880.0));
+    sc = read_scope(vt);
+    CHECK(sc.frozen == 1 && fabs(sc.loop_s - 1.995) < 0.01);       /* the same take */
+
+    /* A new take while the loop plays: you hear yourself live while recording; Rec off keeps it and it plays. */
+    CHECK(dsp_set_param(vt, "freeze_rec", "Rec") == 0);
+    run_sine_cap(vt, 660.0, 0.5f, 1.5, &pos, cap, &n);
     CHECK(band_at(cap + n - 8192, 8192, 660.0) > 100.0 * band_at(cap + n - 8192, 8192, 440.0));
     sc = read_scope(vt);
-    CHECK(fabs(sc.loop_s - 0.995) < 0.01);
+    CHECK(sc.frozen == 2);
+    CHECK(dsp_set_param(vt, "freeze_rec", "Off") == 0);
+    run_sine_cap(vt, 880.0, 0.5f, 0.5, &pos, cap, &n);
+    CHECK(band_at(cap + n - 8192, 8192, 660.0) > 100.0 * band_at(cap + n - 8192, 8192, 880.0));
+    sc = read_scope(vt);
+    CHECK(sc.frozen == 1 && fabs(sc.loop_s - 1.495) < 0.01);
 
-    /* Too short to loop (under 20 ms): stays live. */
-    CHECK(dsp_set_param(vt, "freeze", "Rec") == 0);
-    run_sine_cap(vt, 660.0, 0.5f, 0.005, &pos, NULL, &n);
-    CHECK(dsp_set_param(vt, "freeze", "Loop") == 0);
-    run_sine_cap(vt, 880.0, 0.5f, 0.3, &pos, cap, &n);
-    CHECK(band_at(cap + n - 8192, 8192, 880.0) > 100.0 * band_at(cap + n - 8192, 8192, 660.0));
+    /* A slip (Rec on and off within 1 s): the take is dropped, the loop it would have replaced goes on playing. */
+    CHECK(dsp_set_param(vt, "freeze_rec", "Rec") == 0);
+    run_sine_cap(vt, 990.0, 0.5f, 0.3, &pos, NULL, &n);
+    CHECK(dsp_set_param(vt, "freeze_rec", "Off") == 0);
+    run_sine_cap(vt, 880.0, 0.5f, 0.5, &pos, cap, &n);
+    double l660 = band_at(cap + n - 8192, 8192, 660.0);
+    CHECK(l660 > 100.0 * band_at(cap + n - 8192, 8192, 990.0) && l660 > 100.0 * band_at(cap + n - 8192, 8192, 880.0));
+    sc = read_scope(vt);
+    CHECK(sc.frozen == 1 && fabs(sc.loop_s - 1.495) < 0.01);
+    dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "On") == 0);
 
-    /* A full buffer locks itself and starts looping; the knob follows. */
-    CHECK(dsp_set_param(vt, "freeze", "Rec") == 0);
+    /* A full buffer ends the take by itself and it plays; the knobs follow. */
+    CHECK(dsp_set_param(vt, "freeze_rec", "Rec") == 0);
     run_sine_cap(vt, 550.0, 0.5f, 15.9, &pos, NULL, &n);
     sc = read_scope(vt);
     CHECK(sc.frozen == 2 && sc.phase > 0.98f && fabs(sc.loop_s - 15.9) < 0.01);   /* recording, nearly full */
-    dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "Rec") == 0);
+    dsp_get_param(vt, "freeze_rec", v, sizeof v); CHECK(strcmp(v, "Rec") == 0);
     run_sine_cap(vt, 880.0, 0.5f, 0.5, &pos, cap, &n);
-    dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "Loop") == 0);
+    dsp_get_param(vt, "freeze_rec", v, sizeof v); CHECK(strcmp(v, "Off") == 0);
+    dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "On") == 0);
     sc = read_scope(vt);
     CHECK(sc.frozen == 1 && fabs(sc.loop_s - 15.995) < 0.01);      /* 16 s */
     CHECK(band_at(cap + n - 8192, 8192, 550.0) > 100.0 * band_at(cap + n - 8192, 8192, 880.0));
 
-    /* Not part of the saved state, and a state can't switch it on. */
+    /* Not part of the saved state, and a state can't switch either on. */
     static char st[8192];
-    CHECK(dsp_get_param(vt, "state", st, sizeof st) > 0 && strstr(st, "\"freeze\"") == NULL && strstr(st, "\"demo\"") == NULL);
+    CHECK(dsp_get_param(vt, "state", st, sizeof st) > 0 && strstr(st, "\"freeze\"") == NULL && strstr(st, "\"freeze_rec\"") == NULL
+          && strstr(st, "\"demo\"") == NULL);
     CHECK(strstr(st, "\"freeze_len\"") != NULL);                   /* the length setting is saved */
-    CHECK(dsp_set_param(vt, "freeze", "On") == -1);                /* the old two-way option is gone */
+    /* the old three-way knob's names still work, on the new controls */
+    CHECK(dsp_set_param(vt, "freeze", "Off") == 0);
+    CHECK(dsp_set_param(vt, "freeze", "Loop") == 0);
+    dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "On") == 0);
+    CHECK(dsp_set_param(vt, "freeze", "Rec") == 0);
+    dsp_get_param(vt, "freeze_rec", v, sizeof v); CHECK(strcmp(v, "Rec") == 0);
+    dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "On") == 0);
+    CHECK(dsp_set_param(vt, "freeze_rec", "Off") == 0);
 
     vt_t *b = dsp_init(VT_SAMPLE_RATE);
-    CHECK(dsp_set_param(b, "state", "{\"mode\":\"Tape\",\"freeze\":\"Loop\",\"demo\":\"On\"}") == 0);
+    CHECK(dsp_set_param(b, "state", "{\"mode\":\"Tape\",\"freeze\":\"On\",\"freeze_rec\":\"Rec\",\"demo\":\"On\"}") == 0);
     dsp_get_param(b, "mode", v, sizeof v);   CHECK(strcmp(v, "Tape") == 0);
     dsp_get_param(b, "freeze", v, sizeof v); CHECK(strcmp(v, "Off") == 0);
+    dsp_get_param(b, "freeze_rec", v, sizeof v); CHECK(strcmp(v, "Off") == 0);
     dsp_get_param(b, "demo", v, sizeof v);   CHECK(strcmp(v, "Off") == 0);
     dsp_cleanup(b);
     dsp_cleanup(vt);
@@ -1991,14 +2022,15 @@ static void test_freeze_looper(void)
     for (int m = 0; m < 2; m++) {
         vt = dsp_init(VT_SAMPLE_RATE);
         dsp_set_param(vt, "mode", modes[m]);
-        dsp_set_param(vt, "freeze", "Rec");
+        dsp_set_param(vt, "freeze_len", "Free");
+        dsp_set_param(vt, "freeze_rec", "Rec");
         pos = 0;
         static float blk[2 * 128];
         for (int b2 = 0; b2 < 2 * VT_SAMPLE_RATE / 128; b2++) {      /* a 2 s harmonic take at A3 */
             for (int i = 0; i < 128; i++, pos++) blk[2 * i] = blk[2 * i + 1] = 0.5f * tone(220.0, (int)pos, 6, VT_SAMPLE_RATE);
             dsp_process_block_f(vt, blk, 128);
         }
-        dsp_set_param(vt, "freeze", "Loop");
+        dsp_set_param(vt, "freeze_rec", "Off");                     /* kept: it plays */
         const int pads[4] = { 60, 64, 67, 62 };
         double lo = 1e9, sum = 0;
         int nw = 0, follows = 1;
@@ -2175,12 +2207,15 @@ static scope_t read_scope(vt_t *vt)
     char buf[256];
     if (dsp_get_param(vt, "scope", buf, sizeof buf) <= 0 || buf[0] != 'S') return s;
     char *p = buf + 1;
-    float v[23];
-    while (*p == ',' && s.fields < 23) { v[s.fields++] = strtof(p + 1, &p); }
-    if (s.fields < 23) return s;
+    float v[28];
+    int nf = 0;
+    while (*p == ',' && nf < 28) { v[nf++] = strtof(p + 1, &p); }
+    if (nf < 23) return s;
+    s.fields = 23;                                    /* the scope's own fields; the tail (auto, pad, ons, beat, bar s) below */
     s.mode = (int)v[0]; s.frozen = (int)v[1]; s.phase = v[2]; s.loop_s = v[3];
     s.f0 = v[4]; s.target = v[5]; s.cents = v[6];
     for (int i = 0; i < 16; i++) s.bands[i] = (int)v[7 + i];
+    if (nf >= 28) s.bar_s = v[27];
     return s;
 }
 
@@ -2224,11 +2259,18 @@ static void test_scope_feed(void)
     run_sine(vt, 330.0, 0.4f, 100, &pos, NULL, 0);
     s = read_scope(vt);
     CHECK(s.frozen == 0 && s.loop_s == 0.0f);
-    dsp_set_param(vt, "freeze", "Rec");
+    dsp_set_param(vt, "freeze_rec", "Rec");
     run_sine(vt, 330.0, 0.4f, (int)(1.5 * VT_SAMPLE_RATE / 128), &pos, NULL, 0);
     s = read_scope(vt);
     CHECK(s.frozen == 2 && fabs(s.loop_s - 1.5) < 0.01 && fabs(s.phase - 1.5 / 4.005) < 0.01);   /* 1.5 s into a 2-bar take at 120 */
-    dsp_set_param(vt, "freeze", "Loop");
+    dsp_set_param(vt, "freeze_rec", "Off");                        /* an unfinished bar take: cancelled */
+    run_sine(vt, 330.0, 0.4f, 10, &pos, NULL, 0);
+    s = read_scope(vt);
+    CHECK(s.frozen == 0 && s.loop_s == 0.0f);
+    dsp_set_param(vt, "freeze_len", "Free");
+    dsp_set_param(vt, "freeze_rec", "Rec");
+    run_sine(vt, 330.0, 0.4f, (int)(1.505 * VT_SAMPLE_RATE / 128), &pos, NULL, 0);
+    dsp_set_param(vt, "freeze_rec", "Off");                        /* Free: stopped, kept, plays */
     run_sine(vt, 330.0, 0.4f, 10, &pos, NULL, 0);
     scope_t a = read_scope(vt);
     run_sine(vt, 330.0, 0.4f, 100, &pos, NULL, 0);                 /* ~0.29 s later */
@@ -2240,6 +2282,7 @@ static void test_scope_feed(void)
     if (moved < 0) moved += 1.0f;
     CHECK(fabs(moved * a.loop_s - 100 * 128.0 / VT_SAMPLE_RATE) < 0.02);
     dsp_set_param(vt, "freeze", "Off");
+    CHECK(a.bar_s > 1.999f && a.bar_s < 2.001f);                   /* one bar at 120 bpm, for the banner's bar numbers */
 
     /* Short buffer: refuses rather than truncating. */
     char tiny[40];
@@ -2335,7 +2378,7 @@ static void test_auto_agc_and_gate(void)
     int commas = 0;
     const char *tail = buf;
     for (const char *p = buf; *p; p++) if (*p == ',' && ++commas == 24) tail = p + 1;
-    CHECK(commas == 27);                                           /* ..., note-ons, transport beat */
+    CHECK(commas == 28);                                           /* ..., note-ons, transport beat, bar seconds */
     double agc_db = atof(tail);
     if (!(agc_db > 11.5 && agc_db < 12.5)) printf("  scope agc field %.1f\n", agc_db);
     CHECK(agc_db > 11.5 && agc_db < 12.5);
@@ -3040,9 +3083,10 @@ static void test_chords_manual_level_and_gate(void)
     dsp_set_param(vt, "auto", "Off");
     dsp_set_param(vt, "gate", "-40");
     long pos = 0;
-    dsp_set_param(vt, "freeze", "Rec");
+    dsp_set_param(vt, "freeze_len", "Free");
+    dsp_set_param(vt, "freeze_rec", "Rec");
     run_tone(vt, 220.0, 0.1f, 1.5, &pos, NULL);                    /* ~-23 dBFS */
-    dsp_set_param(vt, "freeze", "Loop");
+    dsp_set_param(vt, "freeze_rec", "Off");                        /* kept: it plays */
     note_on(vt, 60);
     static float cap[3 * VT_SAMPLE_RATE];
     int n = run_tone(vt, 220.0, 0.0f, 3.0, &pos, cap);             /* mic silent: only the loop */
@@ -3065,9 +3109,9 @@ static void test_chords_manual_level_and_gate(void)
 
 static void test_freeze_bars(void)
 {
-    /* Freeze Len in bars: Rec stops itself after exactly N bars at the host
-     * tempo and loops, the knob moving to Loop; the loop period is exactly
-     * the bars (the wrap crossfade comes out of 5 ms recorded past them). */
+    /* Length in bars: a take stops itself after exactly N bars at the host
+     * tempo and loops, Rec moving back to Off and Loop to On; the loop period
+     * is exactly the bars (the wrap crossfade comes out of 5 ms recorded past them). */
     struct { const char *len; float bpm; double want_s; } cases[] = {
         { "2 Bars", 120.0f, 4.0 },                                 /* the default */
         { "1 Bar",   90.0f, 240.0 / 90.0 },
@@ -3080,13 +3124,15 @@ static void test_freeze_bars(void)
         if (k > 0) dsp_set_param(vt, "freeze_len", cases[k].len);
         dsp_get_param(vt, "freeze_len", v, sizeof v); CHECK(strcmp(v, cases[k].len) == 0);
         long pos = 0;
-        dsp_set_param(vt, "freeze", "Rec");
+        dsp_set_param(vt, "freeze_rec", "Rec");
         run_tone(vt, 220.0, 0.3f, cases[k].want_s - 0.1, &pos, NULL);
-        dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "Rec") == 0);       /* not yet */
+        dsp_get_param(vt, "freeze_rec", v, sizeof v); CHECK(strcmp(v, "Rec") == 0);   /* not yet */
+        dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "Off") == 0);
         scope_t sc = read_scope(vt);
         CHECK(sc.frozen == 2 && sc.phase > 0.9f && sc.phase < 1.0f);                   /* nearly through the take */
         run_tone(vt, 220.0, 0.3f, 0.2, &pos, NULL);
-        dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "Loop") == 0);      /* stopped by itself */
+        dsp_get_param(vt, "freeze_rec", v, sizeof v); CHECK(strcmp(v, "Off") == 0);   /* stopped by itself ... */
+        dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "On") == 0);        /* ... and plays */
         sc = read_scope(vt);
         if (!(sc.frozen == 1 && fabs(sc.loop_s - cases[k].want_s) < 0.002))
             printf("  %s at %.0f BPM: loop %.4f s, want %.4f\n", cases[k].len, cases[k].bpm, sc.loop_s, cases[k].want_s);
@@ -3094,19 +3140,28 @@ static void test_freeze_bars(void)
         dsp_cleanup(vt);
     }
 
-    /* Stopping early still locks what was recorded; Free waits for you. */
+    /* Stopping a bar take early cancels it, and the loop it would have replaced stays and plays on;
+     * Free waits for you. */
     vt_t *vt = dsp_init(VT_SAMPLE_RATE);
     long pos = 0;
-    dsp_set_param(vt, "freeze", "Rec");
-    run_tone(vt, 220.0, 0.3f, 1.0, &pos, NULL);
-    dsp_set_param(vt, "freeze", "Loop");
-    run_tone(vt, 220.0, 0.3f, 0.1, &pos, NULL);
+    dsp_set_param(vt, "freeze_len", "1 Bar");
+    dsp_set_param(vt, "freeze_rec", "Rec");
+    run_tone(vt, 220.0, 0.3f, 2.2, &pos, NULL);                    /* a whole bar: kept, plays */
     scope_t sc = read_scope(vt);
-    CHECK(sc.frozen == 1 && fabs(sc.loop_s - 0.995) < 0.01);
+    CHECK(sc.frozen == 1 && fabs(sc.loop_s - 2.0) < 0.002);
+    dsp_set_param(vt, "freeze_len", "2 Bars");
+    dsp_set_param(vt, "freeze_rec", "Rec");
+    run_tone(vt, 330.0, 0.3f, 3.0, &pos, NULL);                    /* 3 s of a 4 s take ... */
+    dsp_set_param(vt, "freeze_rec", "Off");                        /* ... stopped: cancelled */
+    static float cap0[VT_SAMPLE_RATE];
+    int n0 = run_tone(vt, 440.0, 0.3f, 0.5, &pos, cap0);
+    sc = read_scope(vt);
+    CHECK(sc.frozen == 1 && fabs(sc.loop_s - 2.0) < 0.002);        /* the 1-bar loop, unchanged */
+    CHECK(band_at(cap0 + n0 - 8192, 8192, 220.0) > 30.0 * band_at(cap0 + n0 - 8192, 8192, 330.0));
     dsp_set_param(vt, "freeze_len", "Free");
-    dsp_set_param(vt, "freeze", "Rec");
+    dsp_set_param(vt, "freeze_rec", "Rec");
     run_tone(vt, 220.0, 0.3f, 6.0, &pos, NULL);                    /* past any bar count at 120 */
-    dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "Rec") == 0);
+    dsp_get_param(vt, "freeze_rec", v, sizeof v); CHECK(strcmp(v, "Rec") == 0);
     dsp_cleanup(vt);
 
     /* A bar loop keeps feeding Chords and Robot while pads change: no gaps. */
@@ -3118,10 +3173,10 @@ static void test_freeze_bars(void)
          * 6-harmonic test tone fills; that's not a gap, so leave it out. */
         if (m == 1) dsp_set_param(vt, "beauty", "0");
         dsp_set_param(vt, "freeze_len", "1 Bar");                  /* 2 s at 120 */
-        dsp_set_param(vt, "freeze", "Rec");
+        dsp_set_param(vt, "freeze_rec", "Rec");
         pos = 0;
         run_tone(vt, 220.0, 0.3f, 2.2, &pos, NULL);                /* records, then loops by itself */
-        dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "Loop") == 0);
+        dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "On") == 0);
         const int pads[4] = { 60, 64, 67, 62 };
         static float cap[2 * VT_SAMPLE_RATE];
         double lo = 1e9, sum = 0;
@@ -3454,18 +3509,19 @@ static void test_freeze_downbeat(void)
     double beat = 1.3;
     char v[16];
     run_transport(vt, &beat, 120.0f, 330.0, 4.0, 440.0, 0.1, NULL);
-    CHECK(dsp_set_param(vt, "freeze", "Rec") == 0);
+    CHECK(dsp_set_param(vt, "freeze_rec", "Rec") == 0);
     run_transport(vt, &beat, 120.0f, 330.0, 4.0, 440.0, 0.05, NULL);
     scope_t sc = read_scope(vt);
     CHECK(sc.frozen == 3);                                         /* armed */
-    dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "Rec") == 0);
+    dsp_get_param(vt, "freeze_rec", v, sizeof v); CHECK(strcmp(v, "Rec") == 0);
     run_transport(vt, &beat, 120.0f, 330.0, 4.0, 440.0, (3.95 - beat) / 2.0, NULL);   /* to just before the downbeat */
     CHECK(read_scope(vt).frozen == 3);                             /* still waiting */
     run_transport(vt, &beat, 120.0f, 330.0, 4.0, 440.0, 0.2, NULL);
     sc = read_scope(vt);
     CHECK(sc.frozen == 2);                                         /* recording since the downbeat */
     run_transport(vt, &beat, 120.0f, 330.0, 4.0, 440.0, 2.0, NULL);   /* past the end of the bar */
-    dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "Loop") == 0);
+    dsp_get_param(vt, "freeze", v, sizeof v); CHECK(strcmp(v, "On") == 0);
+    dsp_get_param(vt, "freeze_rec", v, sizeof v); CHECK(strcmp(v, "Off") == 0);
     sc = read_scope(vt);
     CHECK(sc.frozen == 1 && fabs(sc.loop_s - 2.0) < 0.002);
     static float cap[3 * VT_SAMPLE_RATE];
@@ -3485,19 +3541,34 @@ static void test_freeze_downbeat(void)
     }
     dsp_cleanup(vt);
 
-    /* Off while armed cancels: nothing is recorded, and Loop has nothing to play. */
+    /* Rec off while armed cancels: nothing is recorded, and Loop has nothing to play. */
     vt = dsp_init(VT_SAMPLE_RATE);
     dsp_set_param(vt, "freeze_len", "2 Bars");
     beat = 0.5;
-    dsp_set_param(vt, "freeze", "Rec");
+    dsp_set_param(vt, "freeze_rec", "Rec");
     run_transport(vt, &beat, 120.0f, 330.0, 0.0, 330.0, 0.1, NULL);
     CHECK(read_scope(vt).frozen == 3);
-    dsp_set_param(vt, "freeze", "Off");
+    dsp_set_param(vt, "freeze_rec", "Off");
     run_transport(vt, &beat, 120.0f, 330.0, 0.0, 330.0, 2.0, NULL);   /* across the downbeat */
     CHECK(read_scope(vt).frozen == 0);
-    dsp_set_param(vt, "freeze", "Loop");
+    dsp_set_param(vt, "freeze", "On");
     run_transport(vt, &beat, 120.0f, 330.0, 0.0, 330.0, 0.2, NULL);
     CHECK(read_scope(vt).frozen == 0);                             /* no take: live */
+    dsp_cleanup(vt);
+
+    /* Armed while a loop plays: the loop goes on until the new take starts at the downbeat. */
+    vt = dsp_init(VT_SAMPLE_RATE);
+    dsp_set_param(vt, "mode", "Robot");
+    dsp_set_param(vt, "mix", "0");
+    dsp_set_param(vt, "freeze_len", "1 Bar");
+    beat = 0.0;
+    dsp_set_param(vt, "freeze_rec", "Rec");
+    run_transport(vt, &beat, 120.0f, 440.0, 0.0, 440.0, 2.3, NULL);   /* a bar of 440: kept, plays */
+    CHECK(read_scope(vt).frozen == 1);
+    dsp_set_param(vt, "freeze_rec", "Rec");                        /* arm a new take mid-bar */
+    n = run_transport(vt, &beat, 120.0f, 660.0, 0.0, 660.0, 0.8, cap);   /* still before the next downbeat (beat 4.6 -> 8) */
+    CHECK(read_scope(vt).frozen == 3);
+    CHECK(band_at(cap + n - 8192, 8192, 440.0) > 100.0 * band_at(cap + n - 8192, 8192, 660.0));   /* the loop still plays */
     dsp_cleanup(vt);
 
     /* Transport stopped, or Free: Rec records at once. */
@@ -3506,12 +3577,12 @@ static void test_freeze_downbeat(void)
         long pos = 0;
         if (k == 0) {
             dsp_set_transport(vt, -1.0);
-            dsp_set_param(vt, "freeze", "Rec");
+            dsp_set_param(vt, "freeze_rec", "Rec");
             run_tone(vt, 220.0, 0.3f, 0.05, &pos, NULL);
         } else {
             dsp_set_param(vt, "freeze_len", "Free");
             beat = 1.0;
-            dsp_set_param(vt, "freeze", "Rec");
+            dsp_set_param(vt, "freeze_rec", "Rec");
             run_transport(vt, &beat, 120.0f, 220.0, 0.0, 220.0, 0.05, NULL);
         }
         sc = read_scope(vt);
@@ -4079,7 +4150,7 @@ static int scope_pad(vt_t *vt)                                    /* the scope's
     char buf[1024];
     dsp_get_param(vt, "scope", buf, sizeof buf);
     char *p = buf + strlen(buf);
-    for (int c = 0; c < 3 && p > buf; ) if (*--p == ',') c++;
+    for (int c = 0; c < 4 && p > buf; ) if (*--p == ',') c++;   /* pad, note-ons, beat, bar s */
     return atoi(p + 1);
 }
 

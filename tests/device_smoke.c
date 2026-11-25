@@ -168,8 +168,9 @@ int main(int argc, char **argv)
      * Freeze recording a take and then looping it, and Demo driving everything. */
     static const char *const extra[][3] = {
         { "Robot + ensemble", "mod", "1" },
-        { "Freeze rec",       "freeze", "Rec" },
-        { "Freeze loop",      "freeze", "Loop" },
+        { "Freeze Free",      "freeze_len", "Free" },
+        { "Freeze rec",       "freeze_rec", "Rec" },        /* 400 blocks = 1.16 s ... */
+        { "Freeze loop",      "freeze_rec", "Off" },        /* ... kept (over 1 s): it loops */
         { "Demo on",          "demo", "On" },
         { "Voice FX",         "engine", "VoiceFX" },        /* the second personality, and its presets (Demo still on: it replaces the mic) */
         { "VFX Yeah Boy",     "vf_preset", "0" },
@@ -335,30 +336,30 @@ int main(int argc, char **argv)
             api->set_param(inst, "vf_tract", before[1]);                       /* put it back */
         }
     }
-    /* Freeze: no accidental micro-loops. A 30 ms tap is dropped (it stays live); a 70 ms take records on until the
-     * loop is 120 ms. Read from the scope feed: "S,<mode>,<freeze 0 live / 1 loop / 2 rec>,<phase>,<loop seconds>,..." */
+    /* Freeze's Rec and Loop: a 300 ms slip on Rec is dropped (it stays live); a 1.5 s take is kept and plays by itself.
+     * Read from the scope feed: "S,<mode>,<freeze 0 live / 1 loop / 2 rec>,<phase>,<loop seconds>,..." */
     {
         api->set_param(inst, "engine", "Vocoder");
         api->set_param(inst, "demo", "Off");
         api->set_param(inst, "mode", "Robot");
         api->set_param(inst, "freeze_len", "Free");
-        static const int taps_ms[2] = { 30, 70 };
+        static const int taps_ms[2] = { 300, 1500 };
         for (int t = 0; t < 2; t++) {
             static int16_t fb[2 * 128];
             api->set_param(inst, "freeze", "Off");
             for (int b = 0; b < 20; b++) { memset(fb, 0, sizeof fb); api->process_block(inst, fb, 128); }
-            api->set_param(inst, "freeze", "Rec");
+            api->set_param(inst, "freeze_rec", "Rec");
             for (int b = 0; b < taps_ms[t] * 441 / 10 / 128; b++) { for (int i = 0; i < 128; i++) fb[2 * i] = fb[2 * i + 1] = (int16_t)(6000.0 * sin(0.1 * (double)i)); api->process_block(inst, fb, 128); }
-            api->set_param(inst, "freeze", "Loop");
+            api->set_param(inst, "freeze_rec", "Off");
             for (int b = 0; b < 80; b++) { for (int i = 0; i < 128; i++) fb[2 * i] = fb[2 * i + 1] = (int16_t)(6000.0 * sin(0.1 * (double)i)); api->process_block(inst, fb, 128); }
             char sc[400] = "";
             int sm = -1, sf = -1;
             float sp = 0.0f, sl = 0.0f;
             api->get_param(inst, "scope", sc, sizeof sc);
             sscanf(sc, "S,%d,%d,%f,%f", &sm, &sf, &sp, &sl);
-            printf("  freeze, a %d ms take then Loop: scope says %s, loop %.3f s\n", taps_ms[t], sf == 1 ? "looping" : (sf == 0 ? "live" : "recording"), (double)sl);
-            if (t == 0) CHECK(sf == 0);                                        /* the tap is dropped: live */
-            else CHECK(sf == 1 && fabs((double)sl - 0.120) < 0.004);           /* extended to the 120 ms floor, then looping */
+            printf("  freeze, a %d ms take: scope says %s, loop %.3f s\n", taps_ms[t], sf == 1 ? "looping" : (sf == 0 ? "live" : "recording"), (double)sl);
+            if (t == 0) CHECK(sf == 0);                                        /* the slip is dropped: live */
+            else CHECK(sf == 1 && fabs((double)sl - 1.495) < 0.01);            /* kept at its length, looping */
         }
         api->set_param(inst, "freeze", "Off");
     }

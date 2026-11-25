@@ -2169,12 +2169,13 @@ static void test_walkie_tail(void)
     dsp_cleanup(vt);
 }
 
-/* Freeze: no accidental micro-loops. A tap is dropped, a short take records on to a 120 ms loop, the seam is clean. */
-static void freeze_feed(freeze_t *f, int n, int want, int *i0)
+/* Freeze: the two controls (Rec, Loop) and the double buffer. A slip can't cost you the loop: a Free take under 1 s is
+ * dropped, an unfinished bar take is cancelled, Loop never records, and the kept take plays until a new one is finished. */
+static void freeze_feed(freeze_t *f, int n, int rec, int loop, int *i0)
 {
     for (int i = 0; i < n; i++, (*i0)++) {
         float mix;
-        freeze_process(f, (float)((*i0) % 20000) / 40000.0f, want, &mix);        /* a slow ramp: the value says which input sample it was */
+        freeze_process(f, (float)((*i0) % 20000) / 40000.0f, rec, loop, &mix);   /* a slow ramp: the value says which input sample it was */
     }
 }
 
@@ -2182,99 +2183,81 @@ static void test_freeze_minimum(void)
 {
     static freeze_t f;
     const int sr = VT_SAMPLE_RATE;
-    const int minp = (int)(FREEZE_MIN_SEC * sr);                                /* the loop period it may not undercut */
     int i0;
+    float mix;
 
     freeze_init(&f, (float)sr);
-    CHECK(f.min_len == minp + f.xf && f.reject_len == (int)(FREEZE_REJECT_SEC * sr));
-    CHECK(fabs((double)minp / sr - 0.120) < 0.001 && fabs((double)f.reject_len / sr - 0.050) < 0.001);
+    CHECK(f.keep_len == (int)(FREEZE_KEEP_SEC * sr) + f.xf && fabs((double)(f.keep_len - f.xf) / sr - 1.0) < 0.001);
 
-    /* a tap, under 50 ms: rejected, nothing loops, it stays live (and says so at once) */
-    for (int ms = 1; ms <= 49; ms += 12) {
+    /* Free: a slip (Rec on and off under 1 s) is dropped and nothing plays, whatever Loop says */
+    for (int ms = 1; ms < 1000; ms += 199) {
         freeze_init(&f, (float)sr);
         i0 = 0;
-        freeze_feed(&f, 1, FREEZE_REC, &i0);
-        freeze_feed(&f, ms * sr / 1000, FREEZE_REC, &i0);
-        freeze_feed(&f, 1, FREEZE_LOOP, &i0);
-        freeze_feed(&f, 20000, FREEZE_LOOP, &i0);
-        float mix;
-        freeze_process(&f, 0.0f, FREEZE_LOOP, &mix);
-        if (freeze_looping(&f) || mix > 0.001f || f.loop_len != 0) printf("  freeze: a %d ms tap left a loop (len %d, mix %.3f)\n", ms, f.loop_len, mix);
-        CHECK(!freeze_looping(&f) && f.loop_len == 0 && mix < 0.001f && f.pend == -1);
+        freeze_feed(&f, ms * sr / 1000, 1, 0, &i0);
+        freeze_feed(&f, 1, 0, 0, &i0);
+        CHECK(f.state == FREEZE_IDLE && f.loop_len == 0 && !freeze_take_done(&f));
+        freeze_feed(&f, 2000, 0, 1, &i0);                                       /* Loop on: nothing to play */
+        freeze_process(&f, 0.0f, 0, 1, &mix);
+        CHECK(!freeze_looping(&f) && mix < 0.001f);
     }
-    /* just over 50 ms and up to the minimum: recording carries on after release until the loop period is 120 ms, then it loops */
-    for (int ms = 52; ms <= 118; ms += 22) {
-        freeze_init(&f, (float)sr);
-        i0 = 0;
-        freeze_feed(&f, 1, FREEZE_REC, &i0);
-        freeze_feed(&f, ms * sr / 1000, FREEZE_REC, &i0);
-        freeze_feed(&f, 1, FREEZE_LOOP, &i0);                                   /* released early */
-        CHECK(f.state == FREEZE_REC && f.pend == FREEZE_LOOP && !freeze_looping(&f));   /* still recording, live in the meantime */
-        const int held_at = f.rec_len;
-        freeze_feed(&f, f.min_len - f.rec_len - 2, FREEZE_LOOP, &i0);
-        CHECK(f.state == FREEZE_REC);                                           /* not yet */
-        freeze_feed(&f, 4, FREEZE_LOOP, &i0);
-        if (!(f.state == FREEZE_LOOP && f.loop_len == f.min_len && f.pend == -1))
-            printf("  freeze: %d ms take: state %d, len %d (want %d)\n", ms, f.state, f.loop_len, f.min_len);
-        CHECK(f.state == FREEZE_LOOP && f.loop_len == f.min_len && f.pend == -1);
-        CHECK(f.loop_len - f.xf == minp);                                       /* the loop period: exactly the floor */
-        CHECK(held_at < f.min_len);
-        /* what was recorded after the release is in the take (the ramp says which input sample each slot holds) */
-        const int k = f.min_len - 5;
-        CHECK(abs((int)f.buf[k] - (int)lrintf((float)((k - 1 + 1) % 20000) / 40000.0f * 32767.0f)) <= 2 * 33 || k > 20000);
-        freeze_feed(&f, 30000, FREEZE_LOOP, &i0);
-        CHECK(freeze_looping(&f));
-    }
-    /* released into Off: the take is extended the same way and kept, ready to loop later */
+    /* Free: 1 s or more is kept at exactly its length and plays at once (the caller is told once) */
     freeze_init(&f, (float)sr);
     i0 = 0;
-    freeze_feed(&f, 1, FREEZE_REC, &i0);
-    freeze_feed(&f, 3000, FREEZE_REC, &i0);
-    freeze_feed(&f, 1, FREEZE_OFF, &i0);
-    CHECK(f.state == FREEZE_REC && f.pend == FREEZE_OFF);
-    freeze_feed(&f, 4000, FREEZE_OFF, &i0);
-    CHECK(f.state == FREEZE_OFF && f.loop_len == f.min_len && !freeze_looping(&f));
-    freeze_feed(&f, 10, FREEZE_LOOP, &i0);
-    CHECK(freeze_looping(&f));                                                  /* Off -> Loop replays it */
-    /* Rec asked again while a short take is being extended: it is an ordinary take from then on */
-    freeze_init(&f, (float)sr);
-    i0 = 0;
-    freeze_feed(&f, 1, FREEZE_REC, &i0);
-    freeze_feed(&f, 3000, FREEZE_REC, &i0);
-    freeze_feed(&f, 1, FREEZE_LOOP, &i0);
-    freeze_feed(&f, 500, FREEZE_LOOP, &i0);
-    freeze_feed(&f, 1, FREEZE_REC, &i0);
-    CHECK(f.state == FREEZE_REC && f.pend == -1);
-    freeze_feed(&f, 20000, FREEZE_REC, &i0);
-    CHECK(f.state == FREEZE_REC && f.rec_len > 20000);                          /* it did not lock behind the player's back */
-    freeze_feed(&f, 1, FREEZE_LOOP, &i0);
-    CHECK(f.state == FREEZE_LOOP && f.loop_len == f.rec_len);                   /* a long take locks at once, at exactly its length */
-    /* a take already long enough is unchanged: locked at exactly what was recorded */
-    freeze_init(&f, (float)sr);
-    i0 = 0;
-    freeze_feed(&f, 1, FREEZE_REC, &i0);
-    freeze_feed(&f, f.min_len + 700, FREEZE_REC, &i0);
-    freeze_feed(&f, 1, FREEZE_LOOP, &i0);
-    CHECK(f.state == FREEZE_LOOP && f.loop_len == f.rec_len);
-    /* a bar take that fills itself is unchanged by all this */
+    freeze_feed(&f, f.keep_len + 300, 1, 0, &i0);
+    freeze_feed(&f, 1, 0, 0, &i0);
+    CHECK(f.loop_len == f.keep_len + 300 && freeze_looping(&f) && freeze_take_done(&f) && !freeze_take_done(&f));
+    /* the caller then moves Loop to On: no restart (it is already playing) */
+    const int at = f.pos;
+    freeze_feed(&f, 1, 0, 1, &i0);
+    CHECK(f.pos == at + 1);
+    const int kept = f.loop_len;
+    const int16_t s0 = f.buf[f.cur][100];
+
+    /* Loop off and on, over and over, never records (the old Off / Rec / Loop knob passed through Rec) */
+    for (int k = 0; k < 20; k++) { freeze_feed(&f, 50, 0, k & 1, &i0); }
+    freeze_feed(&f, 50, 0, 1, &i0);
+    CHECK(f.loop_len == kept && f.buf[f.cur][100] == s0 && freeze_looping(&f));
+    /* Loop on again from off replays from the start */
+    freeze_feed(&f, 10, 0, 0, &i0);
+    freeze_feed(&f, 1, 0, 1, &i0);
+    CHECK(f.pos == 1);
+
+    /* a new take records into the other half: the kept one is untouched until it is accepted */
+    freeze_feed(&f, 3000, 1, 1, &i0);
+    CHECK(freeze_recording(&f) && !freeze_looping(&f) && f.loop_len == kept && f.buf[f.cur][100] == s0);
+    freeze_feed(&f, 1, 0, 1, &i0);                                              /* 68 ms: a slip */
+    CHECK(f.loop_len == kept && f.buf[f.cur][100] == s0 && freeze_looping(&f));  /* the old loop plays on */
+
+    /* bar mode: a take that reaches its bars is kept and plays; one stopped early (or while armed) is cancelled */
     freeze_init(&f, (float)sr);
     freeze_set_target(&f, 2 * sr);
     i0 = 0;
-    freeze_feed(&f, 1, FREEZE_REC, &i0);
-    freeze_feed(&f, 2 * sr + f.xf + 10, FREEZE_REC, &i0);
-    CHECK(f.state == FREEZE_LOOP && f.loop_len == 2 * sr + f.xf && freeze_take_full(&f));
+    freeze_feed(&f, 2 * sr + f.xf + 10, 1, 0, &i0);
+    CHECK(f.state == FREEZE_IDLE && f.loop_len == 2 * sr + f.xf && f.pos > f.xf && freeze_looping(&f) && freeze_take_done(&f));
+    const int16_t b0 = f.buf[f.cur][500];
+    freeze_feed(&f, 1, 0, 1, &i0);                                              /* the caller: Rec Off, Loop On */
+    freeze_feed(&f, sr, 1, 1, &i0);                                             /* half a new take ... */
+    freeze_feed(&f, 1, 0, 1, &i0);                                              /* ... stopped: cancelled */
+    CHECK(f.state == FREEZE_IDLE && f.loop_len == 2 * sr + f.xf && f.buf[f.cur][500] == b0 && freeze_looping(&f) && !freeze_take_done(&f));
+    freeze_set_clock(&f, sr);                                                   /* the transport runs: Rec arms */
+    freeze_feed(&f, 1, 1, 1, &i0);
+    CHECK(freeze_armed(&f) && freeze_looping(&f));                              /* the loop plays on while armed */
+    freeze_set_clock(&f, sr / 2);
+    freeze_feed(&f, 100, 0, 1, &i0);                                            /* Rec off before the downbeat */
+    CHECK(f.state == FREEZE_IDLE && f.buf[f.cur][500] == b0 && freeze_looping(&f));
 
-    /* The seam of a loop at the floor (115 ms of a 200 Hz sine, whole periods or not): the equal-power crossfade leaves
-     * no click, a step no bigger than the sine's own slope plus a little, three times round */
+    /* The seam of a short loop (1.1 s of a 200 Hz sine): the equal-power crossfade leaves no click, a step no bigger
+     * than the sine's own slope plus a little, three times round */
     {
         freeze_init(&f, (float)sr);
-        float worst = 0.0f, prev = 0.0f, mix = 0.0f;
+        float worst = 0.0f, prev = 0.0f;
         int first = 1, n_out = 0;
-        for (int i = 0; i < 60000; i++) {
-            const int want = i < 4000 ? FREEZE_REC : FREEZE_LOOP;
+        const int take = (int)(1.1 * sr);
+        for (int i = 0; i < take + 4 * take; i++) {
+            const int rec = i < take;
             const float in = 0.5f * sinf(2.0f * 3.14159265f * 200.0f * (float)i / (float)sr);
-            const float y = freeze_process(&f, in, want, &mix);
-            if (i > 4000 + 1200 && mix > 0.999f) {                              /* past the live -> loop fade */
+            const float y = freeze_process(&f, in, rec, 0, &mix);
+            if (i > take + 1200 && mix > 0.999f) {                              /* past the live -> loop fade */
                 if (!first) worst = fmaxf(worst, fabsf(y - prev));
                 first = 0;
                 n_out++;
@@ -2282,31 +2265,9 @@ static void test_freeze_minimum(void)
             prev = y;
         }
         const float slope = 0.5f * 2.0f * 3.14159265f * 200.0f / (float)sr;      /* 0.0142 */
-        if (!(worst < 2.0f * slope && n_out > 3 * minp)) printf("  freeze seam: worst step %.4f (slope %.4f), %d samples over %d\n", worst, slope, n_out, 3 * minp);
-        CHECK(n_out > 3 * minp);                                                 /* it went round the loop at least three times */
+        if (!(worst < 2.0f * slope && n_out > 3 * take)) printf("  freeze seam: worst step %.4f (slope %.4f), %d samples over %d\n", worst, slope, n_out, 3 * take);
+        CHECK(n_out > 3 * take);                                                 /* it went round the loop at least three times */
         CHECK(worst < 2.0f * slope);
-    }
-    /* Through the engine: Rec, a 70 ms take, Loop: the scope reads a 120 ms loop once the take has been extended */
-    {
-        vt_t *vt = dsp_init(VT_SAMPLE_RATE);
-        dsp_set_param(vt, "mode", "Robot");
-        dsp_set_param(vt, "mix", "0");
-        dsp_set_param(vt, "freeze_len", "Free");
-        long pos = 0;
-        int cn = 0;
-        static float cap[VT_SAMPLE_RATE];
-        run_sine_cap(vt, 330.0, 0.5f, 0.3, &pos, NULL, &cn);
-        CHECK(dsp_set_param(vt, "freeze", "Rec") == 0);
-        run_sine_cap(vt, 440.0, 0.5f, 0.07, &pos, cap, &cn);
-        CHECK(dsp_set_param(vt, "freeze", "Loop") == 0);
-        run_sine_cap(vt, 880.0, 0.5f, 0.012, &pos, cap, &cn);                    /* a block or two later: still extending, not looping */
-        scope_t sc = read_scope(vt);
-        CHECK(sc.frozen == 2);
-        run_sine_cap(vt, 880.0, 0.5f, 0.4, &pos, cap, &cn);
-        sc = read_scope(vt);
-        if (!(sc.frozen == 1 && fabs(sc.loop_s - 0.120) < 0.004)) printf("  freeze through the engine: frozen %d, loop %.4f s (want 0.120)\n", sc.frozen, sc.loop_s);
-        CHECK(sc.frozen == 1 && fabs(sc.loop_s - 0.120) < 0.004);
-        dsp_cleanup(vt);
     }
 }
 

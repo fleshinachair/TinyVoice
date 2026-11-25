@@ -129,13 +129,13 @@ c = run({ scope: scope(0, 1, 0.5, 2.0, 0, 0, 0, new Array(16).fill(100)) }, 3200
 check(c.texts.includes("LOOP"), "freeze tag: LOOP while looping (Robot bars too)");
 check(c.outOfBounds === 0, "freeze tag: inside the frame");
 
-// ---- Freeze banner (MORE knobs 3-4) ----
+// ---- Freeze banner (the Looper page: Rec, Loop, Length) ----
 check(ov.widgetKinds["custom:tinyvoice_freeze"] && typeof ov.widgetKinds["custom:tinyvoice_freeze"].draw === "function",
       "registers custom:tinyvoice_freeze");
 const drawFz = ov.widgetKinds["custom:tinyvoice_freeze"].draw;
-const fzScope = (frozen, phase, loopS, beat) =>
-    ["S", 0, frozen, phase, loopS, 220, 220, 0, ...new Array(16).fill(0), 0, -1, 0, beat].join(",");
-/* a two-cell frame that records where every string lands (6 px glyphs, 8 px tall) */
+const fzScope = (frozen, phase, loopS, beat, barS = 2) =>
+    ["S", 0, frozen, phase, loopS, 220, 220, 0, ...new Array(16).fill(0), 0, -1, 0, beat, barS].join(",");
+/* a three-cell frame that records where every string lands (6 px glyphs, 8 px tall) */
 function fzCtx(Wf) {
     const Hf = 15, px = new Uint8Array(Wf * Hf), runs = [];
     let oob = 0;
@@ -151,44 +151,62 @@ function fzCtx(Wf) {
         textWidth(t) { return String(t).length * 6; },
     };
 }
-const runFz = (values, nowMs, Wf = 64) => { const k = fzCtx(Wf); drawFz(k, { values, nowMs, group: { keys: ["freeze", "freeze_len"] } }); return k; };
+const FW = 120;                                                    // three cells
+const runFz = (values, nowMs, Wf = FW) => { const k = fzCtx(Wf); drawFz(k, { values, nowMs, group: { keys: ["freeze_rec", "freeze", "freeze_len"] } }); return k; };
 const overlaps = (k) => { for (let a = 0; a < k.runs.length; a++) for (let b = a + 1; b < k.runs.length; b++) {
     const A = k.runs[a], B = k.runs[b];
     if (Math.abs(A.y - B.y) < 8 && A.x < B.x + B.w && B.x < A.x + A.w) return true; } return false; };
 const texts = (k) => k.runs.map((r) => r.t);
 const litFz = (k) => k.px.reduce((a2, b2) => a2 + b2, 0);
 
-// OFF: just the two values, each centred in its own cell - no banner, no status strings
-let fk = runFz({ scope: fzScope(0, 0, 0, 5.2), freeze: "Off", freeze_len: "2 Bars" }, 40000);
-check(texts(fk).join("|") === "Off|2 Bars", `banner off: only the two values (${texts(fk).join("|")})`);
-check(fk.runs[0].x + fk.runs[0].w <= 32, "banner off: the Freeze value inside its own cell");
-check(fk.runs[1].x + fk.runs[1].w <= 64 && fk.runs[1].x > fk.runs[0].x + fk.runs[0].w, "banner off: the length to its right, whole");
-check(!overlaps(fk) && fk.outOfBounds === 0, "banner off: no collisions, inside the frame");
-fk = runFz({ scope: fzScope(0, 0, 0, -1), freeze: 0, freeze_len: 3 }, 40100);       // index forms
-check(texts(fk).join("|") === "Off|4 Bars", "banner off: index values read as names");
+// IDLE: just the three values, each centred in its own third - no banner, no status strings
+let fk = runFz({ scope: fzScope(0, 0, 0, 5.2), freeze_rec: "Off", freeze: "On", freeze_len: "2 Bars" }, 40000);
+check(texts(fk).join("|") === "Off|On|2 Bars", `banner idle: only the three values (${texts(fk).join("|")})`);
+check(fk.runs.every((r, i) => r.x >= i * FW / 3 - 1 && r.x + r.w <= (i + 1) * FW / 3 + 1), "banner idle: each value inside its own cell");
+check(!overlaps(fk) && fk.outOfBounds === 0, "banner idle: no collisions, inside the frame");
+fk = runFz({ scope: fzScope(0, 0, 0, -1), freeze_rec: 1, freeze: 0, freeze_len: 3 }, 40100);       // index forms
+check(texts(fk).join("|") === "Rec|Off|4 Bars", `banner idle: index values read as names (${texts(fk).join("|")})`);
+fk = runFz({ scope: fzScope(0, 0, 0, -1), freeze_len: "2 Bars" }, 40100, 60);                   // narrow: shortened, never touching
+check(!overlaps(fk) && fk.outOfBounds === 0, "banner idle: a narrow frame shortens rather than collides");
 
 // ARMED: cleared and taken over, flashing; the beats left to bar 1 as squares
-fk = runFz({ scope: fzScope(3, 0, 0, 5.2), freeze_len: "2 Bars" }, 41000);         // 41000/125 even: inverted
+fk = runFz({ scope: fzScope(3, 0, 0, 5.2), freeze_len: "2 Bars" }, 41000, 64);         // 41000/125 even: inverted
 check(texts(fk).length === 1 && /ARMED/.test(texts(fk)[0]), `banner armed: one ARMED line (${texts(fk)[0]})`);
 check(litFz(fk) > 64 * 15 / 2, "banner armed: inverted");
 const sqLit = (k) => { let n = 0; for (let x = 0; x < 64; x++) n += k.px[(15 - 3) * 64 + x] === 0 ? 1 : 0; return n; };
 check(sqLit(fk) === 3 * 4, `banner armed: 3 beats left drawn as 3 squares (${sqLit(fk) / 4})`);
-const fkOff = runFz({ scope: fzScope(3, 0, 0, 5.2), freeze_len: "2 Bars" }, 41125);
+const fkOff = runFz({ scope: fzScope(3, 0, 0, 5.2), freeze_len: "2 Bars" }, 41125, 64);
 check(/ARMED/.test(texts(fkOff)[0] || "") && litFz(fkOff) < 64 * 15 / 2, "banner armed: flashes");
 check(texts(runFz({ scope: fzScope(3, 0, 0, 5.2) }, 41000, 120))[0] === "[ *** ARMED *** ]", "banner armed: full brackets when they fit");
 
-// REC and LOOP
-fk = runFz({ scope: fzScope(2, 0.5, 2.0, 9.0), freeze_len: "2 Bars" }, 42000);
-check(texts(fk).length === 1 && /REC/.test(texts(fk)[0]) && litFz(fk) > 64 * 15 / 2, `banner rec: inverted REC (${texts(fk)[0]})`);
-fk = runFz({ scope: fzScope(1, 0.25, 4.0, 12.0), freeze_len: "2 Bars" }, 43000);
-check(texts(fk).length === 1 && /LOOP/.test(texts(fk)[0]), `banner loop: one LOOP line (${texts(fk)[0]})`);
+// REC: inverted, with the bar being recorded of the Length (2 s bars: 2.5 s in = bar 2 of 4)
+fk = runFz({ scope: fzScope(2, 0.3, 2.5, 9.0), freeze_len: "4 Bars" }, 42000);
+check(texts(fk).length === 1 && texts(fk)[0] === "[ REC 2/4 ]" && litFz(fk) > FW * 15 / 2, `banner rec: inverted, bar 2 of 4 (${texts(fk)[0]})`);
+fk = runFz({ scope: fzScope(2, 0.3, 7.9, 9.0), freeze_len: "4 Bars" }, 42000);
+check(texts(fk)[0] === "[ REC 4/4 ]", `banner rec: last bar (${texts(fk)[0]})`);
+fk = runFz({ scope: fzScope(2, 0.3, 5.0, 9.0), freeze_len: "Free" }, 42000);
+check(texts(fk)[0] === "[ REC 3 ]", `banner rec: Free counts the bars so far (${texts(fk)[0]})`);
+// the count runs on between reads: 1.2 s after a read at 1.5 s, bar 2
+const fkA = runFz({ scope: fzScope(2, 0.2, 1.5, 9.0), freeze_len: "2 Bars" }, 50000);
+const fkB = runFz({ scope: fzScope(2, 0.2, 1.5, 9.0), freeze_len: "2 Bars" }, 51200);
+check(texts(fkA)[0] === "[ REC 1/2 ]" && texts(fkB)[0] === "[ REC 2/2 ]", `banner rec: the bar number runs on (${texts(fkA)[0]} -> ${texts(fkB)[0]})`);
+
+// LOOP: the bar playing of the take's bars, and a tick per bar line
+fk = runFz({ scope: fzScope(1, 0.6, 8.0, 12.0), freeze_len: "4 Bars" }, 43000);
+check(texts(fk).length === 1 && texts(fk)[0] === "[ LOOP 3/4 ]", `banner loop: bar 3 of 4 (${texts(fk)[0]})`);
+const ticks = (k) => { let n = 0; for (let x = 1; x < FW - 1; x++) if (k.px[(15 - 4) * FW + x] && !k.px[(15 - 4) * FW + x - 1]) n++; return n; };
+check(ticks(fk) >= 3, `banner loop: bar lines marked (${ticks(fk)})`);
+fk = runFz({ scope: fzScope(1, 0.1, 3.0, 12.0) }, 43000);              // a Free take of 1.5 bars rounds to 2
+check(texts(fk)[0] === "[ LOOP 1/2 ]", `banner loop: a free take counts its bars (${texts(fk)[0]})`);
+fk = runFz({ scope: fzScope(1, 0.1, 3.0, 12.0, 0) }, 43000);           // an old feed without the bar length
+check(texts(fk)[0] === "[ LOOP ]", `banner loop: no bar length, no numbers (${texts(fk)[0]})`);
 
 // every state, narrow or wide: in the frame, no collisions, text clear of the bottom rows
 let clean = true;
-for (const Wf of [50, 60, 64, 120])
+for (const Wf of [50, 60, 64, 90, 120])
     for (const stt of [0, 1, 2, 3])
         for (const tm of [44000, 44125]) {
-            const k = runFz({ scope: fzScope(stt, 0.9, 4.0, 3.9), freeze: "Rec", freeze_len: "4 Bars" }, tm, Wf);
+            const k = runFz({ scope: fzScope(stt, 0.9, 7.0, 3.9), freeze_rec: "Rec", freeze: "On", freeze_len: "4 Bars" }, tm, Wf);
             if (k.outOfBounds || overlaps(k) || k.runs.some((r) => r.y + 8 > 15 - 2)) clean = false;
         }
 check(clean, "banner: every state fits 50-120 px frames without collisions");

@@ -575,6 +575,7 @@ function buildResynth() {
 
   p = panel(grid, "p-out", "OUTPUT");
   group(p, "", ["hm_autolevel", "hm_dry_wet", "hm_input_gain", "hm_mic_gate", "hm_output_gain"], true);
+  group(p, "LOOPER", ["freeze_rec", "freeze", "freeze_len"]);
   group(p, "AUDITION", ["demo"]);
   el("div", "foot", p, "Dials: drag up/down or scroll (Shift for fine), double-click for the default. Save a sound on the Move (My Presets); it then shows in the preset strip above and on the Move's Presets page.");
   drawWave(); drawFilter(); drawKeys(); applyNA();
@@ -626,9 +627,9 @@ function buildVocoder() {
   el("div", "foot", p, "Key and Scale also root the Robot drone. A greyed knob does nothing in the current mode.");
   p = panel(grid, "p-util", "SPACE  ·  GATE  ·  FREEZE");
   group(p, "", ["spread", "tone", "gate"], true);
-  group(p, "FREEZE (LOOPER)", ["freeze", "freeze_len"]);
+  group(p, "LOOPER", ["freeze_rec", "freeze", "freeze_len"]);
   group(p, "AUDITION", ["demo"]);
-  el("div", "foot", p, "Demo plays a built-in sung phrase through every mode in turn (turn Mode to stop on one).");
+  el("div", "foot", p, "Looper: Rec records a take of Length (it waits for the next bar when Move is playing, then loops by itself); Loop plays or stops it and never records. Demo plays a built-in sung phrase through every mode in turn (turn Mode to stop on one).");
 }
 
 /* ---------- Voice FX: Vowel, Character */

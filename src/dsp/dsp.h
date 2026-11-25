@@ -89,7 +89,8 @@ typedef enum {
     VT_P_HM_VGATE,      /* -72..-24 dB: Mic Gate, the voice gate's threshold on the raw input in Resynth (-42 = the vocoder's Auto) */
     VT_P_HM_WAVE,       /* enum  Saw, Square, Triangle, Sine, Preset (Preset = the cycle in hm_wt) */
     /* Performance toggles (knobs on MORE), not saved in "state" */
-    VT_P_FREEZE,       /* enum  Off, On: loop the last 4 s of input into the engine */
+    VT_P_FREEZE,        /* enum  Off, On: Loop - play the kept Freeze take instead of the live input (never records) */
+    VT_P_FREEZE_REC,    /* enum  Off, Rec: Rec - record a new take into the spare buffer (freeze.h; never plays) */
     VT_P_DEMO,          /* enum  Off, On: built-in sung phrase, modes advance every 4 bars */
     VT_P_COUNT
 } vt_param_id;

@@ -108,9 +108,11 @@
             "pitch display.",
             "",
             "More: Spread, Tone,",
-            "Freeze, Freeze Len,",
             "Gate, Latch, Beauty,",
             "Demo.",
+            "",
+            "Looper: Rec, Loop,",
+            "Length.",
             "",
             "Each mode keeps its",
             "own five knobs."
@@ -352,23 +354,30 @@
           ]
         },
         {
-          "title": "Freeze",
+          "title": "Looper",
           "lines": [
-            "A 16 s punch-in",
-            "looper (More).",
+            "A 16 s looper on the",
+            "input (Looper page).",
             "",
-            "Rec: record a take",
-            "Loop: play it",
-            "Off: live; take kept",
+            "Rec: turn on to",
+            "record. With Move",
+            "playing it waits for",
+            "the next bar, takes",
+            "Length bars, then",
+            "loops by itself.",
             "",
-            "Freeze Len: 1, 2, 4",
-            "bars or Free. In bar",
-            "mode Rec waits for",
-            "the next downbeat,",
-            "then stops itself.",
+            "Loop: plays or stops",
+            "the take. It never",
+            "records.",
             "",
-            "Takes under 50 ms",
-            "are ignored."
+            "Your loop is safe",
+            "until a new take is",
+            "finished: turn Rec",
+            "off early to cancel.",
+            "",
+            "Length Free: Rec off",
+            "stops and loops.",
+            "Under 1 s: dropped."
           ]
         },
         {
@@ -482,6 +491,8 @@
             "Lower Mic Gate (Play)",
             "Notes: Duo, Note 1",
             "and 2, Latch, No Pad.",
+            "Looper: Rec, Loop,",
+            "Length (as Vocoder).",
             "Presets: first page.",
             "Bank: last page."
           ]

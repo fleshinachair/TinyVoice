@@ -56,7 +56,7 @@ PARAMS = [
     flt("tone", "Tone", 0, 1, 0.01, 1, "%"),
     flt("glide", "Glide", 0, 500, 1, 0, "ms"),
     flt("mod", "Mod", 0, 1, 0.01, 0, "%"),
-    enum("freeze_len", "Freeze Len", ["Free", "1 Bar", "2 Bars", "4 Bars"], 2),   # Rec stops itself after N bars
+    enum("freeze_len", "Length", ["Free", "1 Bar", "2 Bars", "4 Bars"], 2),   # Freeze: a take is N bars (it ends and loops by itself)
     flt("beauty", "Beauty", 0, 1, 0.01, 0.5, "%"),          # per-mode polish: stereo, detune, air, warmth
     enum("latch", "Latch", ["Off", "On"], 0),               # pad chord holds after release (Robot, Chords, Prism, Nightcall, Harmony)
     flt("char4", "Char 4", 0, 1, 0.01, 0.5, "%"),           # macros 4 and 5: per mode a new control, or an alias of an old param
@@ -103,8 +103,9 @@ HM_EXTRA = [
     enum("hm_wave", "Wave", ["Saw", "Square", "Triangle", "Sine", "Preset"], 0),  # Preset = the wavetable a preset carried (hm_wt)
 ]
 PARAMS += HM + HM_EXTRA + [
-    # performance toggles (knobs on MORE; not saved in "state")
-    enum("freeze", "Freeze", ["Off", "Rec", "Loop"], 0),       # punch-in looper (src/dsp/freeze.h)
+    # performance toggles (not saved in "state")
+    enum("freeze", "Loop", ["Off", "On"], 0),                  # Freeze (src/dsp/freeze.h): play the kept take; never records
+    enum("freeze_rec", "Rec", ["Off", "Rec"], 0),              # record a new take (the old loop is kept until it completes); never plays
     enum("demo", "Demo", ["Off", "On"], 0),
 ]
 
@@ -116,6 +117,9 @@ def readout(key, name, lo, hi, step, unit):
     r["access"] = "read"
     return r
 
+# Freeze's own page, the same on the Vocoder and Resynth: Rec, Loop, Length.
+LOOPER = ["freeze_rec", "freeze", "freeze_len"]
+
 READOUTS = [
     readout("pitch", "Pitch", 0, 2000, 0.1, "Hz"),
     readout("target", "Target", 0, 2000, 0.1, "Hz"),
@@ -124,10 +128,9 @@ READOUTS = [
 for role, r in zip(["a", "b", "c"], READOUTS):
     r["viz"] = {"kind": "custom:tinyvoice_scope", "group": "scope", "role": role, "extra_keys": ["scope"]}
 
-# The Freeze banner spans MORE knobs 3-4 (Freeze, Freeze Len): Off / ARMED /
-# REC / LOOP, the take length, and whether a transport clock is seen. The knobs
-# under it still turn; their values show in the header while touched.
-for role, k in zip(["a", "b"], ["freeze", "freeze_len"]):
+# The Freeze banner spans the Looper page's three knobs (Rec, Loop, Length): their values when idle; ARMED / REC n/N
+# / LOOP n/N (the bar it is on) when busy. The knobs under it still turn; their values show in the header while touched.
+for role, k in zip(["a", "b", "c"], LOOPER):
     p = next(x for x in PARAMS if x["key"] == k)
     p["viz"] = {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": role, "extra_keys": ["scope"]}
 
@@ -161,14 +164,12 @@ for k, deps in RS_DEPS.items():
 
 # Pages. VOICE is the home page (and the root's knobs): Mode, the five
 # contextual knobs, Mix, Level. PITCH: the tuning knobs and the scope on 5-7.
-# MORE: Spread, Tone, Freeze + Freeze Len (the banner spans knobs 3-4) / Gate, Latch,
-# Beauty, Demo: eight knobs, Demo bottom right (the grid is 4 x 2 and a page cannot
-# have a gap, so Beauty, a per-mode polish control, moved here from PITCH to fill cell 7;
-# Gate and Latch used to sit alone on a page of their own).
+# MORE: Spread, Tone, Gate, Latch / Beauty, Demo. Freeze has a page of its own (LOOPER, above; it sat on MORE
+# knobs 3-4 as Off / Rec / Loop on one knob, where turning between Off and Loop recorded over the loop).
 # No delay or reverb: removed on 2026-10-11, the chain has its own.
 VOICE = ["mode", "char1", "char2", "mod", "char4", "char5", "mix", "gain"]
 PITCH = ["key", "scale", "retune", "glide", "pitch", "target", "cents"]
-MORE  = ["spread", "tone", "freeze", "freeze_len", "gate", "latch", "beauty", "demo"]
+MORE  = ["spread", "tone", "gate", "latch", "beauty", "demo"]
 # Voice FX: its whole UI. No Mode, Key, Scale, Gate, Level or Latch: the engine runs with the automatic front end.
 AUDITION = ["demo"]
 RS_BANK = ["rs_bank"]
@@ -221,10 +222,12 @@ a('                    "knobs": %s,' % line(VOICE))
 a('                    "params": [')
 a('                        {"level": "VOICE", "label": "Voice"},')
 a('                        {"level": "PITCH", "label": "Pitch"},')
-a('                        {"level": "MORE", "label": "More"}')
+a('                        {"level": "MORE", "label": "More"},')
+a('                        {"level": "LOOPER", "label": "Looper"}')
 a('                    ]')
 a('                },')
-for name, label, keys, last in [("VOICE", "Voice", VOICE, False), ("PITCH", "Pitch", PITCH, False), ("MORE", "More", MORE, False)]:
+for name, label, keys, last in [("VOICE", "Voice", VOICE, False), ("PITCH", "Pitch", PITCH, False), ("MORE", "More", MORE, False),
+                                ("LOOPER", "Looper", LOOPER, False)]:
     a('                "%s": {' % name)
     a('                    "label": "%s",' % label)
     a('                    "knobs": %s,' % line(keys))
@@ -255,11 +258,13 @@ a('                    "name_param": "rs_preset_name",')
 a('                    "knobs": %s,' % line(RS_MAIN))
 a('                    "params": %s' % line(RS_MAIN + ["rs_presets_page", {"level": "rs_pitch", "label": "Pitch"}, {"level": "rs_synth", "label": "Synth"},
                                                       {"level": "rs_tone", "label": "Tone"}, {"level": "rs_play", "label": "Play"},
-                                                      {"level": "rs_notes", "label": "Notes"}, {"level": "rs_bank", "label": "Bank"}]))
+                                                      {"level": "rs_notes", "label": "Notes"}, {"level": "rs_looper", "label": "Looper"},
+                                                      {"level": "rs_bank", "label": "Bank"}]))
 a('                },')
 for name, label, keys, last in [("rs_pitch", "Pitch", RS_PITCH, False), ("rs_synth", "Synth", RS_SYNTH, False),
                                 ("rs_tone", "Tone", RS_TONE, False), ("rs_play", "Play", RS_PLAY, False),
-                                ("rs_notes", "Notes", RS_NOTES, False), ("rs_bank", "Bank", RS_BANK, True)]:
+                                ("rs_notes", "Notes", RS_NOTES, False), ("rs_looper", "Looper", LOOPER, False),
+                                ("rs_bank", "Bank", RS_BANK, True)]:
     a('                "%s": {' % name)
     a('                    "label": "%s",' % label)
     a('                    "knobs": %s,' % line(keys))

@@ -17,11 +17,12 @@
  *   pads    the target note drawn inverted while a pad sets it, and a dot
  *           that flashes on every note-on (shows pads are reaching the FX)
  *
- * custom:tinyvoice_freeze spans MORE knobs 3-4 (Freeze, Freeze Len). Off: the
- * two values, centred in their cells like the stock knobs. Active: the box is
- * cleared and taken over - "[ *** ARMED *** ]" flashing inverted with the beats
- * left to bar 1 as squares, an inverted "[ REC ]" with the take filling,
- * "[ LOOP 2 BARS ]" with a playhead.
+ * custom:tinyvoice_freeze spans the Looper page's three knobs (Rec, Loop,
+ * Length). Idle: the three values, centred in their cells like the stock knobs.
+ * Busy: the box is cleared and taken over - "[ *** ARMED *** ]" flashing
+ * inverted with the beats left to bar 1 as squares, an inverted "[ REC 2/4 ]"
+ * (the bar being recorded, of the Length) with the take filling, "[ LOOP 3/4 ]"
+ * (the bar playing, of the take's bars) with a playhead and a tick per bar.
  *
  * Draw hooks get cached values only: the host reads the `scope` key on its own
  * rotation (~5 Hz), so this eases the bars and needle between reads and runs
@@ -30,8 +31,8 @@
  * 3 armed (waiting for the downbeat), and while recording <loop phase>/<loop s>
  * are how far through the take and the seconds so far:
  *   "S,<mode>,<freeze>,<loop phase>,<loop s>,<f0>,<target>,<cents>,<b0>..<b15>,
- *    <auto gain dB>,<held pad note or -1>,<note-on count>,<transport beat or -1>"
- *   (the last four optional)
+ *    <auto gain dB>,<held pad note or -1>,<note-on count>,<transport beat or -1>,<bar s>"
+ *   (the last five optional; <bar s> is one bar at the host tempo, for the bar numbers)
  */
 /* The host's own knob pictures (dial, option square, big number), so a gated knob that acts looks exactly like the stock
  * cell it replaces: a custom widget owns its cell and cannot hand it back. The same import other modules' ui.js make;
@@ -52,7 +53,7 @@ import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_p
         mode: 0, frozen: false, rec: false, armed: false, phase: 0, loopS: 0,
         f0: 0, target: 0, cents: 0, shownCents: 0,
         bars: new Array(16).fill(0), shown: new Array(16).fill(0),
-        agcDb: 0, pad: -1, noteOns: -1, flashAt: -1e9, beat: -1,
+        agcDb: 0, pad: -1, noteOns: -1, flashAt: -1e9, beat: -1, barS: 0,
     };
 
     function noteName(hz) {
@@ -87,6 +88,7 @@ import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_p
             st.noteOns = ons;
         }
         st.beat = n.length >= 27 ? n[26] : -1;
+        st.barS = n.length >= 28 && n[27] > 0 ? n[27] : 0;
     }
 
     function midiName(note) {
@@ -197,16 +199,18 @@ import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_p
         }
     }
 
-    /* ---- Freeze banner (MORE knobs 3-4) ----
+    /* ---- Freeze banner (the Looper page: Rec, Loop, Length) ----
      *
-     * The frame is the two cells' graphic area, above the host's label band
-     * ("FREEZE", "FRELEN"). The host clips text at the frame's right edge but
-     * not its bottom, so text sits on ONE line, vertically centred, and the
+     * The frame is the three cells' graphic area, above the host's label band
+     * ("REC", "LOOP", "LENGTH"). The host clips text at the frame's right edge
+     * but not its bottom, so text sits on ONE line, vertically centred, and the
      * rest (countdown, take, playhead) is drawn as graphics on the bottom rows:
      * a second text line used to run into the label band, and two strings on
      * one line ran into each other ("FREE2E"). */
     const LEN_OPTS = ["Free", "1 Bar", "2 Bars", "4 Bars"];
-    const FREEZE_OPTS = ["Off", "Rec", "Loop"];
+    const LEN_BARS = [0, 1, 2, 4];
+    const REC_OPTS = ["Off", "Rec"];
+    const LOOP_OPTS = ["Off", "On"];
     function optName(v, opts, dflt) {
         if (typeof v === "string") {
             const t = v.trim();
@@ -233,24 +237,17 @@ import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_p
         const clock = st.raw && st.beat >= 0 && now - st.seenAt < STALE_MS;
 
         if (!(st.armed || st.rec || st.frozen)) {
-            /* OFF: what the stock knobs would show - each value, centred in its
-             * own cell. No banner, no extra strings. */
-            /* Each centred in its cell; a value wider than its cell borrows
-             * room from beside the other (3 px apart, never over it), and only
-             * if the two can't both fit is the length shortened. */
-            const half = Math.floor(W / 2), GAP = 3;
-            const left = optName(values.freeze, FREEZE_OPTS, "Off");
-            let right = len;
-            while (right.length > 1 && tw(left) + GAP + tw(right) > W) right = right.slice(0, -1);
-            let lx = Math.max(0, Math.floor((half - tw(left)) / 2));
-            let rx = half + Math.floor((W - half - tw(right)) / 2);
-            if (rx + tw(right) > W) rx = W - tw(right);
-            if (rx < lx + tw(left) + GAP) {
-                rx = Math.max(rx, Math.min(W - tw(right), lx + tw(left) + GAP));
-                lx = Math.max(0, Math.min(lx, rx - GAP - tw(left)));
+            /* IDLE: what the stock knobs would show - each value centred in its
+             * own third. A value wider than its cell is shortened (only Length
+             * can be: "2 Bars" in a narrow cell), so no two ever touch. */
+            const vals = [optName(values.freeze_rec, REC_OPTS, "Off"), optName(values.freeze, LOOP_OPTS, "Off"), len];
+            const cw = W / 3, GAP = 3;
+            for (let i = 0; i < 3; i++) {
+                let v = vals[i];
+                while (v.length > 1 && tw(v) > cw - GAP) v = v.slice(0, -1);
+                const x = Math.max(0, Math.min(W - tw(v), Math.floor(i * cw + (cw - tw(v)) / 2)));
+                ctx.print(x, ty, v, 1);
             }
-            ctx.print(lx, ty, left, 1);
-            ctx.print(rx, ty, right, 1);
             return;
         }
 
@@ -274,10 +271,20 @@ import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_p
             }
             return;
         }
+        const fresh = st.raw && now - st.seenAt < STALE_MS;
         if (st.rec) {
-            /* REC: solid inverted, a dot, the take filling along the bottom */
+            /* REC: solid inverted, a dot, the bar being recorded ("2/4"; Free:
+             * the bars so far), the take filling along the bottom */
             ctx.fillRect(0, 0, W, H, 1);
-            const txt = fit(["[ REC ]", "REC"]);
+            const of = LEN_BARS[Math.max(0, LEN_OPTS.indexOf(len))];
+            const secs = st.loopS + (fresh ? (now - st.seenAt) / 1000 : 0);
+            let num = "";
+            if (st.barS > 0) {
+                let bar = Math.floor(secs / st.barS) + 1;
+                if (of > 0) bar = Math.min(bar, of);
+                num = of > 0 ? bar + "/" + of : String(bar);
+            }
+            const txt = fit(num ? ["[ REC " + num + " ]", "REC " + num, num] : ["[ REC ]", "REC"]);
             const tx = Math.max(6, Math.floor((W - tw(txt) + 6) / 2));
             ctx.fillRect(tx - 6, ty + 2, 4, 4, 0);                    /* the record dot */
             ctx.print(tx, ty, txt, 0);
@@ -285,10 +292,16 @@ import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_p
             if (f > 0) ctx.fillRect(1, H - 2, Math.max(1, Math.round(f * (W - 2))), 1, 0);
             return;
         }
-        /* LOOP: the length, and the playhead along the bottom */
-        centre(fit(["[ LOOP " + len.toUpperCase() + " ]", "[ LOOP ]", "LOOP"]), 1);
-        ctx.fillRect(0, H - 2, W, 1, 1);
+        /* LOOP: the bar playing of the take's bars, the playhead along the
+         * bottom with a tick at every bar line */
         const lp = loopPhase(now);
+        const bars = st.barS > 0 && st.loopS > 0 ? Math.max(1, Math.round(st.loopS / st.barS)) : 0;
+        let num = "";
+        if (bars > 0 && lp >= 0) num = Math.min(bars, Math.floor(lp * st.loopS / st.barS) + 1) + "/" + bars;
+        centre(fit(num ? ["[ LOOP " + num + " ]", "LOOP " + num, num] : ["[ LOOP ]", "LOOP"]), 1);
+        ctx.fillRect(0, H - 2, W, 1, 1);
+        if (bars > 1 && bars <= 16)
+            for (let k = 1; k < bars; k++) ctx.fillRect(Math.round(k * (W - 1) / bars), H - 4, 1, 2, 1);
         if (lp >= 0) ctx.fillRect(Math.max(0, Math.round(lp * (W - 3))), H - 3, 3, 3, 1);
     }
 

@@ -100,7 +100,7 @@ static const char *const k_hm_wave_opts[]  = {"Saw", "Square", "Triangle", "Sine
 #define HM_WAVE_PRESET 4
 #define VT_HM_WT_N 512                     /* hm_wt: one cycle, 512 int16 samples, base64 (684 x 2 chars) */
 #define VT_HM_WT_STR (4 * ((2 * VT_HM_WT_N + 2) / 3) + 6)   /* + ":<len>" (the table's own length, up to 4096) */
-static const char *const k_freeze_opts[] = {"Off", "Rec", "Loop"};   /* = FREEZE_OFF / _REC / _LOOP */
+static const char *const k_freeze_rec_opts[] = {"Off", "Rec"};      /* Freeze's Rec control (freeze.h) */
 static const char *const k_freeze_len_opts[] = {"Free", "1 Bar", "2 Bars", "4 Bars"};
 static const int k_freeze_bars[] = { 0, 1, 2, 4 };
 static const char *const k_root_opts[]  = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -159,7 +159,8 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     [VT_P_HM_VGATE]  = FLOAT_DEF("hm_mic_gate", -72.0f, -24.0f, -42.0f), /* the voice gate in Resynth, dBFS RMS of the raw input */
     [VT_P_HM_WAVE]   = ENUM_DEF("hm_wave",  k_hm_wave_opts,  0),       /* Saw */
     /* performance toggles: never saved in "state" */
-    [VT_P_FREEZE]   = TRANSIENT_ENUM_DEF("freeze", k_freeze_opts),
+    [VT_P_FREEZE]    = TOGGLE_DEF("freeze"),                             /* Loop: Off / On (plays the kept take) */
+    [VT_P_FREEZE_REC] = TRANSIENT_ENUM_DEF("freeze_rec", k_freeze_rec_opts),   /* Rec: Off / Rec (records a new take) */
     [VT_P_DEMO]      = TOGGLE_DEF("demo"),
 };
 
@@ -553,7 +554,7 @@ static int ieq(const char *a, const char *b)
  * The OLED widget's feed (canvas.js reads it as an extra_key, ~5 Hz):
  *   "S,<mode>,<freeze>,<loop phase 0..1>,<loop s>,<f0 Hz>,<target Hz>,<cents>,<b0>,...,<b15>,
  *    (freeze: 0 live, 1 looping, 2 recording, 3 armed for the downbeat)
- *    <auto gain dB>,<held pad note or -1>,<note-on count mod 1000>,<transport beat or -1>"
+ *    <auto gain dB>,<held pad note or -1>,<note-on count mod 1000>,<transport beat or -1>,<bar s>"
  * Pitch modes fill f0/target/cents (Tape: target = the dropped output pitch);
  * Robot fills the 16 analysis bands (0..255 each). Built only when asked: nothing extra runs
  * per sample for it.
@@ -588,8 +589,8 @@ static int format_scope(vt_t *vt, char *buf, int buf_len)
     }
 
     int n = snprintf(buf, (size_t)buf_len, "S,%d,%d,%.3f,%.3f,%.1f,%.1f,%.0f", mode,
-                     freeze_looping(&vt->freeze) ? 1 : vt->freeze.state == FREEZE_REC ? 2 :
-                     freeze_armed(&vt->freeze) ? 3 : 0,
+                     freeze_recording(&vt->freeze) ? 2 : freeze_armed(&vt->freeze) ? 3 :
+                     freeze_looping(&vt->freeze) ? 1 : 0,
                      freeze_phase(&vt->freeze),
                      freeze_loop_seconds(&vt->freeze, sr), f0, tgt, cents);
     for (int i = 0; i < VT_NUM_BANDS && n > 0 && n < buf_len; i++)
@@ -603,6 +604,9 @@ static int format_scope(vt_t *vt, char *buf, int buf_len)
      * counts down to the downbeat with it, and shows when there is no clock */
     if (n > 0 && n < buf_len)
         n += snprintf(buf + n, (size_t)(buf_len - n), ",%.2f", vt->beat >= 0.0 ? vt->beat : -1.0);
+    /* one bar (4 beats) at the host tempo, seconds: the banner numbers the bars of a take */
+    if (n > 0 && n < buf_len)
+        n += snprintf(buf + n, (size_t)(buf_len - n), ",%.4f", 240.0f / vt->bpm);
     return n;
 }
 
@@ -855,6 +859,10 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
         return 0;
     }
     if (id == VT_P_ENGINE && ieq(val, "VoiceFX")) val = "Synth Voice";   /* the old name, in sets and presets saved before the rename */
+    if (id == VT_P_FREEZE) {      /* the old three-way Freeze (Off / Rec / Loop): its names still work, on the new pair of controls */
+        if (strcmp(val, "Loop") == 0) val = "On";
+        else if (strcmp(val, "Rec") == 0) { vt->p[VT_P_FREEZE_REC] = 1.0f; return 0; }
+    }
     if (d->type == VT_PTYPE_ENUM) {
         for (int i = 0; i < d->num_options; i++) {
             if (strcmp(d->options[i], val) == 0) {
@@ -1485,7 +1493,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
     const float dry_g = mix >= 0.999f ? 0.0f : 1.0f - mix;          /* 100% wet: no dry at all */
     const float gain = (vf || rs) ? 1.0f : powf(10.0f, vt->p[VT_P_GAIN] / 20.0f);
     const float sw_goal = mode == want_mode ? 1.0f : 0.0f;
-    const int freeze_want = (int)vt->p[VT_P_FREEZE];   /* FREEZE_OFF / _REC / _LOOP */
+    const int freeze_rec = (int)vt->p[VT_P_FREEZE_REC], freeze_loop = (int)vt->p[VT_P_FREEZE];   /* Rec, Loop (freeze.h) */
     {   /* Freeze Len: bars at the host tempo (4 beats a bar), 0 = free punch-out */
         const int bars = k_freeze_bars[(int)vt->p[VT_P_FREEZE_LEN]];
         freeze_set_target(&vt->freeze, bars ? (int)((float)bars * (240.0f / vt->bpm) * sr) : 0);
@@ -1640,7 +1648,7 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
             in_r = vt->hp_y[1];
         }
         float fmix;
-        float loop = freeze_process(&vt->freeze, 0.5f * (in_l + in_r), freeze_want, &fmix);
+        float loop = freeze_process(&vt->freeze, 0.5f * (in_l + in_r), freeze_rec, freeze_loop, &fmix);
         if (fmix > 0.0f) {
             in_l += (loop - in_l) * fmix;
             in_r += (loop - in_r) * fmix;
@@ -1768,7 +1776,10 @@ void dsp_process_block_f(vt_t *vt, float *lr, int frames)
         if (vt->dg_in_pk < 1e-20f) vt->dg_in_pk = 0.0f;
         if (vt->dg_out_pk < 1e-20f) vt->dg_out_pk = 0.0f;
     }
-    if (freeze_take_full(&vt->freeze)) vt->p[VT_P_FREEZE] = (float)FREEZE_LOOP;   /* the knob follows: Rec -> Loop */
+    if (freeze_take_done(&vt->freeze)) {           /* a take was kept and plays: the knobs follow (Rec back to Off, Loop On) */
+        vt->p[VT_P_FREEZE_REC] = 0.0f;
+        vt->p[VT_P_FREEZE] = 1.0f;
+    }
 
     if (has_bands(mode)) {
         for (int b = 0; b < VT_NUM_BANDS; b++) vt->viz_bands[b] = daft_band_level(mode == VT_MODE_NIGHTCALL ? &vt->nc : &vt->daft, b);
