@@ -807,6 +807,12 @@ function showEngine() {
   document.getElementById("bankSeg").classList.toggle("hide", e !== 2 && e !== 3);
   document.getElementById("bankbar").classList.toggle("hide", e !== 2 && e !== 3);
   document.getElementById("drop").classList.toggle("hide", e !== 2 && e !== 3);
+  if (e === 2 || e === 3) {                    /* each engine takes its own file type: .baby for Resynth, .preset for Mangler */
+    var x = presetExt(), nm = e === 3 ? "Mangler" : "Resynth";
+    document.getElementById("file").accept = x; document.getElementById("bkFile").accept = x;
+    document.getElementById("drop").title = "Load a " + x + " file straight onto the running " + nm + ", without saving it to a bank. (To keep it, use Import into bank.)";
+    document.getElementById("bkImport").title = "Pick " + x + " files for " + nm + " and keep them in a bank: yours, or a new one";
+  }
   document.querySelector(".preset").classList.toggle("hide", e === 0);
   if (e !== 0 && R) readPreset();
   drawWave(); drawFilter(); drawVowel();
@@ -978,7 +984,7 @@ function importPM(text, name) {
 }
 /* a file's preset as a bank stores it: {engine, name, json} (null if it is not one) */
 function fileToPreset(text, fname) {
-  var pm = /\.preset$/i.test(fname) || (!/\.baby$/i.test(fname) && text.indexOf("<Humanoid") < 0), st, nm;
+  var pm = presetExt() === ".preset", st, nm;
   SINK = {};
   try { nm = pm ? importPM(text, fname) : importBaby(text, fname); st = SINK; } finally { SINK = null; }
   if (!nm) return null;
@@ -992,6 +998,14 @@ function fileToPreset(text, fname) {
 var FIXED_BANK = /^(default|imported|tuner|voco|harmony|synth|dryish|instrument|artists|mine)$/i;
 function bankNameOk(n) { return /^[A-Za-z0-9 ._()&+'-]{1,40}$/.test(n) && !/^[ .]|[ .]$/.test(n) && !FIXED_BANK.test(n); }
 var BANK_RULE = "A bank name is 1-40 letters, digits, spaces or . _ - ( ) & + ' (and not one of the fixed banks' names).";
+function presetExt() { return (VAL.engine | 0) === 3 ? ".preset" : ".baby"; }
+/* the files the engine on screen takes; the rest are named in a message */
+function mineOnly(files) {
+  var x = presetExt(), all = [].slice.call(files), ok = all.filter(function (f) { return f.name.toLowerCase().slice(-x.length) === x; });
+  if (ok.length < all.length) bankMsg((all.length - ok.length) + " file(s) skipped: " + (x === ".baby" ? "Resynth takes .baby files" : "Mangler takes .preset files") +
+    " (switch engine for " + (x === ".baby" ? ".preset" : ".baby") + ").", ok.length === 0);
+  return ok;
+}
 function engineName() { return (VAL.engine | 0) === 3 ? "mangler" : "resynth"; }
 function bankMsg(text, bad) {
   var m = document.getElementById("bankMsg");
@@ -1058,7 +1072,7 @@ function wireBanks() {
   var bf = document.getElementById("bkFile");
   document.getElementById("bkImport").onclick = function () { bf.click(); };
   bf.onchange = function () {
-    var files = [].slice.call(bf.files), items = [], left = files.length;
+    var files = mineOnly(bf.files), items = [], left = files.length;
     bf.value = "";
     if (!left) return;
     files.forEach(function (f) {
@@ -1073,7 +1087,7 @@ function wireBanks() {
   };
 }
 function importItems(items, total) {
-  if (!items.length) { bankMsg("None of the " + total + " file(s) was a preset for Resynth (.baby) or Mangler (.preset).", true); return; }
+  if (!items.length) { bankMsg("None of the " + total + " file(s) was a " + presetExt() + " preset.", true); return; }
   if (items.some(function (it) { return it.json.length > 15000; })) items = items.filter(function (it) { return it.json.length <= 15000; });
   var bank = askBank("Import " + items.length + " preset(s) into which bank? (a new name makes a new bank)", P.bankIdx >= BK.first ? P.bank : "My Bank");
   if (!bank) return;
@@ -1089,11 +1103,11 @@ function importItems(items, total) {
   });
 }
 function readFiles(files) {
-  [].forEach.call(files, function (f) {
+  mineOnly(files).forEach(function (f) {
     var r = new FileReader();
     r.onload = function () {
       var t = String(r.result);
-      if (/\.preset$/i.test(f.name) || (!/\.baby$/i.test(f.name) && t.indexOf("<Humanoid") < 0)) importPM(t, f.name);
+      if (presetExt() === ".preset") importPM(t, f.name);
       else importBaby(t, f.name);
     };
     r.readAsText(f);

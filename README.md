@@ -65,7 +65,7 @@ One allocation when the module is created, none while audio runs. Measured on a 
 ## Known limitations
 
 - Tuned on synthetic voices, tones and a built-in mic: judge by ear on your own voice, and expect to adjust.
-- Resynth and Mangler are inspired by commercial vocal plugins; they sound similar but different, and they accept those plugins' presets as imports, converted on your own machine from your own copy (`scripts/import_*.py` and the Remote UI's import button). No presets or samples from them are included.
+- Resynth and Mangler are inspired by commercial vocal plugins; they sound similar but different, and they accept those plugins' presets as imports (Resynth takes `.baby` files, Mangler `.preset`): pick or drop your own files into the Remote UI's import button and they are converted in the browser (`scripts/import_*.py` does a whole folder). No presets or samples from them are included.
 - Pitch tracking covers about 70 Hz–1 kHz. Headsets, external mics and routing other tracks into TinyVoice are untested.
 - Key and Scale are set on the module's own pages; they don't follow Move's project.
 - No licence file yet: all rights reserved until one is added.

@@ -10,7 +10,7 @@ is a 7-second excerpt of recording 25 from the **vocadito** dataset, trimmed, fa
 `scripts/make_demo_voice.py` cuts it; give it another recording or start time to change the clip.
 
 **Resynth's Default presets** (`src/presets/`) and their wavetables are TinyVoice's own. Baby Audio Humanoid presets are not
-included in this repository or in the module: they are converted on your own machine from your own copy (see
-`scripts/import_humanoid.py`).
+included in this repository or in the module. You bring your own: pick or drop your `.baby` files into the Remote UI (Import into bank, or Load file), which
+converts each one in your browser to a TinyVoice preset; `scripts/import_humanoid.py` does the same for a whole folder.
 
-**Inspired by.** Resynth is inspired by Baby Audio's Humanoid, Mangler by Devious Machines' PitchMonster. TinyVoice contains no code, presets or samples from either: it sounds similar but different. It accepts their presets as imports, converted on your own machine from your own copy (`scripts/import_humanoid.py`, `scripts/import_pitchmonster.py`, or the Import button in the Remote UI), and never ships them.
+**Inspired by.** Resynth is inspired by Baby Audio's Humanoid, Mangler by Devious Machines' PitchMonster. TinyVoice contains no code, presets or samples from either: it sounds similar but different. It accepts their presets as imports (`.baby` for Resynth, `.preset` for Mangler): you pick or drop your own files into the Remote UI, which converts them in your browser (or run `scripts/import_humanoid.py` / `scripts/import_pitchmonster.py` on a folder). TinyVoice never ships them.
