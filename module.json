@@ -259,7 +259,7 @@
             {"key": "mg_volume", "name": "Volume", "type": "float", "min": -24, "max": 12, "step": 0.5, "unit": "dB", "default": 0},
             {"key": "freeze", "name": "Loop", "type": "enum", "options": ["Off", "On"], "default": 0, "viz": {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": "b", "extra_keys": ["scope"]}},
             {"key": "freeze_rec", "name": "Rec", "type": "enum", "options": ["Off", "Rec"], "default": 0, "viz": {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": "a", "extra_keys": ["scope", "loop_status"]}},
-            {"key": "freeze_save", "name": "Save", "type": "enum", "options": ["Off", "Save", "Saved", "Failed"], "default": 0},
+            {"key": "freeze_save", "name": "Save", "type": "enum", "options": ["Off", "Save", "Saved", "Failed"], "default": 0, "access": "write", "viz": {"kind": "custom:tinyvoice_save", "group": "save", "role": "a", "extra_keys": []}},
             {"key": "demo", "name": "Demo", "type": "enum", "options": ["Off", "On"], "default": 0},
             {"key": "pitch", "name": "Pitch", "type": "float", "min": 0, "max": 2000, "step": 0.1, "unit": "Hz", "default": 0, "access": "read", "viz": {"kind": "custom:tinyvoice_scope", "group": "scope", "role": "a", "extra_keys": ["scope"]}},
             {"key": "target", "name": "Target", "type": "float", "min": 0, "max": 2000, "step": 0.1, "unit": "Hz", "default": 0, "access": "read", "viz": {"kind": "custom:tinyvoice_scope", "group": "scope", "role": "b", "extra_keys": ["scope"]}},

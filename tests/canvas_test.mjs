@@ -574,5 +574,20 @@ check(Object.entries(EXPECT).every(([k2, ex]) => JSON.stringify(T.GATED[k2].acts
     check(k.runs.length === 1 && k.runs[0].t === "--", "bank: nothing read yet shows --");
     check(typeof T.drawBank === "function", "bank: in the test seam");
 }
+
+// ---- Looper Save (a trigger: the cell shows where the save is) ----
+check(ov.widgetKinds["custom:tinyvoice_save"] && typeof ov.widgetKinds["custom:tinyvoice_save"].draw === "function", "registers custom:tinyvoice_save");
+{
+    const drawSv = ov.widgetKinds["custom:tinyvoice_save"].draw;
+    const runSv = (v, t) => { const k = fzCtx(32); drawSv(k, { values: { freeze_save: v }, nowMs: t }); return k; };
+    check(texts(runSv("Off", 0)).join("|") === "WAV", "save cell: at rest it says WAV");
+    check(texts(runSv(0, 0)).join("|") === "WAV", "save cell: index 0 is at rest");
+    check(texts(runSv("Save", 0)).join("|") === "SAVE", "save cell: SAVE while it waits and writes");
+    check(texts(runSv("Save", 300)).length === 0, "save cell: SAVE blinks");
+    check(texts(runSv("Saved", 0)).join("|") === "DONE" && litFz(runSv("Saved", 0)) > 0, "save cell: DONE, inverted");
+    check(texts(runSv(3, 0)).join("|") === "FAIL", "save cell: FAIL (index form)");
+    check(["Off", "Save", "Saved", "Failed"].every((v) => runSv(v, 0).outOfBounds === 0), "save cell: inside the frame");
+}
+
 console.log(`canvas.js: ${checks} checks, ${failures} failed`);
 process.exit(failures ? 1 : 0);

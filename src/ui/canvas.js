@@ -339,6 +339,24 @@ import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_p
         ctx.print(x, ty, txt, on ? 0 : 1);
     }
 
+    /* Looper Save (a trigger: the host fires it with a click on the knob, writing option 1, "Save"). The cell shows where the
+     * save is: "WAV" at rest, SAVE (blinking) while it waits for the loop and writes, DONE or FAIL for 2 s (the cell is ~5 characters wide). */
+    const SAVE_OPTS = ["Off", "Save", "Saved", "Failed"];
+    function drawSave(ctx, payload) {
+        const p = payload || {};
+        const values = p.values || {};
+        const now = typeof p.nowMs === "number" ? p.nowMs : Date.now();
+        const W = ctx.width, H = ctx.height;
+        const tw = (s) => (typeof ctx.textWidth === "function" ? ctx.textWidth(s) : s.length * 6);
+        const ty = Math.max(0, Math.min(H - TEXT_H, Math.floor((H - TEXT_H - 3) / 2)));
+        const v = optName(values.freeze_save, SAVE_OPTS, "Off");
+        const txt = v === "Save" ? "SAVE" : v === "Saved" ? "DONE" : v === "Failed" ? "FAIL" : "WAV";
+        const x = Math.max(0, Math.floor((W - tw(txt)) / 2));
+        if (v === "Save" && Math.floor(now / 300) % 2 === 1) return;                       /* blinks */
+        if (v === "Saved" || v === "Failed") ctx.fillRect(Math.max(0, x - 2), Math.max(0, ty - 1), Math.min(W, tw(txt) + 4), Math.min(H, TEXT_H + 1), 1);
+        ctx.print(x, ty, txt, v === "Saved" || v === "Failed" ? 0 : 1);
+    }
+
     /* The stock picture for a knob that acts, from the host's renderer and its metadata for the key (payload.metaIndex):
      * widgetKindFor picks a dial (a range), an option square (an enum) or a big number (a small whole-number range),
      * placed as drawKnobWidget places it in the cell. False when the host gave no metadata or the renderer lacks a
@@ -655,10 +673,11 @@ import * as HOST_RENDER from "/data/UserData/schwung/shared/param_pages/render_p
             "custom:tinyvoice_scope": { draw, nominal: { w: 96, h: 15 } },
             "custom:tinyvoice_freeze": { draw: drawFreeze, nominal: { w: 64, h: 15 } },
             "custom:tinyvoice_latch": { draw: drawLatch, nominal: { w: 32, h: 15 } },
+            "custom:tinyvoice_save": { draw: drawSave, nominal: { w: 32, h: 15 } },
             "custom:tinyvoice_rsna": { draw: drawRs, nominal: { w: 32, h: 15 } },
             "custom:tinyvoice_bank": { draw: drawBank, nominal: { w: 32, h: 15 } },
         },
     };
     /* test seam (tests/canvas_test.mjs) */
-    globalThis.TINYVOICE_SCOPE_FOR_TEST = { draw, drawFreeze, drawLatch, drawBeauty, drawGated, GATED, parse, loopPhase, recFill, noteName, st, drawRs, RS_ACTS, RS_DEPS, RS_META, fmtValue, drawPresetPage, wrapName, drawStock, drawBank };
+    globalThis.TINYVOICE_SCOPE_FOR_TEST = { draw, drawFreeze, drawLatch, drawSave, drawBeauty, drawGated, GATED, parse, loopPhase, recFill, noteName, st, drawRs, RS_ACTS, RS_DEPS, RS_META, fmtValue, drawPresetPage, wrapName, drawStock, drawBank };
 })();

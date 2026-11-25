@@ -1161,8 +1161,20 @@ static void test_module_json_matches_params(void)
             const char *o = js_elem(cp, i);
             if (o && js_get(o, "viz")) declared++;
         }
-        CHECK(declared == 12 + 18);                              /* the scope's 3, Freeze banner's 3 (Rec, Loop, Length), Latch's 1, Key/Scale/Retune/Glide/Beauty 5;
+        CHECK(declared == 12 + 19);                              /* the scope's 3, Freeze banner's 3 (Rec, Loop, Length), Looper Save's 1, Latch's 1, Key/Scale/Retune/Glide/Beauty 5;
                                                                     Resynth's N/A knobs 17 (custom:tinyvoice_rsna: tests/canvas_test.mjs), the Bank page's knob 1 (custom:tinyvoice_bank) */
+        {   /* Looper Save is a trigger the host fires with a click (option 1, "Save", by name), never a knob to scrub */
+            int found = 0;
+            for (int i = 0; i < js_arr_len(cp); i++) {
+                const char *o = js_elem(cp, i);
+                if (!(o && js_str(js_get(o, "key"), s, sizeof s) && strcmp(s, "freeze_save") == 0)) continue;
+                found++;
+                CHECK(js_str(js_get(o, "access"), s, sizeof s) && strcmp(s, "write") == 0);
+                const char *opts = js_get(o, "options");
+                CHECK(opts && js_str(js_elem(opts, 1), s, sizeof s) && strcmp(s, "Save") == 0);
+            }
+            CHECK(found == 1);
+        }
         /* Nothing disappears: no param is conditionally hidden. Gate holds
          * Auto as its lowest setting, then -60..0 dB. */
         for (int i = 0; i < js_arr_len(cp); i++) CHECK(js_get(js_elem(cp, i), "visible_if") == NULL);

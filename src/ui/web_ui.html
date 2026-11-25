@@ -383,7 +383,7 @@ function loopSaveButton(parent) {
     loopStatus().then(function (s0) {
       if (!s0) { msg.textContent = "The Move did not answer: update TinyVoice on it to save loops."; b.disabled = false; return; }
       send("freeze_save", "Save");
-      msg.textContent = "Saving: it starts at the loop's next beginning. The result can take up to ~20 s to show here (the Move's Save knob shows it at once).";
+      msg.textContent = "Saving: it starts at the loop's next beginning. The result can take up to ~20 s to show here (on the Move, the Save cell reads DONE or FAIL at once).";
       var tries = 0;
       (function poll() {
         loopStatus().then(function (s) {

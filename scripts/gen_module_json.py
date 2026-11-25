@@ -161,6 +161,12 @@ for role, k in zip(["a", "b", "c"], LOOPER):
     p = next(x for x in PARAMS if x["key"] == k)
     p["viz"] = {"kind": "custom:tinyvoice_freeze", "group": "freeze", "role": role, "extra_keys": ["scope", "loop_status"] if role == "a" else ["scope"]}
 
+# Looper Save is a TRIGGER (access "write", the Schwung convention for a one-shot action: a click on the knob fires it by writing option 1,
+# "Save", through the enum's own wire; it is never scrubbed). Its cell draws where the save is (custom:tinyvoice_save).
+_sv = next(x for x in PARAMS if x["key"] == "freeze_save")
+_sv["access"] = "write"
+_sv["viz"] = {"kind": "custom:tinyvoice_save", "group": "save", "role": "a", "extra_keys": []}
+
 # Latch (MORE knob 6) draws its own value: On / Off in the modes it acts in
 # (Robot, Chords, Prism, Nightcall, Harmony), a dimmed "---" in the others.
 next(x for x in PARAMS if x["key"] == "latch")["viz"] = {"kind": "custom:tinyvoice_latch", "group": "latch", "role": "a", "extra_keys": ["mode", "engine", "hm_tuning_mode", "mg_notes"]}   # Resynth: MIDI mode; Mangler: Pads
