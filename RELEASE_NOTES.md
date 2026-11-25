@@ -7,10 +7,10 @@ A vocal sound-design box for Ableton Move, as a [Schwung](https://github.com/cha
 - **Two new engines.**
   - **Resynth:** hard tuning and harmonic resynthesis. The voice is re-built from its harmonics with a wavetable synth, a filter, widen and warble, tuned from a scale or from the pads. 30 presets ship in a **Default** bank.
   - **Mangler:** a multi-voice pitch and formant shifter. Up to 16 voices with unison and spread, chords from the held pads, a filter, granular or other shift modes. 21 presets ship in its **Default** bank, including choirs and male-to-female / female-to-male voices.
-- **Voice FX is now Synth Voice** (same engine, same six presets).
+- **Voice FX is now Synth Voice** (same engine, same six presets): it is about giving a synth a voice, and works on voices to some extent.
 - **A Remote UI** with every control of the active engine at once, live both ways with the Move: open Schwung's manager, go to Modules → TinyVoice and press **Open web UI**.
 - **Your own banks** for Resynth and Mangler, managed from the Remote UI: make, rename and delete banks, import presets into one, save the current sound into one, remove a preset. Banks live in `/data/UserData/schwung/tinyvoice-banks/` so reinstalling keeps them, and the Move's **Bank** page only picks. Each engine sees only its own banks.
-- **Import presets from the plugins they are inspired by** (Resynth takes `.baby` files, Mangler `.preset` files). Pick or drop your own files into the Remote UI and they are converted in the browser. None of those presets are included in TinyVoice.
+- **Import presets from the plugins they are inspired by**: Resynth is inspired by Baby Audio Humanoid and takes its `.baby` presets, Mangler by Devious Machines PitchMonster and takes its `.preset` files. If you own either plugin, pick or drop your own preset files into the Remote UI and they are converted in the browser. None of those presets are included in TinyVoice.
 - **Looper** (was Freeze): separate Rec and Loop on a Looper page, a 16 s take bar-aligned to the transport, on every engine. **Save** keeps one round of the looped, processed sound as a 16-bit stereo WAV in the Move's sample library (`Samples/TinyVoice`), named for its bars and tempo (`TinyVoice Loop 001 - 2 bars 120 bpm.wav`): click the Save knob on the Looper page (it is a trigger: the cell reads SAVE, then DONE or FAIL), or press the button in the Remote UI.
 - **A real sung Demo** (a recorded phrase, credited in [CREDITS.md](CREDITS.md)) that tours each engine.
 - **On-screen help** for all four engines.
@@ -20,7 +20,7 @@ A vocal sound-design box for Ableton Move, as a [Schwung](https://github.com/cha
 | Engine | What it is |
 |---|---|
 | **Vocoder** | 13 modes: Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double. Five knobs per mode on three pages. |
-| **Synth Voice** | A talking filter: your voice through four vowel formants (A E I O U), eight knobs, six presets. |
+| **Synth Voice** | Gives your synth a voice: a bass, pad or stab through four vowel formants (A E I O U) so it talks and sings; it works on a voice to some extent. Eight knobs, six presets. |
 | **Resynth** | Hard tuning and harmonic resynthesis, with a wavetable synth, filter, widen and warble. Presets page, Bank page, Note mode on the pads. |
 | **Mangler** | A multi-voice pitch and formant shifter with chords from the pads. |
 

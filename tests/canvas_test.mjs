@@ -445,7 +445,7 @@ check(Object.entries(EXPECT).every(([k2, ex]) => JSON.stringify(T.GATED[k2].acts
 
     // the Remote UI dims with the very same rules
     const html = readFileSync(join(root, "src/ui/web_ui.html"), "utf8"), cj = readFileSync(join(root, "src/ui/canvas.js"), "utf8");
-    const blk = (t) => { const a2 = t.indexOf("    /* RS_ACTS begin"), b2 = t.indexOf("    /* RS_ACTS end */"); return a2 >= 0 && b2 > a2 ? t.slice(a2, b2) : null; };
+    const blk = (t) => { const a2 = t.indexOf("    /* RS_ACTS begin"), b2 = t.indexOf("    /* RS_ACTS end */"); return a2 >= 0 && b2 > a2 ? t.slice(a2, b2).replace(/\r\n/g, "\n") : null; };
     check(blk(cj) !== null && blk(cj) === blk(html), "rsna: web_ui.html's RS_ACTS block is canvas.js's, character for character");
 }
 

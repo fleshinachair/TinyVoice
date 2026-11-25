@@ -139,7 +139,7 @@ canvas{width:100%;height:96px;background:linear-gradient(#0b0d11,#07080a);border
     <div class="lcd"><small id="pIdx">PRESET</small><span id="pName">…</span></div>
     <button id="nextP" aria-label="Next preset">&#9654;</button>
   </div>
-  <label id="drop" title="Load a preset file straight onto the running engine, without saving it to a bank: .baby for Resynth, .preset for Mangler. (To keep it, use Import into bank.)">Load file <input type="file" id="file" accept=".baby,.preset" multiple hidden></label>
+  <label id="drop" title="Load a preset file straight onto the running engine, without saving it to a bank: .baby for Resynth (Baby Audio Humanoid), .preset for Mangler (Devious Machines PitchMonster). (To keep it, use Import into bank.)">Load file <input type="file" id="file" accept=".baby,.preset" multiple hidden></label>
 </header>
 <div class="bankbar hide" id="bankbar">
   <span class="lbl">BANK</span>
@@ -148,7 +148,7 @@ canvas{width:100%;height:96px;background:linear-gradient(#0b0d11,#07080a);border
   <button id="bkDelete" class="danger" title="Delete the bank you are on and its presets (your own banks only)">Delete</button>
   <span class="gap"></span>
   <span class="lbl">PRESETS</span>
-  <button id="bkImport" title="Pick preset files (.baby for Resynth, .preset for Mangler) and keep them in a bank: yours, or a new one">Import into bank…</button>
+  <button id="bkImport" title="Pick preset files and keep them in a bank: yours, or a new one. Resynth takes Baby Audio Humanoid .baby files, Mangler takes Devious Machines PitchMonster .preset files (your own copies)">Import into bank…</button>
   <button id="bkSave" title="Keep the sound you have dialled in as a preset in a bank of yours">Save sound to bank…</button>
   <button id="bkRemove" class="danger" title="Remove the preset shown from the bank you are on (your own banks only)">Remove preset</button>
   <span id="bankMsg"></span>
@@ -737,7 +737,7 @@ function buildMangler() {
   group(p, "LOOPER", ["freeze_rec", "freeze", "freeze_len"]);
   loopSaveButton(p);
   group(p, "AUDITION", ["demo"]);
-  el("div", "foot", p, "Presets: the strip above (Default: ours; Imported: yours). Import loads a .preset file.");
+  el("div", "foot", p, "Presets: the strip above (Default: ours; Imported: yours). Import loads a PitchMonster .preset file (from your own copy of Devious Machines PitchMonster).");
   applyMgNA();
 }
 
@@ -840,10 +840,10 @@ function showEngine() {
   document.getElementById("bankbar").classList.toggle("hide", e !== 2 && e !== 3);
   document.getElementById("drop").classList.toggle("hide", e !== 2 && e !== 3);
   if (e === 2 || e === 3) {                    /* each engine takes its own file type: .baby for Resynth, .preset for Mangler */
-    var x = presetExt(), nm = e === 3 ? "Mangler" : "Resynth";
+    var x = presetExt(), nm = e === 3 ? "Mangler" : "Resynth", src = e === 3 ? "Devious Machines PitchMonster" : "Baby Audio Humanoid";
     document.getElementById("file").accept = x; document.getElementById("bkFile").accept = x;
-    document.getElementById("drop").title = "Load a " + x + " file straight onto the running " + nm + ", without saving it to a bank. (To keep it, use Import into bank.)";
-    document.getElementById("bkImport").title = "Pick " + x + " files for " + nm + " and keep them in a bank: yours, or a new one";
+    document.getElementById("drop").title = "Load a " + src + " " + x + " file straight onto the running " + nm + ", without saving it to a bank. (To keep it, use Import into bank.)";
+    document.getElementById("bkImport").title = "Pick " + src + " " + x + " files (your own copies) for " + nm + " and keep them in a bank: yours, or a new one";
   }
   document.querySelector(".preset").classList.toggle("hide", e === 0);
   if (e !== 0 && R) readPreset();
@@ -1034,7 +1034,7 @@ function presetExt() { return (VAL.engine | 0) === 3 ? ".preset" : ".baby"; }
 /* the files the engine on screen takes; the rest are named in a message */
 function mineOnly(files) {
   var x = presetExt(), all = [].slice.call(files), ok = all.filter(function (f) { return f.name.toLowerCase().slice(-x.length) === x; });
-  if (ok.length < all.length) bankMsg((all.length - ok.length) + " file(s) skipped: " + (x === ".baby" ? "Resynth takes .baby files" : "Mangler takes .preset files") +
+  if (ok.length < all.length) bankMsg((all.length - ok.length) + " file(s) skipped: " + (x === ".baby" ? "Resynth takes Baby Audio Humanoid .baby files" : "Mangler takes Devious Machines PitchMonster .preset files") +
     " (switch engine for " + (x === ".baby" ? ".preset" : ".baby") + ").", ok.length === 0);
   return ok;
 }

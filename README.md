@@ -1,6 +1,6 @@
 # TinyVoice
 
-**A vocal sound-design box for Ableton Move: four engines in one audio FX module.** Sing or talk into the Move and turn your voice into a robot, a talkbox, a choir, a vowel filter or a bank of pitch-shifted copies of yourself. It has no delay or reverb of its own: the Schwung chain has those.
+**A vocal sound-design box for Ableton Move: four engines in one audio FX module.** Sing or talk into the Move and turn your voice into a robot, a talkbox, a choir or a bank of pitch-shifted copies of yourself, or play a synth through it and give the synth a voice. It has no delay or reverb of its own: the Schwung chain has those.
 
 TinyVoice is an audio FX module for [Schwung](https://github.com/charlesvestal/schwung). **v1.5.0 is a public preview (beta)**: it runs well on a Move, but it was tuned on synthetic voices and a built-in mic, not across lots of singers. See [Known limitations](#known-limitations).
 
@@ -9,15 +9,15 @@ Pick the engine on the module's first page (the **Mode** list) or from the tabs 
 | Engine | What it is | Pads |
 |---|---|---|
 | **Vocoder** | 13 modes: Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double. Five knobs per mode, three pages | Play the carrier, set target notes, make chords |
-| **Synth Voice** | A talking filter: your voice through four vowel formants (A E I O U), eight knobs on one page, six presets | Not used |
-| **Resynth** | Hard tuning and harmonic resynthesis: the voice is re-built from its harmonics, with a wavetable synth, a filter, widen and warble. 30 presets included, more by importing your own, banks of your own | Note mode: play pitches |
-| **Mangler** | A multi-voice pitch and formant shifter: up to 16 voices with unison and spread, chords from the pads, a filter. 21 presets, banks of your own | Chords from held pads |
+| **Synth Voice** | Gives your synth a voice: a bass, pad or stab goes through four vowel formants (A E I O U) so it talks and sings. It works on a voice to some extent. Eight knobs on one page, six presets | Not used |
+| **Resynth** | Hard tuning and harmonic resynthesis: the voice is re-built from its harmonics, with a wavetable synth, a filter, widen and warble. 30 presets included, more by importing your own Baby Audio Humanoid `.baby` presets, banks of your own | Note mode: play pitches |
+| **Mangler** | A multi-voice pitch and formant shifter: up to 16 voices with unison and spread, chords from the pads, a filter. 21 presets included, more by importing your own Devious Machines PitchMonster `.preset` presets, banks of your own | Chords from held pads |
 
 Every engine also has a **Looper** (a 16 s take of the input, bar-aligned to the transport; **Save** writes the processed loop as a WAV into the Move's sample library) and a **Demo**: a built-in sung phrase that tours the engine, so you can audition it with nothing plugged in.
 
 ## The Remote UI
 
-Open Schwung's manager (`http://move.local:7700`), go to **Modules → TinyVoice** and press **Open web UI**. It shows every control of the active engine at once, live both ways with the Move. Resynth and Mangler also get a **bank bar**: make, rename and delete your own banks, **import** presets into one (Mangler and Resynth presets from the plugins they are inspired by), **save the current sound** into a bank, and load a file to play without keeping it. Your banks live in `/data/UserData/schwung/tinyvoice-banks/`, so reinstalling keeps them, and the Move's **Bank** page picks between them. See [docs/mangler.md](docs/mangler.md#your-own-banks-bank-management).
+Open Schwung's manager (`http://move.local:7700`), go to **Modules → TinyVoice** and press **Open web UI**. It shows every control of the active engine at once, live both ways with the Move. Resynth and Mangler also get a **bank bar**: make, rename and delete your own banks, **import** presets into one (Baby Audio Humanoid `.baby` files into Resynth, Devious Machines PitchMonster `.preset` files into Mangler), **save the current sound** into a bank, and load a file to play without keeping it. Your banks live in `/data/UserData/schwung/tinyvoice-banks/`, so reinstalling keeps them, and the Move's **Bank** page picks between them. See [docs/mangler.md](docs/mangler.md#your-own-banks-bank-management).
 
 | Vocoder | Synth Voice |
 |---|---|
@@ -65,7 +65,7 @@ One allocation when the module is created, none while audio runs. Measured on a 
 ## Known limitations
 
 - Tuned on synthetic voices, tones and a built-in mic: judge by ear on your own voice, and expect to adjust.
-- Resynth and Mangler are inspired by commercial vocal plugins; they sound similar but different, and they accept those plugins' presets as imports (Resynth takes `.baby` files, Mangler `.preset`): pick or drop your own files into the Remote UI's import button and they are converted in the browser (`scripts/import_*.py` does a whole folder). No presets or samples from them are included.
+- Resynth is inspired by Baby Audio's Humanoid and Mangler by Devious Machines' PitchMonster; they sound similar but different, and they accept those plugins' presets as imports (Resynth takes Humanoid's `.baby` files, Mangler PitchMonster's `.preset`): so if you own the plugin, that is where to find more presets. Pick or drop your own files into the Remote UI's import button and they are converted in the browser (`scripts/import_*.py` does a whole folder). No presets or samples from them are included.
 - Pitch tracking covers about 70 Hz–1 kHz. Headsets, external mics and routing other tracks into TinyVoice are untested.
 - Key and Scale are set on the module's own pages; they don't follow Move's project.
 - No licence file yet: all rights reserved until one is added.
