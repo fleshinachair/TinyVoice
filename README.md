@@ -2,7 +2,7 @@
 
 **A vocal sound-design box for Ableton Move: four engines in one audio FX module.** Sing or talk into the Move and turn your voice into a robot, a talkbox, a choir or a bank of pitch-shifted copies of yourself, or play a synth through it and give the synth a voice. It has no delay or reverb of its own: the Schwung chain has those.
 
-TinyVoice is an audio FX module for [Schwung](https://github.com/charlesvestal/schwung). **v1.5.0 is a public preview (beta)**: it runs well on a Move, but it was tuned on synthetic voices and a built-in mic, not across lots of singers. See [Known limitations](#known-limitations).
+TinyVoice is an audio FX module for [Schwung](https://github.com/charlesvestal/schwung). **v1.5.1 is a public preview (beta)**: it runs well on a Move, but it was tuned on synthetic voices and a built-in mic, not across lots of singers. See [Known limitations](#known-limitations).
 
 Pick the engine on the module's first page (the **Mode** list) or from the tabs of the Remote UI. Each engine has its own controls, and switching costs nothing.
 

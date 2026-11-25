@@ -1161,8 +1161,8 @@ static void test_module_json_matches_params(void)
             const char *o = js_elem(cp, i);
             if (o && js_get(o, "viz")) declared++;
         }
-        CHECK(declared == 12 + 19);                              /* the scope's 3, Freeze banner's 3 (Rec, Loop, Length), Looper Save's 1, Latch's 1, Key/Scale/Retune/Glide/Beauty 5;
-                                                                    Resynth's N/A knobs 17 (custom:tinyvoice_rsna: tests/canvas_test.mjs), the Bank page's knob 1 (custom:tinyvoice_bank) */
+        CHECK(declared == 12 + 18);                              /* the scope's 3, Freeze banner's 3 (Rec, Loop, Length), Looper Save's 1, Latch's 1, Key/Scale/Retune/Glide/Beauty 5;
+                                                                    Resynth's N/A knobs 17 (custom:tinyvoice_rsna: tests/canvas_test.mjs); the Bank knob is a plain enum */
         {   /* Looper Save is a trigger the host fires with a click (option 1, "Save", by name), never a knob to scrub */
             int found = 0;
             for (int i = 0; i < js_arr_len(cp); i++) {
@@ -1234,8 +1234,9 @@ static void test_module_json_matches_params(void)
             dsp_set_param(vt, d->key, in);
             /* rs_preset's range is the bank's (count_param), loaded at run time: none here, so it stays 0; rs_bank's is the
              * engine's list of banks (the ten fixed ones until the lists are in) */
-            CHECK(dsp_get_param(vt, d->key, got, sizeof got) > 0 &&
-                  fabs(atof(got) - (i == VT_P_RS_PRESET ? 0.0 : i == VT_P_RS_BANK ? (double)(RSBANK_BANKS - 1) : d->max)) < 1e-6);
+            if (i == VT_P_RS_BANK) CHECK(dsp_get_param(vt, d->key, got, sizeof got) > 0 && strcmp(got, d->options[RSBANK_BANKS - 1]) == 0);   /* an enum, by name */
+            else CHECK(dsp_get_param(vt, d->key, got, sizeof got) > 0 &&
+                  fabs(atof(got) - (i == VT_P_RS_PRESET ? 0.0 : d->max)) < 1e-6);
         }
     }
     dsp_cleanup(vt);

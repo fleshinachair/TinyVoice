@@ -73,7 +73,7 @@ PARAMS = [
     flt("vf_release", "Release", 0, 1, 0.01, 0.3, "%"),     # tail
     flt("vf_mix", "Mix/Drv", 0, 1, 0.01, 0.75, "%"),        # wet/dry up to 70 %, then all wet with the drive climbing
     flt("vf_preset", "Preset", 0, 5, 1, 5),                 # the Voice FX bank (presets.c); the host's preset browser writes it
-    flt("rs_bank", "Bank", 0, 25, 1, 0),                    # which bank the Presets page lists: the engine's list (Resynth: Default, Imported, the kinds; Mangler: Default, Imported), then yours; the DSP clamps to the list, the Bank page draws its name (canvas.js)
+    enum("rs_bank", "Bank", ["Default", "Imported", "Tuner", "Voco", "Harmony", "Synth", "Dryish", "Instrument", "Artists", "Mine"], 0),   # which bank the Presets page lists. The options here are the fixed ten (the fallback); the served chain_params carries this engine's own list, yours included, filled in at run time (dsp.c format_chain_params, the @B@ placeholder), so the host's picker lists them. A bank is written by name or index (fractions round)
     flt("rs_preset", "Preset", 0, 1023, 1, 0),              # the Resynth bank (rsbank.c: the preset folder's Resynth presets); its browser writes it
 ] + []   # the Resynth block is appended below (it is read from src/dsp/hm_params.h)
 
@@ -165,7 +165,7 @@ for role, k in zip(["a", "b", "c"], LOOPER):
 # "Save", through the enum's own wire; it is never scrubbed). Its cell draws where the save is (custom:tinyvoice_save).
 _sv = next(x for x in PARAMS if x["key"] == "freeze_save")
 _sv["access"] = "write"
-_sv["viz"] = {"kind": "custom:tinyvoice_save", "group": "save", "role": "a", "extra_keys": []}
+_sv["viz"] = {"kind": "custom:tinyvoice_save", "group": "save", "role": "a", "extra_keys": ["rs_bank_name", "rs_bank_info", "bank_status"]}   # (the bank keys: the manager only pumps what a widget names)
 
 # Latch (MORE knob 6) draws its own value: On / Off in the modes it acts in
 # (Robot, Chords, Prism, Nightcall, Harmony), a dimmed "---" in the others.
@@ -197,7 +197,7 @@ for k, deps in RS_DEPS.items():
 
 # The Bank page's knob draws the bank's NAME (the list is the engine's own and yours, so it is not a fixed enum): custom:tinyvoice_bank
 # reads the get-only key rs_bank_name.
-next(x for x in PARAMS if x["key"] == "rs_bank")["viz"] = {"kind": "custom:tinyvoice_bank", "group": "bank", "role": "a", "extra_keys": ["rs_bank_name", "rs_bank_info", "bank_status"]}
+# (the Bank knob is a plain enum: the host's own picker. The bank keys the Remote UI reads ride on Looper Save, below.)
 
 # Pages. VOICE is the home page (and the root's knobs): Mode, the five
 # contextual knobs, Mix, Level. PITCH: the tuning knobs and the scope on 5-7.
@@ -243,7 +243,7 @@ def line(o): return json.dumps(o, separators=(", ", ": "))
 out = []
 a = out.append
 a("{")
-for k, v in [("id", "tinyvoice"), ("name", "TinyVoice"), ("abbrev", "TVO"), ("version", "1.5.0"),
+for k, v in [("id", "tinyvoice"), ("name", "TinyVoice"), ("abbrev", "TVO"), ("version", "1.5.1"),
              ("description", "Four engines for the voice: a 13-mode vocoder and voice transformer (Robot, Snap, Chords, Prism, Tape, Nightcall, Scream, Dalek, HardTune, Harmony, Walkie, Morph, Double), Synth Voice (gives a synth a voice with vowel formants; one page, presets) Resynth (hard tuning and harmonic resynthesis with a wavetable synth; imports the reference presets) and Mangler (a multi-voice pitch and formant shifter: unison, spread, chords from the pads, a filter)"),
              ("author", "Mat Taylor"), ("dsp", "tinyvoice.so"), ("api_version", 2), ("component_type", "audio_fx")]:
     a("    %s: %s," % (json.dumps(k), json.dumps(v)))
@@ -349,6 +349,7 @@ served = copy.deepcopy(doc["capabilities"]["chain_params"])
 for p in served:
     slot = {"char1": "@1@", "char2": "@2@", "mod": "@3@", "char4": "@4@", "char5": "@5@"}.get(p["key"])
     if slot: p["name"] = slot
+    if p["key"] == "rs_bank": p["options"] = ["@B@"]      # this engine's banks, filled in per read
 cp = json.dumps(served, separators=(",", ":"))
 assert "@" not in json.dumps(doc["capabilities"]["chain_params"]), "an @ in the table would be read as a placeholder"
 uh = json.dumps(doc["capabilities"]["ui_hierarchy"], separators=(",", ":"))

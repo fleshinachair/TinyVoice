@@ -2,6 +2,11 @@
 
 A vocal sound-design box for Ableton Move, as a [Schwung](https://github.com/charlesvestal/schwung) audio FX module (module id `tinyvoice`, library `tinyvoice.so`, archive `TinyVoice.tar.gz`). Sing or talk into the Move and put the voice through one of **four engines**, chosen on the Mode page or from the Remote UI's tabs.
 
+## Fixed in 1.5.1
+
+- **The Bank page on the Move works.** Turning the Bank knob did nothing (the Move sends the value as a fraction, which was rejected), so Resynth and Mangler stayed on whatever bank was loaded, usually Imported. Bank is a list again: it shows this engine's banks, your own included, and picking one switches the Presets page to it.
+- The Remote UI is unchanged, and the Move's Looper Save, banks and presets are as in 1.5.0. This build also carries the Remote UI wording that names Baby Audio Humanoid (`.baby`) and Devious Machines PitchMonster (`.preset`) as the sources of importable presets, which the 1.5.0 download did not have.
+
 ## New in 1.5.0
 
 - **Two new engines.**

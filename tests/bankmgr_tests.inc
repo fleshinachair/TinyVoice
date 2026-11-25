@@ -166,6 +166,10 @@ static void test_bankmgr_ops(void)
     CHECK(dsp_get_param(vt, "rs_preset_name", b, sizeof b) > 0 && strcmp(b, "Wide One") == 0);
     CHECK(dsp_set_param(vt, "rs_bank", "11") == 0 && dsp_get_param(vt, "rs_bank_name", b, sizeof b) > 0 && strcmp(b, "Vocals") == 0);   /* by index too */
     CHECK(dsp_set_param(vt, "rs_bank", "99") == 0 && dsp_get_param(vt, "rs_bank_name", b, sizeof b) > 0 && strcmp(b, "Vocals") == 0);   /* clamped to the list */
+    CHECK(dsp_set_param(vt, "rs_bank", "1.375") == 0 && dsp_get_param(vt, "rs_bank_name", b, sizeof b) > 0 && strcmp(b, "Imported") == 0);   /* the Move's knob writes fractions */
+    CHECK(dsp_set_param(vt, "rs_bank", "0.000") == 0 && dsp_get_param(vt, "rs_bank_name", b, sizeof b) > 0 && strcmp(b, "Default") == 0);
+    CHECK(dsp_set_param(vt, "rs_bank", "x1") == -1);
+    CHECK(dsp_set_param(vt, "rs_bank", "Vocals") == 0);                                                 /* (back where the checks below expect it) */
 
     /* not this engine's preset; not a preset at all */
     bmt_cmd(bm, "add", "resynth", "Vocals", "Wrong", bmt_mg("Wrong", 3, pl, sizeof pl), st, sizeof st);
@@ -246,6 +250,11 @@ static void test_bankmgr_engines(void)
     CHECK(bmt_exists(BMT_ROOT "/mangler/Choirs/Up.json") && !bmt_exists(BMT_ROOT "/resynth/Choirs"));
     dsp_set_param(vt, "engine", "Mangler");
     CHECK(dsp_get_param(vt, "rs_bank_info", info, sizeof info) > 0 && strstr(info, "\"banks\":[\"Default\",\"Imported\",\"Choirs\"]"));
+    {   /* the host's Bank picker lists this engine's banks, yours included (chain_params carries them at run time) */
+        static char cp[32768];
+        CHECK(dsp_get_param(vt, "chain_params", cp, sizeof cp) > 0 && strstr(cp, "\"key\":\"rs_bank\",\"name\":\"Bank\",\"type\":\"enum\",\"options\":[\"Default\",\"Imported\",\"Choirs\"]") != NULL && strstr(cp, "@B@") == NULL);
+        CHECK(dsp_set_param(vt, "rs_bank", "2.0") == 0 && dsp_get_param(vt, "rs_bank", b, sizeof b) > 0 && strcmp(b, "Choirs") == 0);   /* and reads back by name */
+    }
     CHECK(dsp_set_param(vt, "rs_bank", "Choirs") == 0 && dsp_set_param(vt, "rs_preset", "0") == 0);
     CHECK(dsp_get_param(vt, "mg_pitch", b, sizeof b) > 0 && fabs(atof(b) - 5.0) < 1e-6);
     CHECK(dsp_get_param(vt, "rs_bank_name", b, sizeof b) > 0 && strcmp(b, "Choirs") == 0);

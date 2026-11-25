@@ -156,7 +156,7 @@ static const vt_param_def k_params[VT_P_COUNT] = {
     [VT_P_VF_RELEASE] = FLOAT_DEF("vf_release", 0.0f, 1.0f,   0.3f),
     [VT_P_VF_MIX]    = FLOAT_DEF("vf_mix",     0.0f,  1.0f,   0.75f),
     [VT_P_VF_PRESET] = {"vf_preset", VT_PTYPE_FLOAT, 0, 5, 5, NULL, 0, 1},    /* 0..5 = the bank; transient; 5 = Vowel Morph Solo */
-    [VT_P_RS_BANK]   = {"rs_bank", VT_PTYPE_FLOAT, 0, RSBANK_SLOTS - 1, 0, NULL, 0, 1},   /* which bank the Presets page lists: the engine's list, then yours */
+    [VT_P_RS_BANK]   = TRANSIENT_ENUM_DEF("rs_bank", k_rs_bank_opts),   /* which bank the Presets page lists: the engine's list, then yours */
     [VT_P_RS_PRESET] = {"rs_preset", VT_PTYPE_FLOAT, 0, RSBANK_MAX - 1, 0, NULL, 0, 1},   /* the Resynth bank (rsbank.c); transient */
     HM_PARAM_LIST(VT_X_HM)
     [VT_P_HM_KEY]    = ENUM_DEF("hm_key",   k_root_opts,     0),
@@ -816,15 +816,24 @@ const char *dsp_macro_name(int mode, int which)
 /* chain_params for the current mode: the generated JSON with its @1@..@5@
  * name placeholders (char1, char2, mod, char4, char5) filled in. Returns bytes written, or
  * -1 if it doesn't fit. */
-static int format_chain_params(const vt_t *vt, char *buf, int buf_len)
+static int format_chain_params(vt_t *vt, char *buf, int buf_len)
 {
     const int mode = (int)vt->p[VT_P_MODE];
     int n = 0;
     for (size_t part = 0; part < sizeof VT_CHAIN_PARAMS_PARTS / sizeof VT_CHAIN_PARAMS_PARTS[0]; part++) {
         for (const char *t = VT_CHAIN_PARAMS_PARTS[part]; *t; t++) {
             const char *sub = NULL;
+            char banks[1024];
             if (t[0] == '@' && t[1] >= '1' && t[1] <= '5' && t[2] == '@') {
                 sub = k_macro_names[mode][t[1] - '1'];
+                t += 2;
+            } else if (t[0] == '@' && t[1] == 'B' && t[2] == '@') {      /* the Bank knob's options: this engine's banks, then yours */
+                const rsbank_t *bk = rs_bank_of(vt);
+                const int nb = bk ? bk->nbanks : RSBANK_BANKS;
+                int bn = 0;
+                for (int i = 0; i < nb && bn < (int)sizeof banks - RSBANK_NAME - 4; i++)
+                    bn += snprintf(banks + bn, sizeof banks - (size_t)bn, "%s%s", i ? "\",\"" : "", rs_bank_name_at(bk, i));   /* (the placeholder sits inside the quotes of "@B@") */
+                sub = banks;
                 t += 2;
             }
             if (sub) {
@@ -1001,10 +1010,11 @@ int dsp_set_param(vt_t *vt, const char *key, const char *val)
         int b = -1;
         for (int i = 0; i < nb && b < 0; i++) if (ieq(rs_bank_name_at(bk, i), val)) b = i;
         if (b < 0) {
+            /* the Move's knob writes a fraction ("7.375"), the Remote UI a whole number: round to the nearest bank */
             char *end;
-            const long idx = strtol(val, &end, 10);
-            if (end == val || *end != '\0') return -1;
-            b = idx < 0 ? 0 : idx >= nb ? nb - 1 : (int)idx;
+            const float f = strtof(val, &end);
+            if (end == val || *end != '\0' || !isfinite(f)) return -1;
+            b = (int)lroundf(clampf(f, 0.0f, (float)(nb - 1)));
         }
         rs_set_bank(vt, bk, b);
         vt->rs_bank_want[0] = '\0';
@@ -1144,6 +1154,8 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
     } else if (strcmp(key, "vf_preset_name") == 0) {
         const vt_preset *ps = vt_preset_get(VT_ENGINE_VOICEFX, (int)vt->p[VT_P_VF_PRESET]);
         n = snprintf(buf, (size_t)buf_len, "%s", ps ? ps->name : "");
+    } else if (strcmp(key, "rs_bank") == 0) {                      /* an enum, by name as the others: this engine's list (yours too) */
+        n = snprintf(buf, (size_t)buf_len, "%s", rs_bank_name_at(rs_bank_of(vt), (int)vt->p[VT_P_RS_BANK]));
     } else if (strcmp(key, "rs_bank_name") == 0) {                 /* the Bank page's widget (canvas.js) */
         n = snprintf(buf, (size_t)buf_len, "%s", rs_bank_name_at(rs_bank_of(vt), (int)vt->p[VT_P_RS_BANK]));
     } else if (strcmp(key, "rs_bank_info") == 0) {                 /* the Remote UI's bank list: this engine's, yours from first_user */
