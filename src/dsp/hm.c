@@ -9,9 +9,9 @@
 
 /* Output gain of the resynthesis over the input: Humanoid's INIT measures +2.3 dB. */
 #define HM_MAKEUP 1.303f
-#define HM_LEVEL_CEIL 0.30f           /* the limiter's ceiling: -10.5 dBFS, under the module's headroom stage */
+#define HM_LEVEL_CEIL 0.4955f         /* the limiter's ceiling: -6.1 dBFS, the module's headroom ceiling (TINYVOICE_OUTPUT_HEADROOM) */
 #define HM_OUT_CEIL 0.944f            /* Humanoid's output limiter: -0.5 dBFS */
-#define HM_LEVEL_TARGET_MS 0.016f    /* the leveller's aim: -18 dBFS RMS (sung averages land a few dB under) */
+#define HM_LEVEL_TARGET_MS 0.0200f   /* the leveller's aim: -17 dBFS RMS (sung phrases land ~-17.5, level with Robot) */
 /* Partials stop below this (Hz), whatever the sample rate. */
 #define HM_FMAX 18000.0f
 
