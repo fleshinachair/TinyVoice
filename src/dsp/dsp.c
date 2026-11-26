@@ -8,6 +8,7 @@
  * pitch modes run on the cher.c tracker.
  */
 #include "dsp.h"
+#include "brand.h"
 #include "cher.h"
 #include "daft.h"
 #include "imogen.h"
@@ -1184,7 +1185,7 @@ int dsp_get_param(vt_t *vt, const char *key, char *buf, int buf_len)
         n = snprintf(buf, (size_t)buf_len, "%d", dsp_active_voices(vt));
     } else if (strcmp(key, "name") == 0) {
         /* The chain editor polls this every frame; unanswered it logged ~70 read errors a second. */
-        n = snprintf(buf, (size_t)buf_len, "TinyVoice");
+        n = snprintf(buf, (size_t)buf_len, "%s", VT_BRAND_NAME);
     } else if (strcmp(key, "chain_params") == 0) {
         /* Answering this ourselves is what carries `viz` to the UI (the chain
          * host's fallback drops it), so the canvas.js widget can mount. */

@@ -3,6 +3,7 @@
  * Resynth's preset bank (rsbank.h). Off the audio thread only: reads a folder, allocates.
  */
 #include "rsbank.h"
+#include "brand.h"
 
 #include <dirent.h>
 #include <stdio.h>
@@ -138,8 +139,8 @@ int rsbank_parse_engine(const char *text, const char *engine, char *name, int na
     if (!text || *ws(text) != '{') return -1;
     const char *mod = member(text, "module");
     if (mod) {
-        char m[32];
-        if (*mod != '"' || unescape(mod, m, sizeof m) < 0 || strcmp(m, "tinyvoice") != 0) return -1;
+        char m[sizeof VT_BRAND_ID + 1];                           /* one spare: a longer name is cut and still differs */
+        if (*mod != '"' || unescape(mod, m, sizeof m) < 0 || strcmp(m, VT_BRAND_ID) != 0) return -1;
     }
     const char *st = member(text, "state");
     if (!st) return -1;

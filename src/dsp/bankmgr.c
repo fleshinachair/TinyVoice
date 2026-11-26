@@ -4,6 +4,7 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include "bankmgr.h"
+#include "brand.h"
 #include "rsbank.h"
 
 #include <dirent.h>
@@ -117,7 +118,7 @@ int bankmgr_submit(bankmgr_t *bm, const char *cmd)
                 for (const char *c = name; *c; c++) if (*c == '"' || *c == '\\' || (unsigned char)*c < 0x20) { name[0] = '\0'; break; }
                 const size_t head_len = (size_t)(tail - slot);
                 char *pl = slot + head_len;
-                int w = snprintf(pl, BANKMGR_CMD_MAX - head_len, "\n{\"name\":\"%s\",\"module\":\"tinyvoice\",\"version\":1,\"state\":", name);
+                int w = snprintf(pl, BANKMGR_CMD_MAX - head_len, "\n{\"name\":\"%s\",\"module\":\"" VT_BRAND_ID "\",\"version\":1,\"state\":", name);
                 if (name[0] && w > 0 && (size_t)w < BANKMGR_CMD_MAX - head_len - 16) {
                     const int avail = (int)(BANKMGR_CMD_MAX - head_len) - w - 2;
                     const int g = dsp_get_param(bm->vt, "state", pl + w, avail);

@@ -1,6 +1,7 @@
 /* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 #define _POSIX_C_SOURCE 200809L
 #include "loopsave.h"
+#include "brand.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -23,7 +24,7 @@ void loopsave_init(loopsave_t *ls, int sample_rate)
     atomic_init(&ls->state, LS_IDLE);
     atomic_init(&ls->rev, 0);
     ls->sample_rate = sample_rate > 0 ? sample_rate : 48000;
-    snprintf(ls->dir, sizeof ls->dir, "%s", "/data/UserData/UserLibrary/Samples/TinyVoice");
+    snprintf(ls->dir, sizeof ls->dir, "%s", VT_LOOPSAVE_DEFAULT_DIR);
 }
 
 void loopsave_set_dir(loopsave_t *ls, const char *dir)
@@ -122,7 +123,7 @@ static int next_number(const char *dir)
     struct dirent *de;
     while (d && (de = readdir(d)) != NULL) {
         int n = 0;
-        if (sscanf(de->d_name, "TinyVoice Loop %d", &n) == 1 && n > top) top = n;
+        if (sscanf(de->d_name, VT_BRAND_NAME " Loop %d", &n) == 1 && n > top) top = n;
     }
     if (d) closedir(d);
     return top + 1;
@@ -171,7 +172,7 @@ int loopsave_pump(loopsave_t *ls)
         finish(ls, 0, LS_WHY_WRITE);
         return 1;
     }
-    snprintf(ls->name, sizeof ls->name, "TinyVoice Loop %03d - %s.wav", next_number(ls->dir), label);
+    snprintf(ls->name, sizeof ls->name, VT_BRAND_NAME " Loop %03d - %s.wav", next_number(ls->dir), label);
     snprintf(path, sizeof path, "%s/%s", ls->dir, ls->name);
     snprintf(tmp, sizeof tmp, "%s.part", path);              /* written whole, then renamed: a sampler never sees half a file */
     FILE *f = fopen(tmp, "wb");
