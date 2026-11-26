@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 #define _POSIX_C_SOURCE 200809L
 #include "loopsave.h"
 

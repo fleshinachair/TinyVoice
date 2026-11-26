@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Imogen engine (Chords): 4-voice harmonizer in the spirit of the DigiTech
  * Vocalist on "Hide and Seek". Every voice is the singer's own voice,

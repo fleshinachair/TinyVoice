@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * TinyVoice tests for the voice-transformation roster (Nightcall, Scream,
  * Dalek, HardTune, Harmony, Walkie), Prism's glass, the VOICE page's macro

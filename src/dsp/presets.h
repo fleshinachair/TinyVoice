@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Factory presets, tagged with the engine they belong to. Voice FX has a bank
  * of talking-filter programs; the Vocoder personality has none (its layout has

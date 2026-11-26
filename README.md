@@ -68,4 +68,7 @@ One allocation when the module is created, none while audio runs. Measured on a 
 - Resynth is inspired by Baby Audio's Humanoid and Mangler by Devious Machines' PitchMonster; they sound similar but different, and they accept those plugins' presets as imports (Resynth takes Humanoid's `.baby` files, Mangler PitchMonster's `.preset`): so if you own the plugin, that is where to find more presets. Pick or drop your own files into the Remote UI's import button and they are converted in the browser (`scripts/import_*.py` does a whole folder). No presets or samples from them are included.
 - Pitch tracking covers about 70 Hz–1 kHz. Headsets, external mics and routing other tracks into TinyVoice are untested.
 - Key and Scale are set on the module's own pages; they don't follow Move's project.
-- No licence file yet: all rights reserved until one is added.
+
+## Licence
+
+TinyVoice's source is licensed under the [GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`), copyright (c) 2026 Mathew Taylor. The licence text travels in the module archive. The Demo's sung phrase is not covered by it: it is a CC BY 4.0 recording, credited in [CREDITS.md](CREDITS.md).

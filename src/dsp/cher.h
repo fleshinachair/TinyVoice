@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Cher engine: MPM pitch tracker -> hard scale quantizer -> pitch-synchronous
  * dual-tap delay-line pitch shifter.

@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Resynth's preset bank (rsbank.h). Off the audio thread only: reads a folder, allocates.
  */

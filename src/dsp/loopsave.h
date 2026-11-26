@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Looper Save: writes the processed loop to a WAV file you can load into a sampler or a clip.
  *

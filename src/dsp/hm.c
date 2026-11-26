@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 #include "hm.h"
 #include "cher.h"     /* cher_mpm */
 

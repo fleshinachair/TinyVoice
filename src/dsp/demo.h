@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Demo voice: a synthesized 2-second sung phrase, generated in real time (no
  * PCM blob, nothing heavy at instance creation) and looped.

@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /* Mangler (src/dsp/mangle.c), the fourth personality. Included by test_main.c after resynth_tests.inc.
  * The sound is calibrated against the reference offline (in TinyVoice-lab, outside this repo): these check the module. */
 

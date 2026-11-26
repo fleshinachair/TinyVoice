@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * The Showcase Tour's "ghost hands": a timeline over the audition phrase's
  * eight bars that moves Voice FX's knobs for you. It computes *effective*

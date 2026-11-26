@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Voice-transformation engines that run straight on the input (no tracker, no
  * carrier synth): Dalek, Harmony, Walkie. (Scream and HardTune are PSOLA modes

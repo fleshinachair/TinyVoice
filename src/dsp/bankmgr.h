@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Bank management: your own banks of Resynth and Mangler presets, made, renamed, filled and removed while the module
  * runs (the Remote UI's bank buttons). Nothing here touches Schwung and nothing here starts a thread: plugin.c runs

@@ -318,6 +318,5 @@ The architecture, signal flow, ABI notes and every parameter are in [CLAUDE.md](
 - Freeze is experimental (see above). Headsets, external mics and routing other tracks into TinyVoice are untested.
 - Key and Scale are set on the Pitch page; they don't follow Move's project.
 - The Audition phrase starts when Demo is switched on; it is not locked to the transport.
-- No licence file yet: all rights reserved until one is added.
 
 See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the changelog.

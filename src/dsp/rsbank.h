@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Resynth's preset banks, read into memory so the host's Presets page (list_param rs_preset) can load
  * one from the audio thread with no I/O. Banks:

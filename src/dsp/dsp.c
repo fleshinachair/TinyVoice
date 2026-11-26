@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * TinyVoice engine: parameter table, MIDI voice tracking, mode dispatch,
  * delay-compensated dry/wet mix, Tone, Spread chorus, state snapshot,

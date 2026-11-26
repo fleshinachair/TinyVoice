@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 #define _GNU_SOURCE   /* clock_gettime, M_PI */
 /*
  * On-device smoke test: loads the installed module the way Schwung's chain does

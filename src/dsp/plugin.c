@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Schwung audio_fx v2 adapter: maps audio_fx_api_v2_t onto the engine in dsp.h.
  * Headers come from src/host/ (run scripts/fetch_host_headers.sh).

@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * The PSOLA-based and effect modes: Snap, Morph, Prism, Double, Tape,
  * Scream, HardTune. (Robot and Nightcall are daft.c; Chords is imogen.c;

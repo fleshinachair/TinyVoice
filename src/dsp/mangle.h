@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Mangler: TinyVoice's fourth engine, modelled on a reference plugin
  * (laws measured offline in the calibration lab, outside this repo). A multi-voice pitch

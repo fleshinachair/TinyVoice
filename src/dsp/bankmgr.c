@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Bank management (bankmgr.h). Off the audio thread except bankmgr_submit, which only copies.
  */

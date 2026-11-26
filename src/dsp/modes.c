@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 #include "modes.h"
 #include "dsp.h"      /* VT_MODE_*, VT_SCALE_* */
 #include "imogen.h"   /* vt_chord, voicings */

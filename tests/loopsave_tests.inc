@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Looper Save (src/dsp/loopsave.c): one period of the processed loop, written as a WAV. Included by test_main.c after
  * bankmgr_tests.inc (it uses that file's bmt_rmrf / bmt_exists). Works in build/tests/ls_root (made and removed here).

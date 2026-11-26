@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Audition phrase: an eight-bar electro-funk loop (a syncopated bass line under
  * staccato chord stabs) from bright dual-saw voices, so Voice FX can be

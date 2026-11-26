@@ -9,6 +9,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/build/tests"
 mkdir -p "$OUT"
 
+# The engine must not depend on Schwung: only plugin.c (the adapter) and the on-device smoke test may include its headers,
+# so the core can be built elsewhere (for example as a submodule of an Android NDK project).
+SCHWUNG_INC='#[[:space:]]*include[[:space:]]*[<"](audio_fx_api|plugin_api|host_api)'
+if grep -rEn "$SCHWUNG_INC" "$ROOT/src/dsp" "$ROOT/tests" | grep -v -e '/src/dsp/plugin.c:' -e '/tests/device_smoke.c:'; then
+    echo "error: a Schwung header is included outside plugin.c" >&2; exit 1
+fi
+
 if [ -n "${CC:-}" ]; then CCMD=($CC)
 elif command -v zig >/dev/null; then CCMD=(zig cc)
 elif command -v cc >/dev/null; then CCMD=(cc)

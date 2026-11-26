@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Voice FX: pure formant processing of the voice, no vocoder bands and no
  * carrier. The input goes through a bank of four resonant band-pass formants

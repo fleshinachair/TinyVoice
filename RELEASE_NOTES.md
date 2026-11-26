@@ -46,4 +46,4 @@ Then add **TinyVoice** as an audio FX in a slot, after a sound source such as Li
 
 ## Known limitations
 
-This is a public preview. It was tuned on synthetic voices, tones and a built-in mic, and checked on a Move with the on-device smoke test, but not judged by ear across many singers. Resynth and Mangler in particular are new and have had the least listening. Headsets, external mics and routing other tracks into TinyVoice are untested. Key and Scale are set on the module's own pages and don't follow Move's project. No licence file yet: all rights reserved until one is added. See the README's [Known limitations](README.md#known-limitations).
+This is a public preview. It was tuned on synthetic voices, tones and a built-in mic, and checked on a Move with the on-device smoke test, but not judged by ear across many singers. Resynth and Mangler in particular are new and have had the least listening. Headsets, external mics and routing other tracks into TinyVoice are untested. Key and Scale are set on the module's own pages and don't follow Move's project. See the README's [Known limitations](README.md#known-limitations).

@@ -17,6 +17,7 @@ MODULE_ID=tinyvoice
 OUT="$ROOT/build/$MODULE_ID"
 
 command -v "$ZIG" >/dev/null || { echo "zig not found (https://ziglang.org/download/)" >&2; exit 1; }
+[ -f "$ROOT/LICENSE" ] || { echo "error: LICENSE is missing (the archive must carry the GPL-3.0 text)" >&2; exit 1; }
 [ -f "$ROOT/src/host/audio_fx_api_v2.h" ] || "$ROOT/scripts/fetch_host_headers.sh"
 
 rm -rf "$OUT"
@@ -38,6 +39,7 @@ rm -rf "$OUT/presets"; mkdir -p "$OUT/presets"
 cp "$ROOT"/src/presets/*.json "$OUT/presets/"        # Resynth's Default bank (our own presets; read by rsbank.c)
 cp "$ROOT/src/demo/demo_voice.raw" "$OUT/demo_voice.raw"   # the Demo's sung phrase (vocadito, CC BY 4.0: see CREDITS.md)
 cp "$ROOT/CREDITS.md" "$OUT/CREDITS.txt"
+cp "$ROOT/LICENSE" "$OUT/LICENSE"                  # GPL-3.0-only: the licence travels with the binary
 
 # Sanity: both entry points must be exported. The chain host dlsym()s
 # move_audio_fx_on_midi to decide whether the FX receives any MIDI at all.

@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /* Resynth's parameters, ONE list for hm.c (the engine's table), dsp.c (TinyVoice's
  * param table: key "hm_" + id) and scripts/gen_module_json.py (which parses this
  * file). Order = hm_param in hm.h.

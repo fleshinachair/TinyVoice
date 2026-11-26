@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Single-sideband frequency shifter: a 4th-order IIR Hilbert transform pair
  * (two cascades of four half-rate all-passes, Olli Niemitalo's coefficients)

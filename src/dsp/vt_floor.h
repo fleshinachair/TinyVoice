@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Noise-floor estimate by minimum statistics: the floor is the lowest level
  * seen over the last VT_FLOOR_SLOTS sub-windows (~3 s). It drops within one

@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Bank management (src/dsp/bankmgr.c, rsbank_load_full): your own banks of Resynth and Mangler presets. Included by
  * test_main.c. Works in build/tests/bm_root (made and removed here).

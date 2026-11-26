@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * TinyVoice test runner. No framework; exits non-zero on any failure.
  * dsp.c is compiled with -DVT_TEST_ALLOC so every engine allocation is

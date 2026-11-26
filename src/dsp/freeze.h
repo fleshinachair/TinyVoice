@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Mathew Taylor — Licensed under GPL-3.0-only */
 /*
  * Freeze: a looper on the input, up to 16 seconds, worked by two separate
  * controls so a loop is never recorded over by accident (2026-11-25):
